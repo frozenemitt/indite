@@ -73,6 +73,10 @@ final class TranscriptionEngine {
     /// The user's listed words for the session running now.
     private var vocabulary: [String] = []
 
+    /// Measurement only: this dictation's audio, and the recognizer's first guesses.
+    private var audioLog: DictationAudioLog?
+    private var firstGuesses = ""
+
     private(set) var error: TranscriptionEngineError?
 
     /// Finalized transcript runs with the audio time range each covers.
@@ -226,6 +230,7 @@ final class TranscriptionEngine {
         error = nil
         currentTranscript = ""
         volatileText = ""
+        firstGuesses = ""
         timedSegments = []
         spectrum = []
 
@@ -272,6 +277,8 @@ final class TranscriptionEngine {
         spectrumWanted.withLock { $0 = publishesSpectrum }
         let spectrumWanted = self.spectrumWanted
 
+        let audioLog = owner == .dictation ? DictationAudioLog(format: targetFormat) : nil
+        self.audioLog = audioLog
         audioProcessingTask = Task.detached(priority: .userInitiated) { [weak self] in
             let converter = BufferConverter()
             // Built the first time the band is wanted, which may be mid-session.
@@ -297,6 +304,7 @@ final class TranscriptionEngine {
 
                 do {
                     let converted = try converter.convertBuffer(audioData.buffer, to: targetFormat)
+                    audioLog?.write(converted)
                     let input = AnalyzerInput(buffer: converted)
                     analyzerContinuation?.yield(input)
                 } catch {
@@ -443,6 +451,8 @@ final class TranscriptionEngine {
             Self.log.notice("Spelled listed words as listed")
             currentTranscript = spelled
         }
+        audioLog?.finish(recognized: currentTranscript, firstGuesses: firstGuesses, vocabulary: vocabulary)
+        audioLog = nil
         Self.log.notice("recording stopped, delivering \(self.currentTranscript.count, privacy: .public) chars; \(finalAtRelease, privacy: .public) of \(heardAtRelease, privacy: .public) were final at release; results \(drained ? "drained" : "cut off", privacy: .public) after \(drainMs, privacy: .public) ms")
         return currentTranscript
     }
@@ -693,6 +703,7 @@ final class TranscriptionEngine {
                     await MainActor.run {
                         guard let self = self else { return }
                         if result.isFinal {
+                            self.firstGuesses += heard
                             self.currentTranscript += text
                             self.volatileText = ""
                             if self.collectTimedSegments {
