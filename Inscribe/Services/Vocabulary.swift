@@ -93,8 +93,9 @@ enum Vocabulary {
             var best: (similarity: Double, first: Int, last: Int, heard: String)?
             for first in low...high {
                 for last in first...min(first + 2, high) {
-                    // Runs in different results are not one phrase.
-                    guard timed[last].segment == timed[first].segment else { continue }
+                    // A name can span two results, as "Dristy" and "Quest" did, but not a
+                    // result the second guess replaced, whose runs are not in `timed`.
+                    guard (first..<last).allSatisfy({ timed[$0 + 1].segment - timed[$0].segment <= 1 }) else { continue }
                     let heard = (first...last).map { run(timed[$0]).text }.joined()
                     let score = similarity(withoutPossessive(heard), detection.term)
                     if best == nil || score > best!.similarity { best = (score, first, last, heard) }
