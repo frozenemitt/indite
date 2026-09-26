@@ -252,6 +252,10 @@ struct ScribeApp: App {
             // main thread, and one of those calls runs as recording starts.
             TextInsertionService.limitAccessibilityWaits()
 
+            // The model that listens for listed words, loaded before the first dictation
+            // needs it and off the main thread.
+            Task.detached(priority: .utility) { await VocabularySpotter.shared.load() }
+
             // The coordinator keeps finished dictations, which needs the open store.
             coordinator.modelContext = ScribeApp.modelContainer.mainContext
 

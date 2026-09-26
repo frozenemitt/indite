@@ -82,6 +82,20 @@ final class TranscriptionEngine {
     }
     private var firstGuesses = ""
 
+    /// Names read from the screen for this dictation. They count as listed words, but
+    /// never override one of the user's own; see `Vocabulary`.
+    private var screenTerms: [String] = []
+
+    /// This dictation's finished results, kept with their timed runs for the spotter.
+    private var vocabularySegments: [Vocabulary.Segment] = []
+    private var spotterSession: VocabularySpotter.Session?
+
+    /// Hand over the names on screen once they have been read, a moment into the dictation.
+    func useScreenTerms(_ terms: [String]) {
+        guard phase == .recording || phase == .starting else { return }
+        screenTerms = terms
+    }
+
     private(set) var error: TranscriptionEngineError?
 
     /// Finalized transcript runs with the audio time range each covers.
@@ -237,6 +251,8 @@ final class TranscriptionEngine {
         volatileText = ""
         firstGuesses = ""
         timedSegments = []
+        vocabularySegments = []
+        screenTerms = []
         spectrum = []
 
         // Check authorization
@@ -248,6 +264,9 @@ final class TranscriptionEngine {
         // Setup speech recognition first
         do {
             self.vocabulary = vocabulary.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            // Listens for listed words in dictations; a meeting's hour of audio is not
+            // read this way.
+            spotterSession = owner != .meeting && !self.vocabulary.isEmpty ? VocabularySpotter.shared.session() : nil
             try await setupSpeechRecognition()
         } catch {
             // Never leave a started analyzer behind. Releasing one while its input
@@ -279,6 +298,7 @@ final class TranscriptionEngine {
         let targetFormat = analyzerFormat!
 
         let tap = audioTap
+        let spotter = spotterSession
         spectrumWanted.withLock { $0 = publishesSpectrum }
         let spectrumWanted = self.spectrumWanted
 
@@ -310,6 +330,7 @@ final class TranscriptionEngine {
                 do {
                     let converted = try converter.convertBuffer(audioData.buffer, to: targetFormat)
                     audioLog?.write(converted)
+                    spotter?.append(converted)
                     let input = AnalyzerInput(buffer: converted)
                     analyzerContinuation?.yield(input)
                 } catch {
@@ -370,6 +391,14 @@ final class TranscriptionEngine {
             audioProcessingTask?.cancel()
         }
         audioProcessingTask = nil
+
+        // All the audio is in, so the spotter's last read can run while the recognizer
+        // finishes.
+        let spotStarted = ContinuousClock.now
+        let spotting = spotterSession.map { session in
+            Task { [terms = vocabulary + screenTerms] in await session.finish(terms: terms) }
+        }
+        spotterSession = nil
 
         // Finalize transcription
 
@@ -451,7 +480,20 @@ final class TranscriptionEngine {
 
         spectrum = []
         let drainMs = Int(drainTime / .milliseconds(1))
-        let spelled = Vocabulary.spell(currentTranscript, terms: vocabulary)
+        if let spotting {
+            let waitStarted = ContinuousClock.now
+            let detections = await spotting.value
+            let waited = Int((ContinuousClock.now - waitStarted) / .milliseconds(1))
+            let took = Int((ContinuousClock.now - spotStarted) / .milliseconds(1))
+            let segmentsText = vocabularySegments.map(\.text).joined()
+            if currentTranscript.hasPrefix(segmentsText) {
+                let tail = currentTranscript.dropFirst(segmentsText.count)
+                let spotted = Vocabulary.applySpotted(detections, to: vocabularySegments, listed: vocabulary)
+                currentTranscript = spotted.text + tail
+                Self.log.notice("Spotter put in \(spotted.replaced, privacy: .public) listed words; its last read took \(took, privacy: .public) ms, \(waited, privacy: .public) ms of it after the recognizer finished")
+            }
+        }
+        let spelled = Vocabulary.spell(currentTranscript, terms: vocabulary + screenTerms)
         if spelled != currentTranscript {
             Self.log.notice("Spelled listed words as listed")
             currentTranscript = spelled
@@ -635,7 +677,8 @@ final class TranscriptionEngine {
             reportingOptions: vocabulary.isEmpty
                 ? [.volatileResults, .fastResults]
                 : [.volatileResults, .fastResults, .alternativeTranscriptions],
-            attributeOptions: [.audioTimeRange]
+            // Confidence tells the spotter which words the recognizer was unsure of.
+            attributeOptions: vocabulary.isEmpty ? [.audioTimeRange] : [.audioTimeRange, .transcriptionConfidence]
         )
 
         guard let transcriber = speechTranscriber else {
@@ -674,7 +717,6 @@ final class TranscriptionEngine {
             Self.log.notice("results loops alive, including this one: \(alive, privacy: .public)")
         }
 
-        let terms = vocabulary
         recognitionTask = Task { [weak self] in
             defer { Self.liveResultLoops.withLock { $0 -= 1 } }
             var resultCount = 0
@@ -688,15 +730,7 @@ final class TranscriptionEngine {
                         break
                     }
 
-                    // A finished result may give way to the recognizer's second guess,
-                    // when that holds a listed word the first guess lacks.
                     let heard = String(result.text.characters)
-                    let text = result.isFinal
-                        ? Vocabulary.choose(heard, alternatives: result.alternatives.map { String($0.characters) }, terms: terms)
-                        : heard
-                    if text != heard {
-                        Self.log.notice("Took the recognizer's second guess for a listed word")
-                    }
                     resultCount += 1
 
                     // Update state on MainActor
@@ -704,9 +738,22 @@ final class TranscriptionEngine {
                     let runs: [TimedTranscriptSegment] = result.isFinal
                         ? Self.timedRuns(from: result.text)
                         : []
+                    let alternatives = result.isFinal ? result.alternatives.map { String($0.characters) } : []
+                    let vocabularyRuns = result.isFinal ? Self.vocabularyRuns(from: result.text) : []
 
                     await MainActor.run {
                         guard let self = self else { return }
+                        // A finished result may give way to the recognizer's second guess,
+                        // when that holds a listed word the first guess lacks.
+                        var text = heard
+                        if result.isFinal, !self.vocabulary.isEmpty {
+                            text = Vocabulary.choose(heard, alternatives: alternatives,
+                                                     terms: self.vocabulary + self.screenTerms, keeping: self.vocabulary)
+                            if text != heard {
+                                Self.log.notice("Took the recognizer's second guess for a listed word")
+                            }
+                            self.vocabularySegments.append(Vocabulary.Segment(text: text, tookSecondGuess: text != heard, runs: vocabularyRuns))
+                        }
                         if result.isFinal {
                             self.firstGuesses += heard
                             self.currentTranscript += text
@@ -735,6 +782,19 @@ final class TranscriptionEngine {
         // Start analyzer
         try await speechAnalyzer?.start(inputSequence: inputStream)
         Log.dictation.notice("Speech recognition setup complete")
+    }
+
+    /// Every run of a finished result, with its time and the recognizer's confidence
+    /// where it has them. Untimed runs are kept too, so the text can be rebuilt whole.
+    private nonisolated static func vocabularyRuns(from text: AttributedString) -> [Vocabulary.Run] {
+        text.runs.map { run in
+            Vocabulary.Run(
+                text: String(text[run.range].characters),
+                start: run.audioTimeRange?.start.seconds,
+                end: run.audioTimeRange?.end.seconds,
+                confidence: run.transcriptionConfidence
+            )
+        }
     }
 
     /// Split a finalized result into runs carrying an audio time range.
@@ -844,6 +904,8 @@ final class TranscriptionEngine {
 
         recognitionTask?.cancel()
         recognitionTask = nil
+
+        spotterSession = nil
 
         speechTranscriber = nil
         speechAnalyzer = nil

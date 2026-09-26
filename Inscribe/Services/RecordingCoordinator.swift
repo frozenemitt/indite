@@ -307,12 +307,18 @@ final class RecordingCoordinator {
             // Only now, since the request opens with the text around the cursor and a
             // warmed prefix without it would match nothing.
             if usesAI { self.startPrefixWarmer() }
-            // Measurement only: the names on screen, read off the main thread and saved
-            // with the audio. Not yet used to choose words.
-            if let pid = target?.processIdentifier {
+
+            // Names on screen join the vocabulary for this dictation. Read off the main
+            // thread, within 400 ms. Words Inscribe itself typed in the last day are left
+            // out: they are its own earlier guesses, and a mishearing on screen ("Dristy
+            // Quest") would otherwise be taken for a name.
+            if !self.settings.vocabularyHints.isEmpty, let pid = target?.processIdentifier {
                 let reading = await Task.detached(priority: .utility) { ScreenVocabulary.read(processIdentifier: pid) }.value
-                Log.dictation.notice("Screen: \(reading.terms.count, privacy: .public) names from \(reading.characters, privacy: .public) characters in \(reading.elements, privacy: .public) elements, \(reading.milliseconds, privacy: .public) ms")
+                let typed = self.recentlyTyped()
+                let names = reading.terms.filter { !typed.contains(Vocabulary.key($0)) }
+                self.engine.useScreenTerms(names)
                 self.engine.noteScreen(reading)
+                Log.dictation.notice("Screen: \(names.count, privacy: .public) names kept of \(reading.terms.count, privacy: .public), read in \(reading.milliseconds, privacy: .public) ms")
             }
         }
         #else
@@ -516,6 +522,19 @@ final class RecordingCoordinator {
             destination: lastDestination,
             settings: settings
         )
+    }
+
+    /// Every phrase Inscribe typed in the last day, from the dictation history.
+    private func recentlyTyped() -> Set<String> {
+        guard let modelContext else { return [] }
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
+        var descriptor = FetchDescriptor<Dictation>(
+            predicate: #Predicate { $0.createdAt > cutoff },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 300
+        let texts = (try? modelContext.fetch(descriptor))?.map(\.text) ?? []
+        return Vocabulary.phrases(in: texts.joined(separator: " "))
     }
 
     /// Keep the dictation the moment its words exist.
