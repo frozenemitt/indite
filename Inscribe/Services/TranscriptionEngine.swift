@@ -75,6 +75,11 @@ final class TranscriptionEngine {
 
     /// Measurement only: this dictation's audio, and the recognizer's first guesses.
     private var audioLog: DictationAudioLog?
+
+    /// Measurement only: the names on screen, saved with this dictation's audio.
+    func noteScreen(_ reading: ScreenVocabulary.Reading) {
+        audioLog?.noteScreen(reading)
+    }
     private var firstGuesses = ""
 
     private(set) var error: TranscriptionEngineError?

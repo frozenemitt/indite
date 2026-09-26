@@ -15,6 +15,13 @@ final class DictationAudioLog: @unchecked Sendable {
 
     private let file: AVAudioFile
     private let name: String
+    private let lock = NSLock()
+    private var screen: ScreenVocabulary.Reading?
+
+    /// The unusual words on screen when the dictation began. Only the words are kept.
+    func noteScreen(_ reading: ScreenVocabulary.Reading) {
+        lock.withLock { screen = reading }
+    }
 
     init?(format: AVAudioFormat) {
         let formatter = ISO8601DateFormatter()
@@ -40,7 +47,13 @@ final class DictationAudioLog: @unchecked Sendable {
 
     /// What the recognizer delivered, and its first guesses before the vocabulary chose.
     func finish(recognized: String, firstGuesses: String, vocabulary: [String]) {
-        let entry: [String: Any] = ["recognized": recognized, "firstGuesses": firstGuesses, "vocabulary": vocabulary]
+        var entry: [String: Any] = ["recognized": recognized, "firstGuesses": firstGuesses, "vocabulary": vocabulary]
+        if let screen = lock.withLock({ screen }) {
+            entry["screenTerms"] = screen.terms
+            entry["screenCharacters"] = screen.characters
+            entry["screenElements"] = screen.elements
+            entry["screenMilliseconds"] = screen.milliseconds
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: entry, options: [.prettyPrinted]) else { return }
         try? data.write(to: Self.directory.appending(path: "\(name).json"))
     }

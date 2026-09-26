@@ -307,6 +307,13 @@ final class RecordingCoordinator {
             // Only now, since the request opens with the text around the cursor and a
             // warmed prefix without it would match nothing.
             if usesAI { self.startPrefixWarmer() }
+            // Measurement only: the names on screen, read off the main thread and saved
+            // with the audio. Not yet used to choose words.
+            if let pid = target?.processIdentifier {
+                let reading = await Task.detached(priority: .utility) { ScreenVocabulary.read(processIdentifier: pid) }.value
+                Log.dictation.notice("Screen: \(reading.terms.count, privacy: .public) names from \(reading.characters, privacy: .public) characters in \(reading.elements, privacy: .public) elements, \(reading.milliseconds, privacy: .public) ms")
+                self.engine.noteScreen(reading)
+            }
         }
         #else
         if usesAI {
