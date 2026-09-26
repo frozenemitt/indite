@@ -69,7 +69,12 @@ enum ScreenVocabulary {
         var counts: [String: Int] = [:]
         for line in text.split(whereSeparator: { ".?!\n".contains($0) }) {
             let words = line.split(whereSeparator: { $0.isWhitespace || ",;:()[]{}\"“”".contains($0) })
-                .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "'’-")) }
+                .map { word -> String in
+                    // "Nora's" is Nora.
+                    var word = String(word).trimmingCharacters(in: CharacterSet(charactersIn: "'’-"))
+                    for suffix in ["'s", "’s"] where word.hasSuffix(suffix) { word.removeLast(2) }
+                    return word
+                }
                 .filter { !$0.isEmpty }
             var run: [String] = []
             var runHasUnusual = false
@@ -82,7 +87,9 @@ enum ScreenVocabulary {
             for word in words {
                 let unusual = isUnusual(word)
                 if unusual { counts[word, default: 0] += 1 }
-                if word.first?.isUppercase == true {
+                // Names run on through capitalised words, not acronyms or codes:
+                // "Claude Code", but not "Karpathy LLM" or "Drishti Quest B2B".
+                if word.first?.isUppercase == true, word.contains(where: \.isLowercase), !word.contains(where: \.isNumber) {
                     run.append(word)
                     runHasUnusual = runHasUnusual || unusual
                 } else {
@@ -91,8 +98,20 @@ enum ScreenVocabulary {
             }
             closeRun()
         }
-        return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .prefix(limit).map(\.key)
+        // One spelling per name: "CLAUDE" in a heading is Claude, kept as most often written.
+        var byName: [String: (word: String, count: Int)] = [:]
+        for (word, count) in counts {
+            let name = word.lowercased()
+            if let seen = byName[name] {
+                // The most common spelling, and on a tie the one not in capitals.
+                let keepSeen = seen.count != count ? seen.count > count : seen.word != seen.word.uppercased()
+                byName[name] = (keepSeen ? seen.word : word, seen.count + count)
+            } else {
+                byName[name] = (word, count)
+            }
+        }
+        return byName.values.sorted { $0.count != $1.count ? $0.count > $1.count : $0.word < $1.word }
+            .prefix(limit).map(\.word)
     }
 
     private static func isUnusual(_ word: String) -> Bool {
@@ -101,7 +120,9 @@ enum ScreenVocabulary {
         if word.dropFirst().contains(where: \.isUppercase), word.contains(where: \.isLowercase) { return true }
         guard word.first?.isUppercase == true else { return false }
         let lower = word.lowercased()
-        return !commonWords.contains(lower) && !calendarWords.contains(lower)
+        // "Agreements", "Patterns": a heading's capital on an ordinary word's plural.
+        let singular = lower.hasSuffix("s") ? String(lower.dropLast()) : lower
+        return !commonWords.contains(lower) && !commonWords.contains(singular) && !calendarWords.contains(lower)
     }
 
     private static let calendarWords: Set<String> = [
