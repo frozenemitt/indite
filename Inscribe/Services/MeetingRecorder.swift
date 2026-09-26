@@ -387,7 +387,7 @@ final class MeetingRecorder {
         do {
             try await engine.startRecording(
                 owner: .meeting,
-                contextualStrings: settings.vocabularyHints,
+                vocabulary: settings.vocabularyHints,
                 inputDeviceUID: inputDeviceUID,
                 publishesSpectrum: settings.showMeetingIndicator
             )
@@ -649,7 +649,7 @@ final class MeetingRecorder {
         do {
             try await engine.startRecording(
                 owner: .meeting,
-                contextualStrings: settings.vocabularyHints,
+                vocabulary: settings.vocabularyHints,
                 inputDeviceUID: inputDeviceUID,
                 // Passed on every session, not only the first. Left out here, the
                 // engine skipped the band after any resume and the panel sat flat for

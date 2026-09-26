@@ -252,7 +252,7 @@ final class RecordingCoordinator {
         do {
             try await engine.startRecording(
                 owner: .dictation,
-                contextualStrings: settings.vocabularyHints,
+                vocabulary: settings.vocabularyHints,
                 inputDeviceUID: settings.inputDeviceUID,
                 publishesSpectrum: settings.showDictationOverlay
             )

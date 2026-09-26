@@ -42,9 +42,9 @@ final class FileTranscriber {
 
     /// Read a file and return its transcript.
     ///
-    /// - Parameter contextualStrings: Vocabulary hints, same as live dictation.
+    /// - Parameter vocabulary: The user's listed words, used as in live dictation.
     @discardableResult
-    func transcribe(fileURL: URL, contextualStrings: [String] = []) async throws -> String {
+    func transcribe(fileURL: URL, vocabulary: [String] = []) async throws -> String {
         guard !isBusy else { throw FileTranscriberError.alreadyRunning }
 
         state = .transcribing(fileName: fileURL.lastPathComponent)
@@ -61,7 +61,7 @@ final class FileTranscriber {
             let transcriber = SpeechTranscriber(
                 locale: try await Self.resolveLocale(),
                 transcriptionOptions: [],
-                reportingOptions: [],
+                reportingOptions: vocabulary.isEmpty ? [] : [.alternativeTranscriptions],
                 attributeOptions: [.audioTimeRange]
             )
 
@@ -70,16 +70,10 @@ final class FileTranscriber {
                 try await request.downloadAndInstall()
             }
 
-            let context = AnalysisContext()
-            let hints = contextualStrings.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            if !hints.isEmpty {
-                context.contextualStrings[.general] = hints
-            }
-
+            let terms = vocabulary.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
             let analyzer = try await SpeechAnalyzer(
                 inputAudioFile: audioFile,
                 modules: [transcriber],
-                analysisContext: context,
                 finishAfterFile: true
             )
 
@@ -87,7 +81,11 @@ final class FileTranscriber {
             var segments: [TimedTranscriptSegment] = []
 
             for try await result in transcriber.results where result.isFinal {
-                collected += String(result.text.characters)
+                collected += Vocabulary.choose(
+                    String(result.text.characters),
+                    alternatives: result.alternatives.map { String($0.characters) },
+                    terms: terms
+                )
 
                 for run in result.text.runs {
                     guard let range = run.audioTimeRange else { continue }
@@ -104,7 +102,7 @@ final class FileTranscriber {
 
             try await analyzer.finalizeAndFinishThroughEndOfInput()
 
-            transcript = collected.trimmingCharacters(in: .whitespacesAndNewlines)
+            transcript = Vocabulary.spell(collected.trimmingCharacters(in: .whitespacesAndNewlines), terms: terms)
             timedSegments = segments
             state = .finished
 

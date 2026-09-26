@@ -69,6 +69,10 @@ final class TranscriptionEngine {
 
     private(set) var currentTranscript = ""
     private(set) var volatileText = ""  // Live, unconfirmed text
+
+    /// The user's listed words for the session running now.
+    private var vocabulary: [String] = []
+
     private(set) var error: TranscriptionEngineError?
 
     /// Finalized transcript runs with the audio time range each covers.
@@ -179,14 +183,15 @@ final class TranscriptionEngine {
 
     /// Start recording and transcribing audio
     /// - Parameters:
-    ///   - contextualStrings: Terms to bias the recognizer toward — names, jargon.
+    ///   - vocabulary: Names and jargon the user listed. The transcriber ignores hints,
+    ///     so these choose among its second guesses and fix spelling; see `Vocabulary`.
     ///   - inputDeviceUID: CoreAudio UID of the microphone, or "default".
     /// - Parameter publishesSpectrum: whether anything is going to draw the band. The
     ///   Fourier transform behind it runs on every buffer, and running it for a panel
     ///   nobody has switched on is work spent on a picture that is never drawn.
     func startRecording(
         owner: SessionOwner = .dictation,
-        contextualStrings: [String] = [],
+        vocabulary: [String] = [],
         inputDeviceUID: String = "default",
         publishesSpectrum: Bool = false
     ) async throws {
@@ -232,7 +237,8 @@ final class TranscriptionEngine {
 
         // Setup speech recognition first
         do {
-            try await setupSpeechRecognition(contextualStrings: contextualStrings)
+            self.vocabulary = vocabulary.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            try await setupSpeechRecognition()
         } catch {
             // Never leave a started analyzer behind. Releasing one while its input
             // task is still reading traps inside SpeechAnalyzer.analyzeSequence.
@@ -432,6 +438,11 @@ final class TranscriptionEngine {
 
         spectrum = []
         let drainMs = Int(drainTime / .milliseconds(1))
+        let spelled = Vocabulary.spell(currentTranscript, terms: vocabulary)
+        if spelled != currentTranscript {
+            Self.log.notice("Spelled listed words as listed")
+            currentTranscript = spelled
+        }
         Self.log.notice("recording stopped, delivering \(self.currentTranscript.count, privacy: .public) chars; \(finalAtRelease, privacy: .public) of \(heardAtRelease, privacy: .public) were final at release; results \(drained ? "drained" : "cut off", privacy: .public) after \(drainMs, privacy: .public) ms")
         return currentTranscript
     }
@@ -586,7 +597,7 @@ final class TranscriptionEngine {
 
     // MARK: - Speech Recognition Setup
 
-    private func setupSpeechRecognition(contextualStrings: [String] = []) async throws {
+    private func setupSpeechRecognition() async throws {
         Log.dictation.notice("Setting up speech recognition...")
 
         // Resolved before the transcriber is built, not after: a transcriber is bound to
@@ -604,7 +615,11 @@ final class TranscriptionEngine {
             // `.fastResults` is what puts words on the overlay while you are still
             // speaking. Without it the transcriber holds its unconfirmed text back and
             // the preview trails several seconds behind the voice.
-            reportingOptions: [.volatileResults, .fastResults],
+            //
+            // Second guesses only when there is a vocabulary to choose them by.
+            reportingOptions: vocabulary.isEmpty
+                ? [.volatileResults, .fastResults]
+                : [.volatileResults, .fastResults, .alternativeTranscriptions],
             attributeOptions: [.audioTimeRange]
         )
 
@@ -622,22 +637,6 @@ final class TranscriptionEngine {
             modules: [transcriber],
             options: .init(priority: .userInitiated, modelRetention: .processLifetime)
         )
-
-        // Bias the recognizer toward the user's own vocabulary. Unlike a post-hoc
-        // replacement this changes what the model is listening for, which is what
-        // proper nouns need.
-        let hints = contextualStrings.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        if !hints.isEmpty {
-            let context = AnalysisContext()
-            context.contextualStrings[.general] = hints
-            do {
-                try await speechAnalyzer?.setContext(context)
-                Log.dictation.notice("Applied \(hints.count, privacy: .public) vocabulary hints")
-            } catch {
-                // Worth continuing without: hints improve accuracy, they are not required.
-                Log.dictation.error("Could not apply vocabulary hints: \(error, privacy: .public)")
-            }
-        }
 
         // Ensure model is available
         try await ensureModelAvailable(transcriber: transcriber, locale: locale)
@@ -660,6 +659,7 @@ final class TranscriptionEngine {
             Self.log.notice("results loops alive, including this one: \(alive, privacy: .public)")
         }
 
+        let terms = vocabulary
         recognitionTask = Task { [weak self] in
             defer { Self.liveResultLoops.withLock { $0 -= 1 } }
             var resultCount = 0
@@ -673,7 +673,15 @@ final class TranscriptionEngine {
                         break
                     }
 
-                    let text = String(result.text.characters)
+                    // A finished result may give way to the recognizer's second guess,
+                    // when that holds a listed word the first guess lacks.
+                    let heard = String(result.text.characters)
+                    let text = result.isFinal
+                        ? Vocabulary.choose(heard, alternatives: result.alternatives.map { String($0.characters) }, terms: terms)
+                        : heard
+                    if text != heard {
+                        Self.log.notice("Took the recognizer's second guess for a listed word")
+                    }
                     resultCount += 1
 
                     // Update state on MainActor

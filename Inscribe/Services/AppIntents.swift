@@ -62,7 +62,7 @@ struct QuickTranscribeIntent: AppIntent {
             // menu bar leave it alone.
             try await engine.startRecording(
                 owner: .shortcut,
-                contextualStrings: settings.vocabularyHints,
+                vocabulary: settings.vocabularyHints,
                 inputDeviceUID: settings.inputDeviceUID
             )
             started = true
@@ -239,7 +239,7 @@ struct RecordTranscriptionIntent: AppIntent {
         do {
             try await engine.startRecording(
                 owner: .shortcut,
-                contextualStrings: settings.vocabularyHints,
+                vocabulary: settings.vocabularyHints,
                 inputDeviceUID: settings.inputDeviceUID
             )
             started = true

@@ -1625,7 +1625,7 @@ struct DictationSettingsView: View {
             }
 
             Section("Vocabulary") {
-                Text("Names and jargon the recognizer should expect, one per line. This steers what it listens for, so it beats correcting the same word every time.")
+                Text("Names and jargon you use, one per line. When the recognizer is torn between words, it takes the one on this list, and it spells these the way you write them here: \"type script\" comes out as TypeScript.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

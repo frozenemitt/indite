@@ -182,7 +182,7 @@ struct ImportRecordingView: View {
             do {
                 let text = try await transcriber.transcribe(
                     fileURL: url,
-                    contextualStrings: settings.vocabularyHints
+                    vocabulary: settings.vocabularyHints
                 )
                 // Copied at once. The transcriber is shared state, and anything that
                 // resets it during the speaker pass would otherwise empty these.
