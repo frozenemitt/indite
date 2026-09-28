@@ -12,6 +12,8 @@ final class AudioCaptureHelper: @unchecked Sendable {
     private var audioEngine: AVAudioEngine?
     private var outputContinuation: AsyncStream<AudioData>.Continuation?
     private var configurationObserver: (any NSObjectProtocol)?
+    /// Buffers the current capture has delivered.
+    private var tapCount = OSAllocatedUnfairLock(initialState: 0)
 
     private(set) var isRunning = false
 
@@ -26,19 +28,35 @@ final class AudioCaptureHelper: @unchecked Sendable {
     init() {}
 
     /// `startCapture`, run on the capture queue.
-    func start(preferredDeviceUID: String = "default", waitForAudio: Bool = false) async throws -> AsyncStream<AudioData> {
+    func start(preferredDeviceUID: String = "default") async throws -> AsyncStream<AudioData> {
         try await withCheckedThrowingContinuation { continuation in
             Self.queue.async {
                 do {
-                    continuation.resume(returning: try self.startCapture(
-                        preferredDeviceUID: preferredDeviceUID,
-                        waitForAudio: waitForAudio
-                    ))
+                    continuation.resume(returning: try self.startCapture(preferredDeviceUID: preferredDeviceUID))
                 } catch {
                     continuation.resume(throwing: error)
                 }
             }
         }
+    }
+
+    /// Wait until the capture has delivered its first buffer. False after `seconds`.
+    ///
+    /// Polled rather than blocking the capture queue: holding that queue while a
+    /// meeting's device came up was the one change between meetings that started
+    /// after 4.7–6.1 s and meetings that heard nothing for 8.
+    func waitForAudio(seconds: TimeInterval) async -> Bool {
+        let started = Date()
+        let tapCount = self.tapCount
+        while Date().timeIntervalSince(started) < seconds {
+            if tapCount.withLock({ $0 }) > 0 {
+                Log.audio.notice("First audio \(Date().timeIntervalSince(started), format: .fixed(precision: 2), privacy: .public)s after the engine started")
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        Log.audio.error("No audio \(Int(seconds), privacy: .public)s after starting — giving up")
+        return false
     }
 
     /// `stopCapture`, run on the capture queue, waiting until it has finished.
@@ -60,13 +78,9 @@ final class AudioCaptureHelper: @unchecked Sendable {
     }
 
     /// Start capturing audio and return a stream of audio buffers
-    /// - Parameters:
-    ///   - preferredDeviceUID: CoreAudio UID of the microphone to record from, or
-    ///     "default" to follow the system setting.
-    ///   - waitForAudio: Return only once the first buffer has arrived. For a
-    ///     meeting's combined device, which reports itself started seconds before its
-    ///     microphone delivers anything.
-    func startCapture(preferredDeviceUID: String = "default", waitForAudio: Bool = false) throws -> AsyncStream<AudioData> {
+    /// - Parameter preferredDeviceUID: CoreAudio UID of the microphone to record from,
+    ///   or "default" to follow the system setting.
+    func startCapture(preferredDeviceUID: String = "default") throws -> AsyncStream<AudioData> {
         Log.audio.notice("Starting capture...")
 
         #if os(iOS)
@@ -110,9 +124,9 @@ final class AudioCaptureHelper: @unchecked Sendable {
 
         // Install tap
         // Counted under a lock: the tap writes it on the audio thread, and the
-        // configuration check below reads it from the capture queue.
+        // configuration check below and `waitForAudio` read it elsewhere.
         let tapCount = OSAllocatedUnfairLock(initialState: 0)
-        let firstBuffer = DispatchSemaphore(value: 0)
+        self.tapCount = tapCount
         // The size asked for is a request, and macOS does not honour it: every buffer
         // logged has held 4,800 frames, a tenth of a second at 48 kHz, whatever was
         // asked. The level band therefore changes ten times a second.
@@ -122,7 +136,6 @@ final class AudioCaptureHelper: @unchecked Sendable {
             format: format
         ) { [weak self] buffer, time in
             let count = tapCount.withLock { $0 += 1; return $0 }
-            if count == 1 { firstBuffer.signal() }
             if count <= 5 {
                 Log.audio.notice("Tap callback #\(count, privacy: .public), frames: \(buffer.frameLength, privacy: .public)")
             }
@@ -175,20 +188,6 @@ final class AudioCaptureHelper: @unchecked Sendable {
         try engine.start()
         isRunning = engine.isRunning
         Log.audio.notice("Engine started, running: \(self.isRunning, privacy: .public)")
-
-        // A meeting built around the iPhone's microphone started, played its sound
-        // and said "Recording" 4.7–6.1 s before the first buffer, and everything said
-        // in between was lost. Dictation never had the gap: starting the plain device
-        // blocks until it is live. Waiting here gives meetings the same guarantee.
-        if waitForAudio {
-            let started = Date()
-            guard firstBuffer.wait(timeout: .now() + 8) == .success else {
-                Log.audio.error("No audio 8 s after starting — giving up")
-                stopCapture()
-                throw AudioCaptureError.noAudio
-            }
-            Log.audio.notice("First audio \(Date().timeIntervalSince(started), format: .fixed(precision: 2), privacy: .public)s after the engine started")
-        }
 
         return stream
     }

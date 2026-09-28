@@ -280,12 +280,7 @@ final class TranscriptionEngine {
         let helper = AudioCaptureHelper()
         let audioStream: AsyncStream<AudioData>
         do {
-            // A meeting counts as started only once audio is arriving; see
-            // `startCapture`. Dictation keeps its start as fast as the device allows.
-            audioStream = try await helper.start(
-                preferredDeviceUID: inputDeviceUID,
-                waitForAudio: owner == .meeting
-            )
+            audioStream = try await helper.start(preferredDeviceUID: inputDeviceUID)
         } catch {
             await helper.stop()
             teardownSession()
@@ -347,6 +342,21 @@ final class TranscriptionEngine {
             // asked for the session to end. Say so, or the rest of the recording is
             // silence that looks like listening.
             await MainActor.run { self?.captureEnded() }
+        }
+
+        // A meeting counts as started only once audio is arriving. Built around the
+        // iPhone's microphone, its combined device reports itself started at once and
+        // delivers its first buffer seconds later; the meeting played its start sound
+        // and said Recording 4.7–6.1 s early, and the words in between were lost.
+        // Dictation never had the gap: starting the plain device blocks until it is
+        // live.
+        if owner == .meeting, await !helper.waitForAudio(seconds: 8) {
+            await helper.stop()
+            audioProcessingTask = nil
+            audioCaptureHelper = nil
+            teardownSession()
+            release()
+            throw AudioCaptureError.noAudio
         }
 
         phase = .recording
