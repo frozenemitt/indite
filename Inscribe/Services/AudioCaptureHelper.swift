@@ -26,11 +26,14 @@ final class AudioCaptureHelper: @unchecked Sendable {
     init() {}
 
     /// `startCapture`, run on the capture queue.
-    func start(preferredDeviceUID: String = "default") async throws -> AsyncStream<AudioData> {
+    func start(preferredDeviceUID: String = "default", waitForAudio: Bool = false) async throws -> AsyncStream<AudioData> {
         try await withCheckedThrowingContinuation { continuation in
             Self.queue.async {
                 do {
-                    continuation.resume(returning: try self.startCapture(preferredDeviceUID: preferredDeviceUID))
+                    continuation.resume(returning: try self.startCapture(
+                        preferredDeviceUID: preferredDeviceUID,
+                        waitForAudio: waitForAudio
+                    ))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -57,9 +60,13 @@ final class AudioCaptureHelper: @unchecked Sendable {
     }
 
     /// Start capturing audio and return a stream of audio buffers
-    /// - Parameter preferredDeviceUID: CoreAudio UID of the microphone to record from,
-    ///   or "default" to follow the system setting.
-    func startCapture(preferredDeviceUID: String = "default") throws -> AsyncStream<AudioData> {
+    /// - Parameters:
+    ///   - preferredDeviceUID: CoreAudio UID of the microphone to record from, or
+    ///     "default" to follow the system setting.
+    ///   - waitForAudio: Return only once the first buffer has arrived. For a
+    ///     meeting's combined device, which reports itself started seconds before its
+    ///     microphone delivers anything.
+    func startCapture(preferredDeviceUID: String = "default", waitForAudio: Bool = false) throws -> AsyncStream<AudioData> {
         Log.audio.notice("Starting capture...")
 
         #if os(iOS)
@@ -105,6 +112,7 @@ final class AudioCaptureHelper: @unchecked Sendable {
         // Counted under a lock: the tap writes it on the audio thread, and the
         // configuration check below reads it from the capture queue.
         let tapCount = OSAllocatedUnfairLock(initialState: 0)
+        let firstBuffer = DispatchSemaphore(value: 0)
         // The size asked for is a request, and macOS does not honour it: every buffer
         // logged has held 4,800 frames, a tenth of a second at 48 kHz, whatever was
         // asked. The level band therefore changes ten times a second.
@@ -114,6 +122,7 @@ final class AudioCaptureHelper: @unchecked Sendable {
             format: format
         ) { [weak self] buffer, time in
             let count = tapCount.withLock { $0 += 1; return $0 }
+            if count == 1 { firstBuffer.signal() }
             if count <= 5 {
                 Log.audio.notice("Tap callback #\(count, privacy: .public), frames: \(buffer.frameLength, privacy: .public)")
             }
@@ -166,6 +175,20 @@ final class AudioCaptureHelper: @unchecked Sendable {
         try engine.start()
         isRunning = engine.isRunning
         Log.audio.notice("Engine started, running: \(self.isRunning, privacy: .public)")
+
+        // A meeting built around the iPhone's microphone started, played its sound
+        // and said "Recording" 4.7–6.1 s before the first buffer, and everything said
+        // in between was lost. Dictation never had the gap: starting the plain device
+        // blocks until it is live. Waiting here gives meetings the same guarantee.
+        if waitForAudio {
+            let started = Date()
+            guard firstBuffer.wait(timeout: .now() + 8) == .success else {
+                Log.audio.error("No audio 8 s after starting — giving up")
+                stopCapture()
+                throw AudioCaptureError.noAudio
+            }
+            Log.audio.notice("First audio \(Date().timeIntervalSince(started), format: .fixed(precision: 2), privacy: .public)s after the engine started")
+        }
 
         return stream
     }
@@ -260,6 +283,7 @@ enum AudioCaptureError: LocalizedError {
     case invalidFormat
     case microphoneUnavailable
     case engineNotRunning
+    case noAudio
 
     var errorDescription: String? {
         switch self {
@@ -269,6 +293,8 @@ enum AudioCaptureError: LocalizedError {
             "No microphone input. Grant Inscribe microphone access in System Settings → Privacy & Security → Microphone."
         case .engineNotRunning:
             "The audio engine is not running."
+        case .noAudio:
+            "The microphone started but sent no audio for 8 seconds. If it is an iPhone, check that it is nearby and unlocked, then try again."
         }
     }
 }

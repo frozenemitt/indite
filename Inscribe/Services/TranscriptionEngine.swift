@@ -280,7 +280,12 @@ final class TranscriptionEngine {
         let helper = AudioCaptureHelper()
         let audioStream: AsyncStream<AudioData>
         do {
-            audioStream = try await helper.start(preferredDeviceUID: inputDeviceUID)
+            // A meeting counts as started only once audio is arriving; see
+            // `startCapture`. Dictation keeps its start as fast as the device allows.
+            audioStream = try await helper.start(
+                preferredDeviceUID: inputDeviceUID,
+                waitForAudio: owner == .meeting
+            )
         } catch {
             await helper.stop()
             teardownSession()
