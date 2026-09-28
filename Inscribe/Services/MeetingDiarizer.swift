@@ -94,7 +94,19 @@ actor MeetingDiarizer {
             localEmbeddingModel: directory.appendingPathComponent(ModelNames.Diarizer.embeddingFile)
         )
 
-        let manager = DiarizerManager(config: .default)
+        // Speech as short as 0.3 s is kept, so "Yeah" and "Mm hmm" get a voice
+        // rather than being left unattributed. At FluidAudio's 1 s default every
+        // interjection was thrown away, even when the voice was plain. A new speaker
+        // still needs a full second: at 0.3 s for both, a meeting of two people grew
+        // three phantom speakers out of its interjections.
+        //
+        // Measured on a 28-minute meeting of two people against the hand-corrected
+        // transcript: lines with no speaker went from 7 of 65 to 2, none of them
+        // credited to the wrong person, and no new speakers appeared.
+        var config = DiarizerConfig.default
+        config.minSpeechDuration = 0.3
+        let manager = DiarizerManager(config: config)
+        manager.speakerManager.minSpeechDuration = 1.0
         manager.initialize(models: models)
 
         self.manager = manager

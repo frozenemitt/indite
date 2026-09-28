@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// A stretch of speech attributed to one speaker.
 struct AlignedUtterance: Sendable, Equatable {
@@ -56,9 +55,6 @@ enum SpeakerAlignment {
 
         for run in ordered {
             let speaker = speakerId(at: run.midpoint, in: sortedTurns)
-            if speaker == unknownSpeaker {
-                logUnattributed(run, turns: sortedTurns)
-            }
 
             // Extend the previous utterance when the speaker has not changed, so the
             // result reads as speech rather than a list of fragments.
@@ -129,31 +125,6 @@ enum SpeakerAlignment {
             return unknownSpeaker
         }
         return nearest.speakerId
-    }
-
-    /// Measuring why words go unattributed: how far the run sits from the nearest turn
-    /// by its midpoint and by its edges, and from the diarizer's 30-second chunk seams.
-    /// Temporary, until the cause is known.
-    private static func logUnattributed(_ run: TimedTranscriptSegment, turns: [SpeakerTurn]) {
-        let byMidpoint = turns.map { distance(from: run.midpoint, to: $0) }.min() ?? -1
-        let byEdges = turns.map { turn -> TimeInterval in
-            if run.end < turn.start { return turn.start - run.end }
-            if run.start > turn.end { return run.start - turn.end }
-            return 0
-        }.min() ?? -1
-        let seam = min(run.start.truncatingRemainder(dividingBy: 30),
-                       30 - run.end.truncatingRemainder(dividingBy: 30))
-        let before = turns.last { $0.end <= run.start }
-        let after = turns.first { $0.start >= run.end }
-        Log.diarization.notice("""
-            Unattributed run \(run.start, format: .fixed(precision: 2), privacy: .public)–\(run.end, format: .fixed(precision: 2), privacy: .public) \
-            (\(run.text.split(separator: " ").count, privacy: .public) words): \
-            nearest turn \(byMidpoint, format: .fixed(precision: 2), privacy: .public)s by midpoint, \
-            \(byEdges, format: .fixed(precision: 2), privacy: .public)s by edges; \
-            turn before \(before?.speakerId ?? "-", privacy: .public) ends \(before?.end ?? -1, format: .fixed(precision: 2), privacy: .public), \
-            turn after \(after?.speakerId ?? "-", privacy: .public) starts \(after?.start ?? -1, format: .fixed(precision: 2), privacy: .public); \
-            \(seam, format: .fixed(precision: 2), privacy: .public)s from a chunk seam
-            """)
     }
 
     private static func distance(from time: TimeInterval, to turn: SpeakerTurn) -> TimeInterval {
