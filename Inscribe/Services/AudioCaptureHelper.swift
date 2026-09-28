@@ -135,16 +135,22 @@ final class AudioCaptureHelper: @unchecked Sendable {
             object: engine,
             queue: nil
         ) { [weak self] _ in
-            let before = tapCount.withLock { $0 }
-            Self.queue.asyncAfter(deadline: .now() + 0.5) {
-                guard let self, self.audioEngine === engine else { return }
-                let after = tapCount.withLock { $0 }
-                guard after == before else {
-                    Log.audio.notice("Audio configuration changed; \(after - before, privacy: .public) buffers since, carrying on")
-                    return
+            // Counted from when the capture queue is free, not from the change. The
+            // iPhone's microphone takes 2–3 s to start and announces a change during
+            // the start; counted from then, the half second had passed before the
+            // first buffer, and every dictation on the iPhone ended as it began.
+            Self.queue.async {
+                let before = tapCount.withLock { $0 }
+                Self.queue.asyncAfter(deadline: .now() + 0.5) {
+                    guard let self, self.audioEngine === engine else { return }
+                    let after = tapCount.withLock { $0 }
+                    guard after == before else {
+                        Log.audio.notice("Audio configuration changed; \(after - before, privacy: .public) buffers since, carrying on")
+                        return
+                    }
+                    Log.audio.error("Audio configuration changed and the tap went quiet — ending the stream")
+                    self.outputContinuation?.finish()
                 }
-                Log.audio.error("Audio configuration changed and the tap went quiet — ending the stream")
-                self.outputContinuation?.finish()
             }
         }
 
