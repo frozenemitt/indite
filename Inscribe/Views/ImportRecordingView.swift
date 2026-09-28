@@ -64,15 +64,18 @@ struct ImportRecordingView: View {
             }
 
             if let savedMeeting {
-                Label("Saved as \"\(savedMeeting.title)\" — open Meetings to read it.",
+                Label("Saved as \"\(savedMeeting.title)\" in Meetings.",
                       systemImage: "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.green)
             }
 
-            if let savedMeeting, !savedMeeting.rawTranscript.isEmpty {
-                Divider()
-                transcriptPreview(savedMeeting.rawTranscript)
+            if let savedMeeting {
+                let transcript = MeetingExporter.plainText(savedMeeting)
+                if !transcript.isEmpty {
+                    Divider()
+                    transcriptPreview(transcript)
+                }
             }
 
             Spacer()
@@ -122,8 +125,9 @@ struct ImportRecordingView: View {
         .disabled(isRunning)
     }
 
-    /// The meeting's saved text, after TextProcessor, so what is read and copied here is
-    /// what the meeting holds rather than the recognizer's first output.
+    /// The text Meetings' Copy Transcript gives for the same meeting: timestamped speaker
+    /// lines when speakers were separated, and the processed transcript otherwise. Both
+    /// Copy buttons then give the same text for one meeting.
     private func transcriptPreview(_ transcript: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {

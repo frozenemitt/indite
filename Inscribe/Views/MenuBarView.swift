@@ -97,7 +97,7 @@ struct MenuBarView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Hotkey off")
+                    Text("Hotkey not listening")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -113,7 +113,7 @@ struct MenuBarView: View {
         )
         .disabled(coordinator.isDelivering || dictationBlockedReason != nil)
         .help(dictationBlockedReason
-              ?? (hotkeyMonitor.isRunning ? "" : "The hotkey is not listening. See Settings > Hotkey."))
+              ?? (hotkeyMonitor.isRunning ? "" : "The hotkey is not listening. See Settings → Hotkey."))
     }
 
     // MARK: - Prompt Section
@@ -240,7 +240,7 @@ struct MenuBarView: View {
             .buttonStyle(.plain)
             .padding(.vertical, 4)
             .disabled(!meetingButtonEnabled)
-            .help(meetingRecorder.state == .idle ? (microphoneHeldReason ?? "") : "")
+            .help(meetingRecorder.state == .idle ? (meetingRecorder.microphoneHeldReason ?? "") : "")
 
             // Shown only when a pause or resume can act. During "Preparing…" and
             // "Saving…" the row offered a pause that did nothing.
@@ -268,7 +268,7 @@ struct MenuBarView: View {
                 // meeting paused. The meeting's own resume grays the row out too, with no
                 // tooltip, since a second click then does nothing.
                 .disabled(meetingRecorder.isPaused && transcriptionEngine.isBusy)
-                .help(meetingRecorder.isPaused ? (microphoneHeldReason ?? "") : "")
+                .help(meetingRecorder.isPaused ? (meetingRecorder.microphoneHeldReason ?? "") : "")
             }
 
             Button {
@@ -309,20 +309,6 @@ struct MenuBarView: View {
             }
             .buttonStyle(.plain)
             .padding(.vertical, 4)
-        }
-    }
-
-    /// Why a meeting cannot start or resume, when a dictation or a shortcut holds the
-    /// engine.
-    ///
-    /// Asked of the engine's owner, as `dictationBlockedReason` is. Keyed to `isBusy`
-    /// alone, the tooltip blamed a dictation while a shortcut was recording.
-    private var microphoneHeldReason: String? {
-        guard transcriptionEngine.isBusy else { return nil }
-        switch transcriptionEngine.owner {
-        case .dictation: return "Inscribe is dictating. Finish that first."
-        case .shortcut: return "A shortcut is recording."
-        case .meeting, nil: return nil
         }
     }
 

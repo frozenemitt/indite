@@ -167,11 +167,15 @@ final class DictationOverlayController {
     /// The panel used to be 92 points tall whatever it held, so a dictation past a
     /// line and a half showed its last two lines and hid everything before them.
     ///
-    /// It never shrinks here. The text loses a line and gains it back when a
-    /// hypothesis shortens across a line break, and it drops several lines when the
-    /// rewrite's first words replace the dictation. Following either pulled the bottom
-    /// edge up and walked it back down. `show()` puts the panel back to one line for
-    /// the next dictation.
+    /// It never shrinks to follow the text. The text loses a line and gains it back
+    /// when a hypothesis shortens across a line break, and it drops several lines when
+    /// the rewrite's first words replace the dictation. Following either pulled the
+    /// bottom edge up and walked it back down. `show()` puts the panel back to one line
+    /// for the next dictation.
+    ///
+    /// It shrinks only when its screen can no longer hold it. A panel grown tall on one
+    /// screen and dragged onto a shorter one mid-dictation kept its height and hung off
+    /// the bottom edge. It is now cut to the tallest panel the new screen can hold.
     ///
     /// It runs when the text reports a new height, not when new text is set. The text
     /// is laid out on a later pass, so a height read straight after setting it belonged
@@ -189,19 +193,24 @@ final class DictationOverlayController {
         // stopped working once the glass view was in it: the glass pins its content to
         // its own bounds, which come from the panel, so every view was being told its
         // height by the one thing that wanted to be told. The panel stopped growing.
-        let height = max(
-            min(model.textHeight, ceiling) + Self.bandHeight + Self.contentSpacing + Self.verticalPadding,
-            Self.minimumHeight
-        )
-        guard height > panel.frame.height + 0.5 else { return }
+        let chrome = Self.bandHeight + Self.contentSpacing + Self.verticalPadding
+        let fitted = max(min(model.textHeight, ceiling) + chrome, Self.minimumHeight)
+        let tallest = max(ceiling + chrome, Self.minimumHeight)
+        // Grows to the text, and keeps any height the text gives back, up to the
+        // tallest panel this screen can hold.
+        let height = max(fitted, min(panel.frame.height, tallest))
+        guard abs(height - panel.frame.height) > 0.5 else { return }
 
         // The top edge stays where it is and the bottom edge moves, so each new line
-        // lands below the last, the way a page fills. An NSWindow's origin is its
-        // bottom-left corner, so holding the top means moving the origin.
+        // lands below the last, the way a page fills. The view pins its contents to the
+        // top, so a panel held taller than its text keeps the spare room below the
+        // words. An NSWindow's origin is its bottom-left corner, so holding the top
+        // means moving the origin.
         //
         // Once the bottom reaches the bottom of the screen, the panel grows upward
-        // instead. `show()` puts the panel back where the user left it, so the next
-        // dictation starts from the same place.
+        // instead, and a panel cut down to a shorter screen is lifted onto it. `show()`
+        // puts the panel back where the user left it, so the next dictation starts from
+        // the same place.
         var frame = panel.frame
         let top = frame.maxY
         frame.size.height = height
@@ -484,14 +493,19 @@ private struct DictationOverlayView: View {
                 .foregroundStyle(isDimmed ? .secondary : .primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // Measured at its full height, above the cap. The capped frame fills
-                // whatever height the panel offers it, so measured below the cap the
-                // text reported the panel's own height back instead of its own.
+                // Measured at its full height, above the cap. The capped frame once
+                // filled whatever height the panel offered it, so measured below the
+                // cap the text reported the panel's own height back instead of its own.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                     model.textHeight = height
                     model.resizePanel()
                 }
                 .frame(maxHeight: model.maxTextHeight, alignment: .bottom)
+                // As tall as the text up to the cap, and no taller. The panel does not
+                // shrink mid-dictation, and a frame filling a panel held tall drew
+                // short text along its bottom under a blank gap, so each new line
+                // pushed the earlier ones up.
+                .fixedSize(horizontal: false, vertical: true)
                 .clipped()
         }
         // The contents carry their own setting; the rim below belongs to the pane and
@@ -500,7 +514,14 @@ private struct DictationOverlayView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, DictationOverlayController.verticalPadding / 2)
         .frame(width: DictationOverlayController.width)
-        .frame(minHeight: DictationOverlayController.minimumHeight)
+        // Fills the panel, with the contents at its top: the room the text does not
+        // need lies below the words, not between them and the band. Filling it also
+        // keeps the rim below on the panel's edge, where the glass ends.
+        .frame(
+            minHeight: DictationOverlayController.minimumHeight,
+            maxHeight: .infinity,
+            alignment: .top
+        )
         // No background here. The glass is an NSGlassEffectView behind this view.
         //
         // The rim is drawn rather than sampled: a light edge, brightest where a light

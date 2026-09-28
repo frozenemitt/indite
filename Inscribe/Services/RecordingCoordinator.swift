@@ -101,18 +101,18 @@ final class RecordingCoordinator {
         engine.owner == .dictation && (engine.phase == .starting || engine.phase == .recording)
     }
 
-    /// True, while the history is on, from the moment a dictation starts recording
-    /// until its words are in the history, or it turns out to have none.
+    /// True from the moment a dictation starts recording until it has stopped and its
+    /// words, if any, are in the history.
     ///
     /// A start still coming up holds no words, because the user waits for the start
     /// sound before speaking, so a quit does not wait on it. A start that is waiting
-    /// on the previous dictation's stop is still covered by `stopTask`. With the
-    /// history off there is nowhere to keep the words, so a quit does not wait either.
+    /// on the previous dictation's stop is still covered by `stopTask`.
     ///
     /// The history is written only once the engine has let go, so a quit anywhere in
-    /// this span would otherwise lose every word spoken.
+    /// this span would otherwise lose every word spoken. With the history off the
+    /// quit still waits, so the engine stops and finishes the dictation's audio log.
     var hasUnsavedDictation: Bool {
-        settings.keepDictationHistory && (stopTask != nil || isRecording)
+        stopTask != nil || isRecording
     }
 
     /// The most recent app other than Inscribe to come to the front.
@@ -621,7 +621,8 @@ final class RecordingCoordinator {
         Log.dictation.notice("Recording cancelled\(quietly ? " — Globe was used as a modifier" : "", privacy: .public)")
     }
 
-    /// Stop the dictation under way and keep its words in the history, for a quit.
+    /// Stop the dictation under way for a quit, and keep its words in the history
+    /// when the history is on.
     ///
     /// Nothing is pasted: during a logout or restart the app in front is not one the
     /// words were meant for. A stop already in flight writes its own entry inside the
@@ -649,7 +650,7 @@ final class RecordingCoordinator {
         if recordHistory(TextProcessor.process(raw, replacements: settings.wordReplacements)) != nil {
             Log.dictation.notice("Kept the dictation in the history on quit")
         } else {
-            Log.dictation.notice("Stopped the dictation on quit; it had no words to keep")
+            Log.dictation.notice("Stopped the dictation on quit; it had nothing to keep")
         }
     }
 

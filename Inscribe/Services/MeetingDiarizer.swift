@@ -143,19 +143,24 @@ actor MeetingDiarizer {
 
     /// Separate the speakers over everything recorded, and delete the recording.
     ///
-    /// Throws when separation fails, so the meeting can say why it has no speakers
-    /// rather than look as if separation never ran.
+    /// Throws when separation fails or no audio reached it, so the meeting can say why
+    /// it has no speakers rather than look as if separation never ran.
     func finish() async throws -> [SpeakerTurn] {
         guard let pipeline, recording != nil else { return [] }
         recording = nil  // Closes the file.
         defer { try? FileManager.default.removeItem(at: Self.recordingURL) }
+
+        // An empty file means the audio never arrived, not that nobody spoke.
+        // FluidAudio reports both as "no speech", so the difference is told here.
+        guard receivedSeconds > 0 else { throw SeparationError.noAudio }
 
         let started = Date()
         let result: DiarizationResult
         do {
             result = try await pipeline.manager.process(Self.recordingURL)
         } catch OfflineDiarizationError.noSpeechDetected {
-            // No speech means no turns, which is a result rather than a failure.
+            // Audio arrived and none of it was speech: no turns is a result, not a failure.
+            Log.diarization.notice("Found no speech in \(Int(self.receivedSeconds), privacy: .public)s")
             return []
         }
         let turns = Self.turns(from: result)
@@ -170,6 +175,8 @@ actor MeetingDiarizer {
     /// Diarize a complete recording in one pass, for imported files.
     func diarizeWholeRecording(_ samples: [Float]) async throws -> [SpeakerTurn] {
         guard let pipeline else { return [] }
+        // Empty when the file held nothing that could be read, which is not silence.
+        guard !samples.isEmpty else { throw SeparationError.noAudio }
         do {
             return Self.turns(from: try await pipeline.manager.process(audio: samples))
         } catch OfflineDiarizationError.noSpeechDetected {
@@ -194,6 +201,11 @@ actor MeetingDiarizer {
     private final class Pipeline: @unchecked Sendable {
         let manager: OfflineDiarizerManager
         init(manager: OfflineDiarizerManager) { self.manager = manager }
+    }
+
+    enum SeparationError: LocalizedError {
+        case noAudio
+        var errorDescription: String? { "It received no audio." }
     }
 
     private static func turns(from result: DiarizationResult) -> [SpeakerTurn] {

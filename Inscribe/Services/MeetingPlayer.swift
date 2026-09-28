@@ -47,8 +47,8 @@ final class MeetingPlayer {
     /// Load a meeting's recording, doing nothing if it is already loaded.
     ///
     /// The file opens off the main thread, so a long recording does not stall the
-    /// window. A load whose task was cancelled, because another meeting was selected,
-    /// publishes nothing.
+    /// window. A load whose task was cancelled, because the page went away, installs
+    /// no player and reports no error.
     @discardableResult
     func load(fileName: String?) async -> Bool {
         guard let fileName, MeetingAudioStore.fileExists(named: fileName) else {
@@ -82,7 +82,9 @@ final class MeetingPlayer {
     /// Open a recording on the concurrent pool rather than the caller's actor.
     @concurrent
     nonisolated static func open(_ url: URL) async throws -> sending AVAudioPlayer {
-        try AVAudioPlayer(contentsOf: url)
+        let player = try AVAudioPlayer(contentsOf: url)
+        player.prepareToPlay()
+        return player
     }
 
     func unload() {

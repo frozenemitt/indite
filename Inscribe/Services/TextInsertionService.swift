@@ -140,12 +140,13 @@ enum TextInsertionService {
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)
     }
 
-    /// Deliver `text` to the frontmost app, or to the clipboard if no field is focused.
+    /// Deliver `text` into the focused field of `targetApp`, or to the clipboard when that is not possible.
     ///
     /// - Parameters:
     ///   - text: The transcribed text.
     ///   - targetApp: The app the text is for: the one in front when the text is
-    ///     ready, or the one before Inscribe when Inscribe is in front.
+    ///     ready, or the one before Inscribe when Inscribe is in front. Nil when no
+    ///     app outside Inscribe is known; the text then goes to the clipboard only.
     ///   - restoreClipboard: Put the previous clipboard contents back after pasting.
     ///   - autoSubmit: Press a Return key after inserting.
     ///   - submitUsesShift: Send Shift+Return instead of Return, so chat apps add a
@@ -154,7 +155,7 @@ enum TextInsertionService {
     @discardableResult
     static func deliver(
         _ text: String,
-        targetApp: NSRunningApplication? = nil,
+        targetApp: NSRunningApplication?,
         restoreClipboard: Bool = true,
         autoSubmit: Bool = false,
         submitUsesShift: Bool = false,
@@ -204,23 +205,12 @@ enum TextInsertionService {
         // The field was found by asking the target app, but ⌘V goes to whatever app is
         // in front. macOS can refuse the activation above, and the text then landed in
         // the app the user had moved on to — a Mail draft instead of a Slack reply.
-        // Inscribe itself in front is refused whatever the target: its focused field is
-        // its own, such as the History search box.
-        let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let inscribeInFront = frontPID == ProcessInfo.processInfo.processIdentifier
-        if inscribeInFront || frontPID != targetApp.processIdentifier {
-            if inscribeInFront {
-                log.error("""
-                    Inscribe is in front — leaving the transcript on the clipboard instead \
-                    of pasting into its own window
-                    """)
-            } else {
-                log.error("""
-                    \(targetApp.localizedName ?? "The target app", privacy: .public) is not in front \
-                    — leaving the transcript on the clipboard instead of pasting into \
-                    \(appName, privacy: .public)
-                    """)
-            }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != targetApp.processIdentifier {
+            log.error("""
+                \(targetApp.localizedName ?? "The target app", privacy: .public) is not in front \
+                — leaving the transcript on the clipboard instead of pasting into \
+                \(appName, privacy: .public)
+                """)
             ClipboardService.copy(text)
             return .copiedToClipboard
         }

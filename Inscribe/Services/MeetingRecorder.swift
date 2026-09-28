@@ -53,6 +53,10 @@ final class MeetingRecorder {
     private(set) var activeMeeting: Meeting?
     private(set) var lastError: String?
 
+    /// Shown when a microphone change pauses the meeting. Cleared once it no longer
+    /// applies, by a resume that starts capture or by the meeting ending.
+    private static let microphoneChangedMessage = "The microphone changed, so the meeting paused. Press Resume to carry on with the current microphone."
+
     /// Whether diarization is running. False means the meeting is still transcribed,
     /// just without speaker labels.
     private(set) var diarizationActive = false
@@ -194,7 +198,7 @@ final class MeetingRecorder {
                 Log.meetings.error("Microphone changed mid-meeting — pausing")
                 Task {
                     await self.pause()
-                    self.lastError = "The microphone changed, so the meeting paused. Press Resume to carry on with the current microphone."
+                    self.lastError = Self.microphoneChangedMessage
                 }
             }
         }
@@ -218,8 +222,8 @@ final class MeetingRecorder {
     /// A meeting that saved no words and no recorded time is deleted rather than
     /// closed. It crashed while preparing or before its first checkpoint, and closed it
     /// sat in the list as an empty 0:00 meeting for ever. A meeting that recorded time
-    /// but heard no words is closed like any other, so its length shows that the
-    /// capture failed.
+    /// but saved no words is closed like any other. Its length is a true record of how
+    /// long it ran, whether the room was silent or the capture failed.
     ///
     /// The end is placed where the last checkpoint's audio ran out, the last moment
     /// known to have been captured. The transcript is whatever that checkpoint saved.
@@ -270,6 +274,17 @@ final class MeetingRecorder {
             by a crash or force quit, deleted \(deleted, privacy: .public) that had \
             saved nothing
             """)
+    }
+
+    /// Why the microphone is unavailable to a meeting, named by whoever holds it. Nil
+    /// while the engine is idle, and while the meeting itself holds it.
+    var microphoneHeldReason: String? {
+        guard engine.isBusy else { return nil }
+        switch engine.owner {
+        case .dictation: return "Inscribe is dictating. Finish that first."
+        case .shortcut: return "A shortcut is recording."
+        case .meeting, nil: return nil
+        }
     }
 
     #if os(macOS)
@@ -324,6 +339,7 @@ final class MeetingRecorder {
                         isPaused: self.isPaused,
                         canPauseOrResume: self.state == .recording
                             || (self.state == .paused && !self.engine.isBusy),
+                        microphoneHeldReason: self.isPaused ? self.microphoneHeldReason : nil,
                         error: self.lastError
                     )
                 } else if showing {
@@ -662,6 +678,12 @@ final class MeetingRecorder {
 
         let task = Task {
             await self.performResume()
+            // A resume that failed has already replaced the microphone-change prompt
+            // with its own error. One that succeeded leaves the prompt asking for a
+            // Resume that has already happened.
+            if self.lastError == Self.microphoneChangedMessage {
+                self.lastError = nil
+            }
             self.transitionTask = nil
         }
         transitionTask = task
@@ -797,6 +819,12 @@ final class MeetingRecorder {
         // unpaused meeting's two lengths disagreed as though it had been paused.
         let stoppedAt = Date()
 
+        // A meeting stopped while a microphone change had it paused has nothing left to
+        // resume, and the prompt to press Resume would stay on the finished meeting.
+        if lastError == Self.microphoneChangedMessage {
+            lastError = nil
+        }
+
         if wasRecording {
             AudioFeedbackService.shared.playIfEnabled(.recordingStopped, settings: settings)
 
@@ -820,10 +848,7 @@ final class MeetingRecorder {
             do {
                 turns = try await diarizer.finish()
             } catch {
-                // An earlier problem, such as the recognizer's, stays the one shown.
-                if lastError == nil {
-                    lastError = "Speaker separation failed: \(error.localizedDescription)"
-                }
+                lastError = "Speaker separation failed: \(error.localizedDescription)"
                 Log.meetings.error("Speaker separation failed: \(error, privacy: .public)")
             }
         }

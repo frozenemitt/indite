@@ -59,10 +59,10 @@ enum AudioDeviceCatalog {
 
     /// Yields whenever a device is added or removed, or the default input changes.
     ///
-    /// The listener is a C function with a context pointer, not a block. Swift wraps
-    /// a closure in a new block at every call, so the block API never receives the
-    /// block it registered, removes nothing, and still reports success. The same
-    /// function and context in both calls let the HAL match the removal.
+    /// The listener is a C function with a context pointer, not a block. On this system
+    /// the block API does not remove a listener: a removed block keeps firing, even when
+    /// the same block constant goes to both calls. The removal still returns noErr. The
+    /// same function and context in both calls let the HAL match the removal.
     static func changes() -> AsyncStream<Void> {
         AsyncStream { continuation in
             let sink = ChangeSink(continuation)

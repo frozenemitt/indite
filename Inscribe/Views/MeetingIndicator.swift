@@ -58,11 +58,13 @@ final class MeetingIndicatorController {
         seconds: TimeInterval,
         isPaused: Bool,
         canPauseOrResume: Bool,
+        microphoneHeldReason: String?,
         error: String?
     ) {
         model.spectrum = spectrum
         model.isPaused = isPaused
         model.canPauseOrResume = canPauseOrResume
+        model.microphoneHeldReason = microphoneHeldReason
         model.seconds = seconds
         model.error = error
         model.contentOpacity = settings.overlayContentOpacity
@@ -196,11 +198,11 @@ final class MeetingIndicatorController {
     /// Where the user left it, or the top right — out of the way of the thing the
     /// meeting is actually about.
     ///
-    /// A saved spot that lies wholly on a screen comes back exactly, even beside the
-    /// Dock or under the menu bar, because the user put it there. A spot that crosses
-    /// the edge of the screen it mostly lies on, left by a drag or by displays being
-    /// rearranged, is pulled into that screen's usable area. Any overlap used to be
-    /// enough, so such a spot opened the panel mostly off screen.
+    /// A saved spot is pulled inside the usable area of the screen it mostly lies on.
+    /// Any overlap used to be enough, so a spot left straddling an edge, by a drag or
+    /// by displays being rearranged, opened the panel mostly off screen. The menu bar
+    /// and the Dock sit above a floating panel, and a spot saved where they were hidden
+    /// during a full-screen call would otherwise reopen with its controls under them.
     private func position(_ panel: NSPanel?) {
         guard let panel else { return }
 
@@ -212,15 +214,11 @@ final class MeetingIndicatorController {
             }
             if let screen = NSScreen.screens.max(by: { overlap($0) < overlap($1) }),
                overlap(screen) > 0 {
-                if screen.frame.contains(saved) {
-                    panel.setFrameOrigin(saved.origin)
-                } else {
-                    let visible = screen.visibleFrame
-                    panel.setFrameOrigin(NSPoint(
-                        x: min(max(x, visible.minX), visible.maxX - Self.width),
-                        y: min(max(y, visible.minY), visible.maxY - Self.height)
-                    ))
-                }
+                let visible = screen.visibleFrame
+                panel.setFrameOrigin(NSPoint(
+                    x: min(max(x, visible.minX), visible.maxX - Self.width),
+                    y: min(max(y, visible.minY), visible.maxY - Self.height)
+                ))
                 return
             }
         }
@@ -241,9 +239,12 @@ final class MeetingIndicatorController {
 final class MeetingIndicatorModel {
     var spectrum: [Double] = []
     var isPaused = false
-    /// False while a pause or resume could not act: a dictation taken during the pause
-    /// holds the microphone, and a resume then fails.
+    /// False while a pause or resume could not act: a dictation or a shortcut recorded
+    /// during the pause holds the microphone, and a resume then fails.
     var canPauseOrResume = true
+    /// Who holds the microphone while Resume is unavailable, when that is a dictation
+    /// or a shortcut. Nil during the meeting's own resume, so the button keeps its name.
+    var microphoneHeldReason: String?
     var seconds: TimeInterval = 0
     var contentOpacity: Double = 1.0
 
@@ -301,9 +302,7 @@ private struct MeetingIndicatorView: View {
                         .contentShape(Rectangle())
                 }
                 .disabled(!model.canPauseOrResume)
-                .help(model.canPauseOrResume
-                      ? (model.isPaused ? "Resume" : "Pause")
-                      : "Inscribe is dictating. Finish that first.")
+                .help(model.microphoneHeldReason ?? (model.isPaused ? "Resume" : "Pause"))
 
                 Button(action: model.stop) {
                     Label("Stop", systemImage: "stop.fill")
