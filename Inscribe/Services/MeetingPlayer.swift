@@ -157,8 +157,8 @@ final class MeetingPlayer {
         stopTicking()
 
         // Four times a second: enough for the highlight to track speech, cheap enough
-        // to leave running while a long meeting plays. Only the playback bar reads the
-        // time; the transcript hears about a tick only when the utterance changes.
+        // to leave running while a long meeting plays. The transcript hears about a
+        // tick only when the utterance changes.
         ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }

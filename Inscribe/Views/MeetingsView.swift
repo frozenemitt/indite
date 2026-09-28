@@ -430,19 +430,20 @@ private struct MeetingDetailView: View {
                         .foregroundStyle(.orange)
                 }
 
+                // A recording that will not open used to leave lines that did nothing
+                // when clicked, with the reason only in the log.
+                if let error = player.lastError {
+                    Label("The recording could not be opened: \(error)", systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+
                 transcript
             }
             .padding(.horizontal, 32)
             .padding(.vertical, 24)
             .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity)
-        }
-        // The player sits under the transcript, as it does in Voice Memos, rather
-        // than in the page, where it scrolled away with the first screenful.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if meeting.hasAudio {
-                PlaybackBar(meeting: meeting, player: player)
-            }
         }
     }
 
@@ -490,30 +491,37 @@ private struct MeetingDetailView: View {
                             speakerMenu(for: utterance)
 
                             // Hearing the moment is the only way to know whether an
-                            // attribution is right, so the timestamp plays it.
+                            // attribution is right, so the line plays it.
                             if hasAudio {
                                 Button {
-                                    player.load(fileName: meeting.audioFileName)
-                                    player.follow(meeting.orderedUtterances)
-                                    player.play(from: utterance)
+                                    togglePlayback(of: utterance)
                                 } label: {
-                                    Label(utterance.timestampLabel, systemImage: "play.fill")
+                                    Label(utterance.timestampLabel,
+                                          systemImage: utterance.persistentModelID == playingID ? "pause.fill" : "play.fill")
                                         .labelStyle(.titleAndIcon)
                                         .font(.caption.monospacedDigit())
                                 }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.secondary)
-                                .help("Play from here")
+                                .help(utterance.persistentModelID == playingID ? "Pause" : "Play from here")
                             } else {
                                 Text(utterance.timestampLabel)
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        // Clicked rather than selectable: selection took the click, so
+                        // the words could not play themselves. Export ▸ Copy Transcript
+                        // still copies the text.
                         Text(utterance.text)
                             .font(.body)
                             .lineSpacing(3)
-                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if hasAudio { togglePlayback(of: utterance) }
+                            }
+                            .pointerStyle(hasAudio ? .link : nil)
                     }
                     .padding(.vertical, 6)
                     .padding(.horizontal, 10)
@@ -533,6 +541,25 @@ private struct MeetingDetailView: View {
             Text(meeting.rawTranscript)
                 .lineSpacing(3)
                 .textSelection(.enabled)
+        }
+    }
+
+    /// Play from a line, or pause it if it is the line playing.
+    ///
+    /// A line paused part way resumes where it stopped rather than from its start, so
+    /// clicking the same words twice more carries on listening.
+    private func togglePlayback(of utterance: Utterance) {
+        if player.isPlaying, player.playingUtteranceID == utterance.persistentModelID {
+            player.pause()
+            return
+        }
+        player.load(fileName: meeting.audioFileName)
+        player.follow(meeting.orderedUtterances)
+        if !player.isPlaying,
+           player.currentTime > utterance.start, player.currentTime < utterance.end {
+            player.play()
+        } else {
+            player.play(from: utterance)
         }
     }
 
@@ -922,69 +949,6 @@ private struct LiveMeetingView: View {
     }
 }
 
-// MARK: - Playback Bar
-
-/// Play, pause and scrub a meeting's recording, pinned under the transcript.
-///
-/// A view of its own because it reads the playback time, which changes four times a
-/// second. Read in the detail view's body, that time redrew the whole transcript
-/// with it.
-private struct PlaybackBar: View {
-    let meeting: Meeting
-    let player: MeetingPlayer
-
-    var body: some View {
-        VStack(spacing: 6) {
-            // A recording that will not open used to leave a bar whose button did
-            // nothing, with the reason only in the log.
-            if let error = player.lastError {
-                Label("The recording could not be opened: \(error)", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-
-            HStack(spacing: 12) {
-                Button {
-                    player.load(fileName: meeting.audioFileName)
-                    player.follow(meeting.orderedUtterances)
-                    player.togglePlayPause()
-                } label: {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title3)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(player.isPlaying ? "Pause" : "Play")
-
-                Text(MeetingPlayer.timeLabel(player.currentTime))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 40, alignment: .trailing)
-
-                Slider(
-                    value: Binding(
-                        get: { player.currentTime },
-                        set: { player.seek(to: $0) }
-                    ),
-                    in: 0...max(player.duration, 1)
-                )
-                .controlSize(.small)
-
-                Text(MeetingPlayer.timeLabel(player.duration))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 40, alignment: .leading)
-                    .help(MeetingAudioStore.formatted(bytes: MeetingAudioStore.size(ofFileNamed: meeting.audioFileName)))
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
-        .onAppear { player.load(fileName: meeting.audioFileName) }
-    }
-}
 #endif
 
 // MARK: - Split Sheet
