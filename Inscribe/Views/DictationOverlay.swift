@@ -68,9 +68,8 @@ final class DictationOverlayController {
         }
         watchForStranding()
 
-        // Back to one line's worth, so each dictation grows from the same place. The
-        // bottom edge stays put, as it does while growing; shrinking from the top
-        // raised the panel after every long dictation.
+        // Back to one line's worth, so each dictation grows from the same place.
+        // `position` below puts it back where the user left it.
         if let panel, panel.frame.height != Self.minimumHeight {
             var frame = panel.frame
             frame.size.height = Self.minimumHeight
@@ -160,7 +159,7 @@ final class DictationOverlayController {
         position(panel)
     }
 
-    /// Match the panel's height to the text, growing upward from a fixed bottom edge.
+    /// Match the panel's height to the text, growing downward from a fixed top edge.
     ///
     /// The panel used to be 92 points tall whatever it held, so a dictation past a
     /// line and a half showed its last two lines and hid everything before them.
@@ -182,18 +181,20 @@ final class DictationOverlayController {
         )
         guard abs(panel.frame.height - height) > 0.5 else { return }
 
-        // An NSWindow's origin is its bottom-left corner, so keeping it fixed while
-        // the height grows opens the panel upward, away from the Dock.
+        // The top edge stays where it is and the panel grows downward, so each new
+        // line lands below the last, the way a page fills. An NSWindow's origin is
+        // its bottom-left corner, so holding the top means moving the origin down.
+        //
+        // Once the bottom reaches the bottom of the screen, the panel grows upward
+        // instead. `show()` puts the panel back where the user left it, so the next
+        // dictation starts from the same place.
         var frame = panel.frame
+        let top = frame.maxY
         frame.size.height = height
-
-        // Once the top reaches the top of the screen, the panel grows downward
-        // instead. A panel dragged near the top used to stop growing there and
-        // scroll after five or so lines. `show()` puts the bottom edge back where
-        // the user left it, so the next dictation starts from the same place.
+        frame.origin.y = top - height
         if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame,
-           frame.maxY > visible.maxY - Self.screenMargin {
-            frame.origin.y = max(visible.maxY - Self.screenMargin - height, visible.minY + Self.screenMargin)
+           frame.minY < visible.minY + Self.screenMargin {
+            frame.origin.y = visible.minY + Self.screenMargin
         }
         panel.setFrame(frame, display: true)
     }
@@ -203,7 +204,7 @@ final class DictationOverlayController {
 
     /// The text room in the tallest panel the screen can hold.
     ///
-    /// The panel grows upward and then downward, so only a dictation taller than
+    /// The panel grows downward and then upward, so only a dictation taller than
     /// the whole screen starts dropping its oldest lines off the top.
     private func availableTextHeight(for panel: NSPanel) -> CGFloat {
         guard let screen = panel.screen ?? NSScreen.main else {
@@ -277,7 +278,10 @@ final class DictationOverlayController {
         container.onDragEnded = { [weak self] in
             guard let self, let panel = self.panel else { return }
             self.settings.overlayOriginX = panel.frame.origin.x
-            self.settings.overlayOriginY = panel.frame.origin.y
+            // Saved as the spot a one-line panel would take with the same top edge,
+            // since the top is what stays put. A panel dragged while grown tall
+            // otherwise came back that much lower.
+            self.settings.overlayOriginY = panel.frame.maxY - Self.minimumHeight
         }
         container.addSubview(glass)
         container.addSubview(hosting)
