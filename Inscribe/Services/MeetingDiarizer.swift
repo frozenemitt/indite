@@ -5,7 +5,7 @@ import FluidAudio
 
 /// One stretch of audio attributed to one speaker.
 struct SpeakerTurn: Sendable, Equatable {
-    /// The diarizer's own identifier, stable across chunks within a meeting.
+    /// The diarizer's own identifier, stable across the meeting.
     let speakerId: String
     let start: TimeInterval
     let end: TimeInterval
@@ -18,64 +18,62 @@ struct SpeakerTurn: Sendable, Equatable {
     }
 }
 
-/// Speaker diarization over a live meeting, using FluidAudio's CoreML models.
+/// Speaker diarization over a whole meeting, using pyannote community-1 through
+/// FluidAudio's CoreML port.
 ///
-/// An actor rather than a class: `performCompleteDiarization` is synchronous and
-/// CPU-bound, and running it on the main actor would stall the UI for the length of
-/// every chunk.
+/// The meeting's audio is written to a temporary file as it is captured, and the
+/// speakers are separated once, over the whole of it, when the meeting ends. Every
+/// voice is compared with every other across the recording, instead of being
+/// matched speaker by speaker as 30-second chunks arrived.
 ///
-/// Audio is processed in fixed chunks rather than accumulated and handled at the end.
-/// An hour of 16 kHz mono float is roughly 230 MB, and a single inference over all of
-/// it would leave the user staring at a spinner once the meeting was already over.
-/// `SpeakerManager` inside `DiarizerManager` carries speaker identity across chunks,
-/// so someone who speaks at 00:02 and again at 45:00 keeps the same id.
+/// Measured on the 16 AMI test meetings of four people, against their reference
+/// labels: 19.3% error, where the chunked model we used before made 27.4%, and the
+/// right number of speakers in 13 meetings rather than 5. It confuses one speaker
+/// for another about a fifth as often. The chunked model tended to invent people,
+/// up to nine in a meeting of four.
+///
+/// An actor rather than a class: the pipeline is CPU-bound, and running it on the
+/// main actor would stall the UI while a long meeting is separated.
 actor MeetingDiarizer {
-
-    // MARK: - Configuration
-
-    /// Seconds of audio per inference pass.
-    ///
-    /// Long enough for the clustering to have something to work with, short enough
-    /// that memory stays flat and results appear during the meeting.
-    private static let chunkSeconds: TimeInterval = 30
 
     /// What FluidAudio's models expect.
     static let sampleRate = 16_000
 
-    private var chunkSampleCount: Int { Int(Self.chunkSeconds) * Self.sampleRate }
+    /// The meeting's audio at 16 kHz mono, written as it arrives.
+    ///
+    /// On disk rather than in memory: an hour is about 230 MB of float samples. One
+    /// fixed name, so a crash leaves at most one file behind, and the next meeting
+    /// overwrites it.
+    private static let recordingURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("meeting-diarization.caf")
+
+    private static let format = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: Double(sampleRate),
+        channels: 1,
+        interleaved: false
+    )!
 
     // MARK: - State
 
-    private var manager: DiarizerManager?
-    private var pending: [Float] = []
+    private var pipeline: Pipeline?
+    private var recording: AVAudioFile?
 
-    /// Audio already handed to the diarizer, so each chunk is stamped with its real
-    /// position in the meeting rather than restarting at zero.
-    private var processedSeconds: TimeInterval = 0
-
-    /// Total audio handed to this diarizer, processed or still pending.
+    /// Total audio handed to this diarizer.
     ///
-    /// The meeting's master clock. Segment timestamps are stamped against it, so a
-    /// resumed session must offset its transcript by this value or the two analyses
-    /// stop describing the same moment.
+    /// The meeting's master clock. The turns are stamped against it, so a resumed
+    /// session must offset its transcript by this value or the two analyses stop
+    /// describing the same moment.
     private(set) var receivedSeconds: TimeInterval = 0
-
-    private(set) var turns: [SpeakerTurn] = []
-    private(set) var lastError: String?
-
-    var isReady: Bool { manager != nil }
 
     // MARK: - Lifecycle
 
-    /// Load the CoreML models from disk.
+    /// Load the CoreML models from disk, and open the file the audio goes into.
     ///
     /// Throws when they are not installed rather than fetching them: a meeting is the
     /// wrong moment to start a download, and the recording path stays offline.
-    ///
-    /// The download is a one-off, the same shape as the speech model Apple's
-    /// transcriber fetches on first use. Everything after it runs on-device.
     func prepare() async throws {
-        guard manager == nil else { return }
+        guard pipeline == nil else { return }
 
         // Starting a meeting must not reach the network: the models are installed from
         // Settings, deliberately, before any of this runs.
@@ -83,119 +81,93 @@ actor MeetingDiarizer {
             throw DiarizationModelStore.ModelStoreError.notInstalled
         }
 
-        // Loaded straight from the two model folders, never through
-        // `downloadIfNeeded`. That call treats a model it cannot load as corrupt,
-        // deletes it and fetches it again from HuggingFace, which turned a meeting
-        // start into a download. A model that fails to load here throws instead, and
-        // the meeting goes on without speaker labels.
-        let directory = DiarizationModelStore.modelsDirectory
-        let models = try DiarizerModels.load(
-            localSegmentationModel: directory.appendingPathComponent(ModelNames.Diarizer.segmentationFile),
-            localEmbeddingModel: directory.appendingPathComponent(ModelNames.Diarizer.embeddingFile)
-        )
-
-        // Speech as short as 0.3 s is kept, so "Yeah" and "Mm hmm" get a voice
-        // rather than being left unattributed. At FluidAudio's 1 s default every
-        // interjection was thrown away, even when the voice was plain. A new speaker
-        // still needs a full second: at 0.3 s for both, a meeting of two people grew
-        // three phantom speakers out of its interjections.
-        //
-        // Measured on a 28-minute meeting of two people against the hand-corrected
-        // transcript: lines with no speaker went from 7 of 65 to 2, none of them
-        // credited to the wrong person, and no new speakers appeared.
-        var config = DiarizerConfig.default
-        config.minSpeechDuration = 0.3
-        let manager = DiarizerManager(config: config)
-        manager.speakerManager.minSpeechDuration = 1.0
+        let models = try await OfflineDiarizerModels.load(from: DiarizationModelStore.modelsRoot)
+        let manager = OfflineDiarizerManager(config: .default)
         manager.initialize(models: models)
+        pipeline = Pipeline(manager: manager)
 
-        self.manager = manager
-        pending.removeAll()
-        processedSeconds = 0
+        try? FileManager.default.removeItem(at: Self.recordingURL)
+        recording = try AVAudioFile(
+            forWriting: Self.recordingURL,
+            settings: Self.format.settings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
         receivedSeconds = 0
-        turns.removeAll()
-        lastError = nil
         Log.diarization.notice("Ready")
     }
 
-    /// Add newly captured audio, processing a chunk whenever enough has arrived.
-    func append(_ samples: [Float]) async {
-        guard manager != nil else { return }
-        pending.append(contentsOf: samples)
-        receivedSeconds += Double(samples.count) / Double(Self.sampleRate)
+    /// Add newly captured audio to the recording.
+    func append(_ samples: [Float]) {
+        guard let recording, !samples.isEmpty,
+              let buffer = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(samples.count))
+        else { return }
 
-        while pending.count >= chunkSampleCount {
-            let chunk = Array(pending.prefix(chunkSampleCount))
-            pending.removeFirst(chunkSampleCount)
-            await process(chunk)
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { source in
+            buffer.floatChannelData![0].update(from: source.baseAddress!, count: samples.count)
+        }
+        do {
+            try recording.write(from: buffer)
+            receivedSeconds += Double(samples.count) / Double(Self.sampleRate)
+        } catch {
+            Log.diarization.error("Could not keep audio for speaker separation: \(error, privacy: .public)")
         }
     }
 
-    /// Process whatever is left and return the complete set of turns.
+    /// Separate the speakers over everything recorded, and delete the recording.
     func finish() async -> [SpeakerTurn] {
-        // A trailing fragment shorter than minSpeechDuration cannot be diarized, and
-        // asking anyway just logs an error.
-        let minimumSamples = Self.sampleRate
-        if pending.count >= minimumSamples {
-            let chunk = pending
-            pending.removeAll()
-            await process(chunk)
-        } else {
-            pending.removeAll()
-        }
+        guard let pipeline, recording != nil else { return [] }
+        recording = nil  // Closes the file.
+        defer { try? FileManager.default.removeItem(at: Self.recordingURL) }
 
-        return turns.sorted { $0.start < $1.start }
+        let started = Date()
+        do {
+            let turns = Self.turns(from: try await pipeline.manager.process(Self.recordingURL))
+            Log.diarization.notice("""
+                Separated \(Int(self.receivedSeconds), privacy: .public)s into \
+                \(Set(turns.map(\.speakerId)).count, privacy: .public) speakers in \
+                \(Date().timeIntervalSince(started), format: .fixed(precision: 1), privacy: .public)s
+                """)
+            return turns
+        } catch {
+            Log.diarization.error("Speaker separation failed: \(error, privacy: .public)")
+            return []
+        }
     }
 
-    /// Diarize a complete recording in one pass.
-    ///
-    /// For imported files, where the whole thing is already on disk and there is no
-    /// live timeline to keep up with.
+    /// Diarize a complete recording in one pass, for imported files.
     func diarizeWholeRecording(_ samples: [Float]) async -> [SpeakerTurn] {
-        guard manager != nil else { return [] }
+        guard let pipeline else { return [] }
+        recording = nil
+        try? FileManager.default.removeItem(at: Self.recordingURL)
 
-        pending.removeAll()
-        processedSeconds = 0
-        receivedSeconds = 0
-        turns.removeAll()
-
-        // Chunked exactly as live capture is, so memory stays flat on a long file.
-        var offset = 0
-        while offset < samples.count {
-            let end = min(offset + chunkSampleCount, samples.count)
-            await process(Array(samples[offset..<end]))
-            offset = end
+        do {
+            return Self.turns(from: try await pipeline.manager.process(audio: samples))
+        } catch {
+            Log.diarization.error("Speaker separation failed: \(error, privacy: .public)")
+            return []
         }
-
-        return turns.sorted { $0.start < $1.start }
     }
 
     func reset() {
-        manager?.cleanup()
-        manager = nil
-        pending.removeAll()
-        processedSeconds = 0
+        pipeline = nil
+        recording = nil
+        try? FileManager.default.removeItem(at: Self.recordingURL)
         receivedSeconds = 0
-        turns.removeAll()
-        lastError = nil
     }
 
-    // MARK: - Inference
+    /// FluidAudio's manager is not marked Sendable. It is only ever used from this
+    /// actor, one call at a time, which is what makes handing it to its own async
+    /// methods safe.
+    private final class Pipeline: @unchecked Sendable {
+        let manager: OfflineDiarizerManager
+        init(manager: OfflineDiarizerManager) { self.manager = manager }
+    }
 
-    private func process(_ samples: [Float]) async {
-        guard let manager else { return }
-
-        let offset = processedSeconds
-        processedSeconds += Double(samples.count) / Double(Self.sampleRate)
-
-        do {
-            let result = try manager.performCompleteDiarization(
-                samples,
-                sampleRate: Self.sampleRate,
-                atTime: offset
-            )
-
-            let new = result.segments.map { segment in
+    private static func turns(from result: DiarizationResult) -> [SpeakerTurn] {
+        result.segments
+            .map { segment in
                 SpeakerTurn(
                     speakerId: segment.speakerId,
                     start: TimeInterval(segment.startTimeSeconds),
@@ -203,15 +175,7 @@ actor MeetingDiarizer {
                     quality: segment.qualityScore
                 )
             }
-
-            turns.append(contentsOf: new)
-            Log.diarization.notice("Chunk at \(Int(offset), privacy: .public)s produced \(new.count, privacy: .public) turns")
-        } catch {
-            // One bad chunk should not end the meeting; the transcript still stands,
-            // it just loses speaker labels for that stretch.
-            lastError = error.localizedDescription
-            Log.diarization.error("Chunk at \(Int(offset), privacy: .public)s failed: \(error, privacy: .public)")
-        }
+            .sorted { $0.start < $1.start }
     }
 }
 

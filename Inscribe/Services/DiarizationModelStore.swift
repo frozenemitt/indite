@@ -63,7 +63,15 @@ enum DiarizationModelStore {
     private static let folderName = "speaker-diarization"
 
     /// Files that must be present for the models to be usable.
-    private static let requiredFiles = ["pyannote_segmentation.mlmodelc", "wespeaker_v2.mlmodelc"]
+    private static let requiredFiles = [
+        ModelNames.OfflineDiarizer.segmentationFile,
+        ModelNames.OfflineDiarizer.fbankFile,
+        ModelNames.OfflineDiarizer.embeddingFile,
+        ModelNames.OfflineDiarizer.pldaRhoFile,
+    ]
+
+    /// The chunked model's files, which nothing loads since the switch to community-1.
+    private static let retiredFiles = ["pyannote_segmentation.mlmodelc", "wespeaker_v2.mlmodelc"]
 
     private static let installedRevisionKey = "diarizationModelRevision"
 
@@ -151,7 +159,10 @@ enum DiarizationModelStore {
         ModelHub.offlineMode = false
         defer { ModelHub.offlineMode = true }
 
-        _ = try await DiarizerModels.downloadIfNeeded()
+        _ = try await OfflineDiarizerModels.load(from: modelsRoot)
+        for name in retiredFiles {
+            try? FileManager.default.removeItem(at: modelsDirectory.appendingPathComponent(name))
+        }
 
         // FluidAudio keeps no record of which revision it took, so "check for updates"
         // would have nothing to compare against.

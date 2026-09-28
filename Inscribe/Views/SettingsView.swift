@@ -2005,7 +2005,7 @@ struct DiarizationModelsSection: View {
                 }
             }
         } else {
-            Label("Not installed. Meetings record and transcribe without them; installing adds speaker labels, and downloads about 13 MB from HuggingFace.",
+            Label("Not installed. Meetings record and transcribe without them; installing adds speaker labels, and downloads about 21 MB from HuggingFace.",
                   systemImage: "arrow.down.circle")
                 .font(.caption)
                 .foregroundStyle(.secondary)
