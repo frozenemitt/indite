@@ -358,13 +358,27 @@ private extension Meeting {
     /// rather than from the speaker's place in the list. By place, merging Speaker 2
     /// away moved Speaker 3 up one and recolored every line of theirs. A label with no
     /// number, "Unattributed", is gray.
+    ///
+    /// Numbers eight apart share a color, so after merges Speaker 1 and Speaker 9 could
+    /// be the only two left, both blue. Speakers therefore take their colors in label
+    /// order, and a speaker whose color an earlier one holds takes the next free color.
+    /// That moves a color only in a meeting whose speakers were numbered past eight.
+    /// Once all eight colors are held, a speaker takes its own color again.
     func color(forSpeakerId id: String) -> Color {
         let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
-        guard let label = speakers.first(where: { $0.speakerId == id })?.generatedLabel,
-              let number = label.split(separator: " ").last.flatMap({ Int($0) }),
-              number >= 1
-        else { return .secondary }
-        return palette[(number - 1) % palette.count]
+        var taken = Set<Int>()
+        for speaker in sortedSpeakers {
+            guard let number = speaker.generatedLabel.split(separator: " ").last.flatMap({ Int($0) }),
+                  number >= 1
+            else { continue }
+            let preferred = (number - 1) % palette.count
+            let slot = (0..<palette.count)
+                .map { (preferred + $0) % palette.count }
+                .first(where: { !taken.contains($0) }) ?? preferred
+            if speaker.speakerId == id { return palette[slot] }
+            taken.insert(slot)
+        }
+        return .secondary
     }
 }
 

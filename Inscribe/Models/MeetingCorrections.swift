@@ -41,12 +41,13 @@ extension Meeting {
         return speaker
     }
 
-    /// The next free "Speaker N", skipping numbers already taken.
+    /// One past the highest "Speaker N", so an added speaker sorts after every
+    /// existing one and takes only a color nobody holds.
     private func nextGeneratedLabel() -> String {
-        let taken = Set(speakers.map(\.generatedLabel))
-        var number = 1
-        while taken.contains("Speaker \(number)") { number += 1 }
-        return "Speaker \(number)"
+        let highest = speakers
+            .compactMap { $0.generatedLabel.split(separator: " ").last.flatMap { Int($0) } }
+            .max() ?? 0
+        return "Speaker \(highest + 1)"
     }
 
     // MARK: - Merge

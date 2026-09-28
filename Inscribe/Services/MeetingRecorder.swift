@@ -222,8 +222,9 @@ final class MeetingRecorder {
     /// A meeting that saved no words and no recorded time is deleted rather than
     /// closed. It crashed while preparing or before its first checkpoint, and closed it
     /// sat in the list as an empty 0:00 meeting for ever. A meeting that recorded time
-    /// but saved no words is closed like any other. Its length is a true record of how
-    /// long it ran, whether the room was silent or the capture failed.
+    /// but saved no words is closed like any other. Its length is the audio recorded up
+    /// to the last checkpoint or pause, not counting pauses, whether the room was
+    /// silent or the capture failed.
     ///
     /// The end is placed where the last checkpoint's audio ran out, the last moment
     /// known to have been captured. The transcript is whatever that checkpoint saved.
@@ -842,21 +843,27 @@ final class MeetingRecorder {
             engine.collectTimedSegments = false
         }
 
+        // Read before finish(), which clears it, and before speaker separation, whose
+        // failure it would otherwise replace.
+        reportRecordingFailure()
+
         await drainDiarizerFeed()
         var turns: [SpeakerTurn] = []
         if diarizationActive {
             do {
                 turns = try await diarizer.finish()
             } catch {
-                lastError = "Speaker separation failed: \(error.localizedDescription)"
+                // Added below whatever is already shown rather than replacing it. The
+                // microphone prompt was cleared above, and what remains still describes
+                // this meeting, such as a recognizer failure that left words out.
+                let separation = "Speaker separation failed: \(error.localizedDescription)"
+                lastError = lastError.map { "\($0)\n\(separation)" } ?? separation
                 Log.meetings.error("Speaker separation failed: \(error, privacy: .public)")
             }
         }
 
         meeting.endedAt = stoppedAt
         meeting.recordedDuration = completedAudioSeconds
-        // Read before finish(), which clears it.
-        reportRecordingFailure()
         meeting.audioFileName = audioWriter.finish()
         meeting.rawTranscript = TextProcessor.process(
             accumulatedTranscript,

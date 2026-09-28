@@ -175,7 +175,8 @@ final class DictationOverlayController {
     ///
     /// It shrinks only when its screen can no longer hold it. A panel grown tall on one
     /// screen and dragged onto a shorter one mid-dictation kept its height and hung off
-    /// the bottom edge. It is now cut to the tallest panel the new screen can hold.
+    /// the bottom edge. It is now cut to the tallest panel the new screen can hold when
+    /// the drag ends.
     ///
     /// It runs when the text reports a new height, not when new text is set. The text
     /// is laid out on a later pass, so a height read straight after setting it belonged
@@ -311,6 +312,10 @@ final class DictationOverlayController {
             // since the top is what stays put. A panel dragged while grown tall
             // otherwise came back that much lower.
             self.settings.overlayOriginY = panel.frame.maxY - Self.minimumHeight
+            // A drag onto a shorter screen left a tall panel hanging off its bottom
+            // edge until the text next changed height. Fitted after the save, so a
+            // panel lifted onto the screen still comes back where the user dropped it.
+            self.fitToText()
         }
         container.addSubview(glass)
         container.addSubview(hosting)
@@ -502,7 +507,7 @@ private struct DictationOverlayView: View {
                 }
                 .frame(maxHeight: model.maxTextHeight, alignment: .bottom)
                 // As tall as the text up to the cap, and no taller. The panel does not
-                // shrink mid-dictation, and a frame filling a panel held tall drew
+                // shrink to follow the text, and a frame filling a panel held tall drew
                 // short text along its bottom under a blank gap, so each new line
                 // pushed the earlier ones up.
                 .fixedSize(horizontal: false, vertical: true)

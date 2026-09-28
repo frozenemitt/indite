@@ -73,6 +73,13 @@ actor MeetingDiarizer {
     /// describing the same moment.
     private(set) var receivedSeconds: TimeInterval = 0
 
+    /// The first write to the recording that failed.
+    ///
+    /// A failed write leaves a gap in the file, which puts every later turn out of step
+    /// with the transcript. `finish()` throws it rather than separate a recording with
+    /// a hole in it.
+    private var writeError: Error?
+
     // MARK: - Lifecycle
 
     /// Load the CoreML models from disk, and open the file the audio goes into.
@@ -88,6 +95,7 @@ actor MeetingDiarizer {
             interleaved: false
         )
         receivedSeconds = 0
+        writeError = nil
         Log.diarization.notice("Ready")
     }
 
@@ -138,17 +146,21 @@ actor MeetingDiarizer {
             receivedSeconds += Double(samples.count) / Double(Self.sampleRate)
         } catch {
             Log.diarization.error("Could not keep audio for speaker separation: \(error, privacy: .public)")
+            if writeError == nil { writeError = error }
         }
     }
 
     /// Separate the speakers over everything recorded, and delete the recording.
     ///
-    /// Throws when separation fails or no audio reached it, so the meeting can say why
-    /// it has no speakers rather than look as if separation never ran.
+    /// Throws when separation fails, when no audio reached it, or when some of the audio
+    /// could not be written, so the meeting can say why it has no speakers rather than
+    /// look as if separation never ran.
     func finish() async throws -> [SpeakerTurn] {
         guard let pipeline, recording != nil else { return [] }
         recording = nil  // Closes the file.
         defer { try? FileManager.default.removeItem(at: Self.recordingURL) }
+
+        if let writeError { throw writeError }
 
         // An empty file means the audio never arrived, not that nobody spoke.
         // FluidAudio reports both as "no speech", so the difference is told here.
@@ -193,6 +205,7 @@ actor MeetingDiarizer {
             try? FileManager.default.removeItem(at: Self.recordingURL)
         }
         receivedSeconds = 0
+        writeError = nil
     }
 
     /// FluidAudio's manager is not marked Sendable. It is only ever used from this
