@@ -278,9 +278,28 @@ final class TranscriptionEngine {
 
         // Start audio capture using non-MainActor helper
         let helper = AudioCaptureHelper()
-        let audioStream: AsyncStream<AudioData>
+        var audioStream: AsyncStream<AudioData>
         do {
             audioStream = try await helper.start(preferredDeviceUID: inputDeviceUID)
+
+            // A meeting counts as started only once audio is arriving. Built around
+            // the iPhone's microphone, its combined device reports itself started at
+            // once and delivers its first buffer 3–6 s later; the meeting played its
+            // start sound and said Recording that much early, and the words in
+            // between were lost. Dictation never had the gap: starting the plain
+            // device blocks until it is live.
+            //
+            // Started a second time when nothing has come in 5 s. Now and then the
+            // iPhone inside that device never starts delivering at all, and a fresh
+            // start has brought it up within 3 s.
+            if owner == .meeting, await !helper.waitForAudio(seconds: 5) {
+                Self.log.notice("starting the microphone again")
+                await helper.stop()
+                audioStream = try await helper.start(preferredDeviceUID: inputDeviceUID)
+                guard await helper.waitForAudio(seconds: 8) else {
+                    throw AudioCaptureError.noAudio
+                }
+            }
         } catch {
             await helper.stop()
             teardownSession()
@@ -342,21 +361,6 @@ final class TranscriptionEngine {
             // asked for the session to end. Say so, or the rest of the recording is
             // silence that looks like listening.
             await MainActor.run { self?.captureEnded() }
-        }
-
-        // A meeting counts as started only once audio is arriving. Built around the
-        // iPhone's microphone, its combined device reports itself started at once and
-        // delivers its first buffer seconds later; the meeting played its start sound
-        // and said Recording 4.7–6.1 s early, and the words in between were lost.
-        // Dictation never had the gap: starting the plain device blocks until it is
-        // live.
-        if owner == .meeting, await !helper.waitForAudio(seconds: 8) {
-            await helper.stop()
-            audioProcessingTask = nil
-            audioCaptureHelper = nil
-            teardownSession()
-            release()
-            throw AudioCaptureError.noAudio
         }
 
         phase = .recording

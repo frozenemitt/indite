@@ -27,8 +27,8 @@ struct SpeakerTurn: Sendable, Equatable {
 /// matched speaker by speaker as 30-second chunks arrived.
 ///
 /// Measured on the 16 AMI test meetings of four people, against their reference
-/// labels: 19.3% error, where the chunked model we used before made 27.4%, and the
-/// right number of speakers in 13 meetings rather than 5. It confuses one speaker
+/// labels: 18.4% error, where the chunked model we used before made 27.4%, and the
+/// right number of speakers in 12 meetings rather than 5. It confuses one speaker
 /// for another about a fifth as often. The chunked model tended to invent people,
 /// up to nine in a meeting of four.
 ///
@@ -82,7 +82,17 @@ actor MeetingDiarizer {
         }
 
         let models = try await OfflineDiarizerModels.load(from: DiarizationModelStore.modelsRoot)
-        let manager = OfflineDiarizerManager(config: .default)
+        // pyannote's own step and no minimum segment, rather than FluidAudio's
+        // faster default. The default found no speaker for 4 s in the middle of a
+        // sentence, and the end of it went to the other person. These settings found
+        // the missing second. Measured against the default: AMI error 18.4% against
+        // 19.3%; a 28-minute two-person meeting 63 of 65 lines right against 59, with
+        // none left unattributed; at half the speed, about 10 s for 30 minutes. The
+        // cost seen was one phantom speaker holding 2 s of that meeting.
+        var config = OfflineDiarizerConfig.default
+        config.segmentation.stepRatio = 0.1
+        config.embedding.minSegmentDurationSeconds = 0
+        let manager = OfflineDiarizerManager(config: config)
         manager.initialize(models: models)
         pipeline = Pipeline(manager: manager)
 

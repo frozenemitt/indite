@@ -55,7 +55,7 @@ final class AudioCaptureHelper: @unchecked Sendable {
             }
             try? await Task.sleep(for: .milliseconds(50))
         }
-        Log.audio.error("No audio \(Int(seconds), privacy: .public)s after starting — giving up")
+        Log.audio.error("No audio \(Int(seconds), privacy: .public)s after starting")
         return false
     }
 
