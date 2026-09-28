@@ -385,12 +385,7 @@ final class MeetingRecorder {
         installAudioTap()
 
         do {
-            try await engine.startRecording(
-                owner: .meeting,
-                vocabulary: settings.vocabularyHints,
-                inputDeviceUID: inputDeviceUID,
-                publishesSpectrum: settings.showMeetingIndicator
-            )
+            try await startEngine(on: inputDeviceUID)
         } catch {
             lastError = error.localizedDescription
             audioWriter.discard()
@@ -480,6 +475,39 @@ final class MeetingRecorder {
     private func reportRecordingFailure() {
         if let failure = audioWriter.failure {
             lastError = "The recording could not be saved: \(failure)"
+        }
+    }
+
+    /// Start the engine for this meeting, on the microphone alone if the combined
+    /// device carrying system audio delivers nothing.
+    ///
+    /// That device came up silent in about half of this afternoon's meeting starts,
+    /// with the iPhone and then with the built-in microphone, while the same
+    /// microphones opened directly never failed. Half a meeting beats none.
+    ///
+    /// The spectrum is asked for on every session, not only the first. Left out on a
+    /// resume, the engine skipped the band and the panel sat flat for the rest of the
+    /// meeting.
+    private func startEngine(on inputDeviceUID: String) async throws {
+        do {
+            try await engine.startRecording(
+                owner: .meeting,
+                vocabulary: settings.vocabularyHints,
+                inputDeviceUID: inputDeviceUID,
+                publishesSpectrum: settings.showMeetingIndicator
+            )
+        } catch AudioCaptureError.noAudio where systemAudioActive {
+            Log.meetings.error("System audio input delivered nothing — recording the microphone alone")
+            let capture = systemAudio
+            await Task.detached { capture.stop() }.value
+            systemAudioActive = false
+            try await engine.startRecording(
+                owner: .meeting,
+                vocabulary: settings.vocabularyHints,
+                inputDeviceUID: settings.inputDeviceUID,
+                publishesSpectrum: settings.showMeetingIndicator
+            )
+            lastError = "System audio could not be recorded, so this meeting has your microphone only. Other people on a call are not being transcribed."
         }
     }
 
@@ -647,15 +675,7 @@ final class MeetingRecorder {
         installAudioTap()
 
         do {
-            try await engine.startRecording(
-                owner: .meeting,
-                vocabulary: settings.vocabularyHints,
-                inputDeviceUID: inputDeviceUID,
-                // Passed on every session, not only the first. Left out here, the
-                // engine skipped the band after any resume and the panel sat flat for
-                // the rest of the meeting.
-                publishesSpectrum: settings.showMeetingIndicator
-            )
+            try await startEngine(on: inputDeviceUID)
         } catch {
             // Put back the disconnection pause made. The meeting stays paused, and a
             // tap left attached would write the next dictation into this meeting's

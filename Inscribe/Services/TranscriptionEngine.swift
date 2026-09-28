@@ -278,7 +278,7 @@ final class TranscriptionEngine {
 
         // Start audio capture using non-MainActor helper
         let helper = AudioCaptureHelper()
-        var audioStream: AsyncStream<AudioData>
+        let audioStream: AsyncStream<AudioData>
         do {
             audioStream = try await helper.start(preferredDeviceUID: inputDeviceUID)
 
@@ -287,18 +287,11 @@ final class TranscriptionEngine {
             // once and delivers its first buffer 3–6 s later; the meeting played its
             // start sound and said Recording that much early, and the words in
             // between were lost. Dictation never had the gap: starting the plain
-            // device blocks until it is live.
-            //
-            // Started a second time when nothing has come in 5 s. Now and then the
-            // iPhone inside that device never starts delivering at all, and a fresh
-            // start has brought it up within 3 s.
-            if owner == .meeting, await !helper.waitForAudio(seconds: 5) {
-                Self.log.notice("starting the microphone again")
-                await helper.stop()
-                audioStream = try await helper.start(preferredDeviceUID: inputDeviceUID)
-                guard await helper.waitForAudio(seconds: 8) else {
-                    throw AudioCaptureError.noAudio
-                }
+            // device blocks until it is live. Every start that delivered at all did
+            // so within 6.1 s, and every one that failed was still silent at 8 s;
+            // those fall back to the microphone alone.
+            if owner == .meeting, await !helper.waitForAudio(seconds: 8) {
+                throw AudioCaptureError.noAudio
             }
         } catch {
             await helper.stop()
