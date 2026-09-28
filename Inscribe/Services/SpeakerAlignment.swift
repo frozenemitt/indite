@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A stretch of speech attributed to one speaker.
 struct AlignedUtterance: Sendable, Equatable {
@@ -31,15 +32,11 @@ enum SpeakerAlignment {
     /// mouth of whoever happened to speak next.
     private static let nearestTurnReach: TimeInterval = 2
 
-    /// A silence long enough to start a new utterance even when the speaker has not
-    /// changed.
+    /// Attribute each transcript run, then merge neighbours by the same speaker.
     ///
-    /// Without it, one person's lines either side of a long pause became one utterance,
-    /// and its single timestamp said nothing about when the later sentences were spoken.
-    private static let utteranceBreak: TimeInterval = 3
-
-    /// Attribute each transcript run, then merge neighbours by the same speaker unless
-    /// a long silence separates them.
+    /// A pause no longer starts a new line. Splitting at three seconds of silence cut
+    /// one person's train of thought into several lines; a line's scrubber now reaches
+    /// the later sentences instead.
     static func align(
         transcript: [TimedTranscriptSegment],
         turns: [SpeakerTurn]
@@ -59,11 +56,13 @@ enum SpeakerAlignment {
 
         for run in ordered {
             let speaker = speakerId(at: run.midpoint, in: sortedTurns)
+            if speaker == unknownSpeaker {
+                logUnattributed(run, turns: sortedTurns)
+            }
 
             // Extend the previous utterance when the speaker has not changed, so the
             // result reads as speech rather than a list of fragments.
-            if var last = merged.last, last.speakerId == speaker,
-               run.start - last.end < utteranceBreak {
+            if var last = merged.last, last.speakerId == speaker {
                 last = AlignedUtterance(
                     speakerId: speaker,
                     text: joined(last.text, run.text),
@@ -98,7 +97,7 @@ enum SpeakerAlignment {
     /// Runs inside one result carry their own leading space, but the first run of the
     /// next result does not, so the last word of one result and the first of the next
     /// were fused into one. A run that starts with punctuation is left attached.
-    private static func joined(_ first: String, _ second: String) -> String {
+    static func joined(_ first: String, _ second: String) -> String {
         guard let end = first.last, let start = second.first,
               !end.isWhitespace, start.isLetter || start.isNumber else {
             return first + second
@@ -130,6 +129,31 @@ enum SpeakerAlignment {
             return unknownSpeaker
         }
         return nearest.speakerId
+    }
+
+    /// Measuring why words go unattributed: how far the run sits from the nearest turn
+    /// by its midpoint and by its edges, and from the diarizer's 30-second chunk seams.
+    /// Temporary, until the cause is known.
+    private static func logUnattributed(_ run: TimedTranscriptSegment, turns: [SpeakerTurn]) {
+        let byMidpoint = turns.map { distance(from: run.midpoint, to: $0) }.min() ?? -1
+        let byEdges = turns.map { turn -> TimeInterval in
+            if run.end < turn.start { return turn.start - run.end }
+            if run.start > turn.end { return run.start - turn.end }
+            return 0
+        }.min() ?? -1
+        let seam = min(run.start.truncatingRemainder(dividingBy: 30),
+                       30 - run.end.truncatingRemainder(dividingBy: 30))
+        let before = turns.last { $0.end <= run.start }
+        let after = turns.first { $0.start >= run.end }
+        Log.diarization.notice("""
+            Unattributed run \(run.start, format: .fixed(precision: 2), privacy: .public)–\(run.end, format: .fixed(precision: 2), privacy: .public) \
+            (\(run.text.split(separator: " ").count, privacy: .public) words): \
+            nearest turn \(byMidpoint, format: .fixed(precision: 2), privacy: .public)s by midpoint, \
+            \(byEdges, format: .fixed(precision: 2), privacy: .public)s by edges; \
+            turn before \(before?.speakerId ?? "-", privacy: .public) ends \(before?.end ?? -1, format: .fixed(precision: 2), privacy: .public), \
+            turn after \(after?.speakerId ?? "-", privacy: .public) starts \(after?.start ?? -1, format: .fixed(precision: 2), privacy: .public); \
+            \(seam, format: .fixed(precision: 2), privacy: .public)s from a chunk seam
+            """)
     }
 
     private static func distance(from time: TimeInterval, to turn: SpeakerTurn) -> TimeInterval {

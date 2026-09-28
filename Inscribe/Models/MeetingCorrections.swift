@@ -119,6 +119,27 @@ extension Meeting {
         return tailUtterance
     }
 
+    // MARK: - Join
+
+    /// Join neighbouring lines by the same speaker into one.
+    ///
+    /// Run after every correction. Reassigning a stray word back to the person who
+    /// was talking left it as its own line between two of theirs, so the sentence
+    /// still read as interrupted after it had been fixed.
+    func joinNeighbours(in context: ModelContext) {
+        var previous: Utterance?
+        for utterance in orderedUtterances {
+            guard let last = previous, last.speakerId == utterance.speakerId else {
+                previous = utterance
+                continue
+            }
+            last.text = SpeakerAlignment.joined(last.text, utterance.text)
+            last.end = max(last.end, utterance.end)
+            utterances.removeAll { $0.persistentModelID == utterance.persistentModelID }
+            context.delete(utterance)
+        }
+    }
+
     // MARK: - Cleanup
 
     /// Drop speakers that no longer have anything attributed to them.

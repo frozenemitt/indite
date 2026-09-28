@@ -28,7 +28,7 @@ final class MeetingPlayer {
     private(set) var duration: TimeInterval = 0
     private(set) var lastError: String?
 
-    /// The utterance being played, for highlighting it.
+    /// The utterance being played or paused in, for highlighting it.
     ///
     /// Worked out once per tick here and changed only when playback moves into another
     /// utterance. Each line used to compare itself against `currentTime`, so every line
@@ -143,7 +143,9 @@ final class MeetingPlayer {
     /// same, so the comparison is what keeps the transcript still between utterances.
     private func updatePlayingUtterance() {
         let time = currentTime
-        let playing = isPlaying
+        // Kept through a pause, so the paused line stays marked and keeps its
+        // scrubber. Cleared only when playback is stopped back to the start.
+        let playing = isPlaying || time > 0
             ? cues.first { time >= $0.start && time < $0.end }?.id
             : nil
         if playing != playingUtteranceID {

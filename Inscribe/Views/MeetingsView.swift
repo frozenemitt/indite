@@ -482,6 +482,7 @@ private struct MeetingDetailView: View {
             // crosses into another utterance, so this view redraws then and not
             // on every tick of the clock.
             let playingID = player.playingUtteranceID
+            let isPlaying = player.isPlaying
 
             // Lazy, so a long meeting builds only the lines on screen.
             LazyVStack(alignment: .leading, spacing: 18) {
@@ -497,13 +498,13 @@ private struct MeetingDetailView: View {
                                     togglePlayback(of: utterance)
                                 } label: {
                                     Label(utterance.timestampLabel,
-                                          systemImage: utterance.persistentModelID == playingID ? "pause.fill" : "play.fill")
+                                          systemImage: isPlaying && utterance.persistentModelID == playingID ? "pause.fill" : "play.fill")
                                         .labelStyle(.titleAndIcon)
                                         .font(.caption.monospacedDigit())
                                 }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.secondary)
-                                .help(utterance.persistentModelID == playingID ? "Pause" : "Play from here")
+                                .help(isPlaying && utterance.persistentModelID == playingID ? "Pause" : "Play from here")
                             } else {
                                 Text(utterance.timestampLabel)
                                     .font(.caption.monospacedDigit())
@@ -522,6 +523,12 @@ private struct MeetingDetailView: View {
                                 if hasAudio { togglePlayback(of: utterance) }
                             }
                             .pointerStyle(hasAudio ? .link : nil)
+
+                        // Only on the line being played, so its later sentences can be
+                        // reached without playing through the start.
+                        if hasAudio, utterance.persistentModelID == playingID {
+                            LineScrubber(utterance: utterance, player: player)
+                        }
                     }
                     .padding(.vertical, 6)
                     .padding(.horizontal, 10)
@@ -664,7 +671,7 @@ private struct MeetingDetailView: View {
                             ForEach(meeting.sortedSpeakers.filter { $0.speakerId != speaker.speakerId }) { other in
                                 Button("Merge into \(other.resolvedName)") {
                                     meeting.merge(speaker, into: other, in: modelContext)
-                                    modelContext.saveOrLog()
+                                    finishCorrection()
                                 }
                             }
                         } label: {
@@ -746,8 +753,10 @@ private struct MeetingDetailView: View {
         .help("Change who said this")
     }
 
-    /// Save, and drop any speaker left with nothing attributed to them.
+    /// Join lines the correction left side by side, drop any speaker left with
+    /// nothing attributed to them, and save.
     private func finishCorrection() {
+        meeting.joinNeighbours(in: modelContext)
         meeting.pruneEmptySpeakers(in: modelContext)
         modelContext.saveOrLog()
     }
@@ -785,6 +794,40 @@ private struct MeetingDetailView: View {
             Log.meetings.error("Export failed: \(error, privacy: .public)")
             exportError = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Line Scrubber
+
+/// Scrub within the line being played.
+///
+/// A view of its own because it reads the playback time, which changes four times a
+/// second. Read in the detail view's body, that time redrew the whole transcript
+/// with it.
+private struct LineScrubber: View {
+    let utterance: Utterance
+    let player: MeetingPlayer
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(MeetingPlayer.timeLabel(player.currentTime))
+                .frame(minWidth: 36, alignment: .trailing)
+
+            Slider(
+                value: Binding(
+                    get: { min(max(player.currentTime, utterance.start), utterance.end) },
+                    set: { player.seek(to: $0) }
+                ),
+                in: utterance.start...max(utterance.end, utterance.start + 0.1)
+            )
+            .controlSize(.mini)
+
+            Text(MeetingPlayer.timeLabel(utterance.end))
+                .frame(minWidth: 36, alignment: .leading)
+        }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .padding(.top, 4)
     }
 }
 
