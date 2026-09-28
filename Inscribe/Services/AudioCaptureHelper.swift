@@ -12,8 +12,6 @@ final class AudioCaptureHelper: @unchecked Sendable {
     private var audioEngine: AVAudioEngine?
     private var outputContinuation: AsyncStream<AudioData>.Continuation?
     private var configurationObserver: (any NSObjectProtocol)?
-    /// Buffers the current capture has delivered.
-    private var tapCount = OSAllocatedUnfairLock(initialState: 0)
 
     private(set) var isRunning = false
 
@@ -38,25 +36,6 @@ final class AudioCaptureHelper: @unchecked Sendable {
                 }
             }
         }
-    }
-
-    /// Wait until the capture has delivered its first buffer. False after `seconds`.
-    ///
-    /// Polled rather than blocking the capture queue: holding that queue while a
-    /// meeting's device came up was the one change between meetings that started
-    /// after 4.7–6.1 s and meetings that heard nothing for 8.
-    func waitForAudio(seconds: TimeInterval) async -> Bool {
-        let started = Date()
-        let tapCount = self.tapCount
-        while Date().timeIntervalSince(started) < seconds {
-            if tapCount.withLock({ $0 }) > 0 {
-                Log.audio.notice("First audio \(Date().timeIntervalSince(started), format: .fixed(precision: 2), privacy: .public)s after the engine started")
-                return true
-            }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        Log.audio.error("No audio \(Int(seconds), privacy: .public)s after starting")
-        return false
     }
 
     /// `stopCapture`, run on the capture queue, waiting until it has finished.
@@ -124,9 +103,8 @@ final class AudioCaptureHelper: @unchecked Sendable {
 
         // Install tap
         // Counted under a lock: the tap writes it on the audio thread, and the
-        // configuration check below and `waitForAudio` read it elsewhere.
+        // configuration check below reads it from the capture queue.
         let tapCount = OSAllocatedUnfairLock(initialState: 0)
-        self.tapCount = tapCount
         // The size asked for is a request, and macOS does not honour it: every buffer
         // logged has held 4,800 frames, a tenth of a second at 48 kHz, whatever was
         // asked. The level band therefore changes ten times a second.
@@ -161,16 +139,9 @@ final class AudioCaptureHelper: @unchecked Sendable {
             // iPhone's microphone takes 2–3 s to start and announces a change during
             // the start; counted from then, the half second had passed before the
             // first buffer, and every dictation on the iPhone ended as it began.
-            //
-            // Eight seconds while nothing has arrived yet. The meeting's combined
-            // device, built around the iPhone's microphone, reports itself started at
-            // once and delivers its first buffer up to 4.4 s later; half a second
-            // paused every such meeting before its first word. A device that has
-            // been delivering and stops is still caught within half a second.
             Self.queue.async {
                 let before = tapCount.withLock { $0 }
-                let wait: TimeInterval = before == 0 ? 8 : 0.5
-                Self.queue.asyncAfter(deadline: .now() + wait) {
+                Self.queue.asyncAfter(deadline: .now() + 0.5) {
                     guard let self, self.audioEngine === engine else { return }
                     let after = tapCount.withLock { $0 }
                     guard after == before else {
@@ -282,7 +253,6 @@ enum AudioCaptureError: LocalizedError {
     case invalidFormat
     case microphoneUnavailable
     case engineNotRunning
-    case noAudio
 
     var errorDescription: String? {
         switch self {
@@ -292,8 +262,6 @@ enum AudioCaptureError: LocalizedError {
             "No microphone input. Grant Inscribe microphone access in System Settings → Privacy & Security → Microphone."
         case .engineNotRunning:
             "The audio engine is not running."
-        case .noAudio:
-            "The microphone started but sent no audio for 8 seconds. If it is an iPhone, check that it is nearby and unlocked, then try again."
         }
     }
 }

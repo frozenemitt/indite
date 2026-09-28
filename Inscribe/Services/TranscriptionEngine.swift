@@ -281,18 +281,6 @@ final class TranscriptionEngine {
         let audioStream: AsyncStream<AudioData>
         do {
             audioStream = try await helper.start(preferredDeviceUID: inputDeviceUID)
-
-            // A meeting counts as started only once audio is arriving. Built around
-            // the iPhone's microphone, its combined device reports itself started at
-            // once and delivers its first buffer 3–6 s later; the meeting played its
-            // start sound and said Recording that much early, and the words in
-            // between were lost. Dictation never had the gap: starting the plain
-            // device blocks until it is live. Every start that delivered at all did
-            // so within 6.1 s, and every one that failed was still silent at 8 s;
-            // those fall back to the microphone alone.
-            if owner == .meeting, await !helper.waitForAudio(seconds: 8) {
-                throw AudioCaptureError.noAudio
-            }
         } catch {
             await helper.stop()
             teardownSession()
