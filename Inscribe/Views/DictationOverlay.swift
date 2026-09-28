@@ -186,14 +186,25 @@ final class DictationOverlayController {
         // the height grows opens the panel upward, away from the Dock.
         var frame = panel.frame
         frame.size.height = height
+
+        // Once the top reaches the top of the screen, the panel grows downward
+        // instead. A panel dragged near the top used to stop growing there and
+        // scroll after five or so lines. `show()` puts the bottom edge back where
+        // the user left it, so the next dictation starts from the same place.
+        if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame,
+           frame.maxY > visible.maxY - Self.screenMargin {
+            frame.origin.y = max(visible.maxY - Self.screenMargin - height, visible.minY + Self.screenMargin)
+        }
         panel.setFrame(frame, display: true)
     }
 
-    /// The room between the panel's bottom edge and the top of the screen it is on.
+    /// Kept clear between the panel and the edges of the screen.
+    private static let screenMargin: CGFloat = 12
+
+    /// The text room in the tallest panel the screen can hold.
     ///
-    /// The panel grows upward, so this is its ceiling. Dragging it higher leaves less
-    /// room and the oldest lines start dropping off sooner, which is the honest
-    /// behaviour: it can only show what fits.
+    /// The panel grows upward and then downward, so only a dictation taller than
+    /// the whole screen starts dropping its oldest lines off the top.
     private func availableTextHeight(for panel: NSPanel) -> CGFloat {
         guard let screen = panel.screen ?? NSScreen.main else {
             return DictationOverlayView.lineHeight * 5
@@ -202,7 +213,7 @@ final class DictationOverlayController {
         // the padding. Only the padding was counted, so the tallest panel grew 32
         // points too high, up under the menu bar.
         let chrome = Self.bandHeight + Self.contentSpacing + Self.verticalPadding
-        let room = screen.visibleFrame.maxY - 12 - panel.frame.minY - chrome
+        let room = screen.visibleFrame.height - 2 * Self.screenMargin - chrome
         return max(room, DictationOverlayView.lineHeight)
     }
 

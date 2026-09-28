@@ -102,7 +102,9 @@ final class AudioCaptureHelper: @unchecked Sendable {
         self.outputContinuation = continuation
 
         // Install tap
-        var tapCount = 0
+        // Counted under a lock: the tap writes it on the audio thread, and the
+        // configuration check below reads it from the capture queue.
+        let tapCount = OSAllocatedUnfairLock(initialState: 0)
         // The size asked for is a request, and macOS does not honour it: every buffer
         // logged has held 4,800 frames, a tenth of a second at 48 kHz, whatever was
         // asked. The level band therefore changes ten times a second.
@@ -111,9 +113,9 @@ final class AudioCaptureHelper: @unchecked Sendable {
             bufferSize: 2048,
             format: format
         ) { [weak self] buffer, time in
-            tapCount += 1
-            if tapCount <= 5 {
-                Log.audio.notice("Tap callback #\(tapCount, privacy: .public), frames: \(buffer.frameLength, privacy: .public)")
+            let count = tapCount.withLock { $0 += 1; return $0 }
+            if count <= 5 {
+                Log.audio.notice("Tap callback #\(count, privacy: .public), frames: \(buffer.frameLength, privacy: .public)")
             }
             let audioData = AudioData(buffer: buffer, time: time)
             self?.outputContinuation?.yield(audioData)
@@ -123,13 +125,27 @@ final class AudioCaptureHelper: @unchecked Sendable {
         // A change of input device — AirPods connecting, a USB microphone unplugged —
         // stops the engine without an error, and the tap simply goes quiet. Ending the
         // stream turns that silence into something the engine can see and report.
+        //
+        // Only once the tap has actually gone quiet. The meeting's aggregate device
+        // announces a configuration change 20–60 ms after every start, and the audio
+        // carries on through it; ending the stream on the announcement alone paused
+        // every meeting before its first word, blaming a microphone that never changed.
         configurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: engine,
             queue: nil
         ) { [weak self] _ in
-            Log.audio.error("Audio configuration changed mid-capture — ending the stream")
-            self?.outputContinuation?.finish()
+            let before = tapCount.withLock { $0 }
+            Self.queue.asyncAfter(deadline: .now() + 0.5) {
+                guard let self, self.audioEngine === engine else { return }
+                let after = tapCount.withLock { $0 }
+                guard after == before else {
+                    Log.audio.notice("Audio configuration changed; \(after - before, privacy: .public) buffers since, carrying on")
+                    return
+                }
+                Log.audio.error("Audio configuration changed and the tap went quiet — ending the stream")
+                self.outputContinuation?.finish()
+            }
         }
 
         // Start engine
