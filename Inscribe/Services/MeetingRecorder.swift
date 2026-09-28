@@ -226,8 +226,9 @@ final class MeetingRecorder {
     /// to the last checkpoint or pause, not counting pauses, whether the room was
     /// silent or the capture failed.
     ///
-    /// The end is placed where the last checkpoint's audio ran out, the last moment
-    /// known to have been captured. The transcript is whatever that checkpoint saved.
+    /// The end is placed at the start plus the recorded length. Pauses are not
+    /// counted, so for a meeting that paused, the end comes before the last moment
+    /// captured. The transcript is whatever the last checkpoint saved.
     private func closeInterruptedMeetings(in context: ModelContext) {
         guard state == .idle else { return }
 
@@ -528,11 +529,16 @@ final class MeetingRecorder {
         }
     }
 
-    /// Copy a recording file that failed to open into `lastError`.
+    /// Add a recording file that failed to open to `lastError`, below whatever is
+    /// already shown, such as a recognizer failure that left words out.
+    ///
+    /// Added only when that line is not already there, so a checkpoint that finds the
+    /// same failure again does not repeat it.
     private func reportRecordingFailure() {
-        if let failure = audioWriter.failure {
-            lastError = "The recording could not be saved: \(failure)"
-        }
+        guard let failure = audioWriter.failure else { return }
+        let message = "The recording could not be saved: \(failure)"
+        guard lastError?.contains(message) != true else { return }
+        lastError = lastError.map { "\($0)\n\(message)" } ?? message
     }
 
     /// The device this meeting records from.
@@ -843,8 +849,7 @@ final class MeetingRecorder {
             engine.collectTimedSegments = false
         }
 
-        // Read before finish(), which clears it, and before speaker separation, whose
-        // failure it would otherwise replace.
+        // Read before finish(), which clears it.
         reportRecordingFailure()
 
         await drainDiarizerFeed()

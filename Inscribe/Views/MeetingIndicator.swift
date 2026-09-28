@@ -21,6 +21,9 @@ final class MeetingIndicatorController {
     private let model = MeetingIndicatorModel()
     private let settings: AppSettings
     private var moveObserver: (any NSObjectProtocol)?
+    private var dragObserver: (any NSObjectProtocol)?
+    /// True from the start of a drag until `position` next places the panel.
+    private var userIsDragging = false
     /// Held so the desktop-change notifications keep arriving for the life of the app.
     private var spaceObserver: (any NSObjectProtocol)?
 
@@ -139,13 +142,26 @@ final class MeetingIndicatorController {
         ])
         panel.contentView = container
 
+        // Remembered only when the user drags it. Every move used to be saved, so a
+        // spot `position` pulled out from under the menu bar or the Dock was written
+        // over the one the user chose. AppKit announces a move in advance only when the
+        // user starts dragging a window, never for `setFrameOrigin`.
+        dragObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willMoveNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.userIsDragging = true
+            }
+        }
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: panel,
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, let panel = self.panel else { return }
+                guard let self, self.userIsDragging, let panel = self.panel else { return }
                 self.settings.meetingIndicatorOriginX = panel.frame.origin.x
                 self.settings.meetingIndicatorOriginY = panel.frame.origin.y
             }
@@ -157,14 +173,18 @@ final class MeetingIndicatorController {
     /// Drop the current panel and build another in its place.
     ///
     /// The old one is ordered out first so it does not linger on whatever desktop it
-    /// was stranded on, and its move observer goes with it: `makePanel` registers a
-    /// new one, and the old token would otherwise keep firing for a window nobody can
+    /// was stranded on, and its move observers go with it: `makePanel` registers new
+    /// ones, and the old tokens would otherwise keep firing for a window nobody can
     /// see.
     private func replacePanel() {
         panel?.orderOut(nil)
         if let moveObserver {
             NotificationCenter.default.removeObserver(moveObserver)
             self.moveObserver = nil
+        }
+        if let dragObserver {
+            NotificationCenter.default.removeObserver(dragObserver)
+            self.dragObserver = nil
         }
         panel = makePanel()
     }
@@ -198,22 +218,17 @@ final class MeetingIndicatorController {
     /// Where the user left it, or the top right — out of the way of the thing the
     /// meeting is actually about.
     ///
-    /// A saved spot that lies wholly on a screen comes back where the user put it,
-    /// even beside the Dock. Only the menu bar pulls it: the menu bar sits above a
-    /// floating panel and spans the full width of the screen, so a spot saved under it
-    /// while it was hidden during a full-screen call is moved just below it. A spot
-    /// that crosses the edge of the screen it mostly lies on, left by a drag or by
-    /// displays being rearranged, is pulled into that screen's usable area. Any
-    /// overlap used to be enough, so such a spot opened the panel mostly off screen.
-    ///
-    /// The Dock also sits above a floating panel, but AppKit reports only the strip
-    /// `visibleFrame` leaves for it along the whole edge of the screen, not where its
-    /// icons are. Pulling spots out of that strip would move a panel parked beside the
-    /// icons, and the move observer would save the new spot over the user's. A spot
-    /// saved under the icons during a full-screen call can therefore reopen beneath
-    /// them. That is accepted: macOS itself never moves a window away from the Dock.
+    /// A saved spot is pulled inside the usable area of the screen it mostly lies on.
+    /// Any overlap used to be enough, so a spot left straddling an edge, by a drag or
+    /// by displays being rearranged, opened the panel mostly off screen. The menu bar
+    /// and the Dock sit above a floating panel, and a spot saved where they were hidden
+    /// during a full-screen call would otherwise reopen with its controls under them.
+    /// Only a drag is saved, so the setting keeps the spot the user chose. That spot
+    /// comes back when the Dock or the old arrangement of displays allows it.
     private func position(_ panel: NSPanel?) {
         guard let panel else { return }
+        // A drag that has already finished must not claim the move made here.
+        userIsDragging = false
 
         if let x = settings.meetingIndicatorOriginX, let y = settings.meetingIndicatorOriginY {
             let saved = NSRect(x: x, y: y, width: Self.width, height: Self.height)
@@ -224,14 +239,10 @@ final class MeetingIndicatorController {
             if let screen = NSScreen.screens.max(by: { overlap($0) < overlap($1) }),
                overlap(screen) > 0 {
                 let visible = screen.visibleFrame
-                if screen.frame.contains(saved) {
-                    panel.setFrameOrigin(NSPoint(x: x, y: min(y, visible.maxY - Self.height)))
-                } else {
-                    panel.setFrameOrigin(NSPoint(
-                        x: min(max(x, visible.minX), visible.maxX - Self.width),
-                        y: min(max(y, visible.minY), visible.maxY - Self.height)
-                    ))
-                }
+                panel.setFrameOrigin(NSPoint(
+                    x: min(max(x, visible.minX), visible.maxX - Self.width),
+                    y: min(max(y, visible.minY), visible.maxY - Self.height)
+                ))
                 return
             }
         }
