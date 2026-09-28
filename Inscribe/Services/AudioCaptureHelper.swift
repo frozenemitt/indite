@@ -139,9 +139,16 @@ final class AudioCaptureHelper: @unchecked Sendable {
             // iPhone's microphone takes 2–3 s to start and announces a change during
             // the start; counted from then, the half second had passed before the
             // first buffer, and every dictation on the iPhone ended as it began.
+            //
+            // Eight seconds while nothing has arrived yet. The meeting's combined
+            // device, built around the iPhone's microphone, reports itself started at
+            // once and delivers its first buffer up to 4.4 s later; half a second
+            // paused every such meeting before its first word. A device that has
+            // been delivering and stops is still caught within half a second.
             Self.queue.async {
                 let before = tapCount.withLock { $0 }
-                Self.queue.asyncAfter(deadline: .now() + 0.5) {
+                let wait: TimeInterval = before == 0 ? 8 : 0.5
+                Self.queue.asyncAfter(deadline: .now() + wait) {
                     guard let self, self.audioEngine === engine else { return }
                     let after = tapCount.withLock { $0 }
                     guard after == before else {
