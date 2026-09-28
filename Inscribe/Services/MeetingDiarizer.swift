@@ -151,7 +151,14 @@ actor MeetingDiarizer {
         defer { try? FileManager.default.removeItem(at: Self.recordingURL) }
 
         let started = Date()
-        let turns = Self.turns(from: try await pipeline.manager.process(Self.recordingURL))
+        let result: DiarizationResult
+        do {
+            result = try await pipeline.manager.process(Self.recordingURL)
+        } catch OfflineDiarizationError.noSpeechDetected {
+            // No speech means no turns, which is a result rather than a failure.
+            return []
+        }
+        let turns = Self.turns(from: result)
         Log.diarization.notice("""
             Separated \(Int(self.receivedSeconds), privacy: .public)s into \
             \(Set(turns.map(\.speakerId)).count, privacy: .public) speakers in \
@@ -163,7 +170,11 @@ actor MeetingDiarizer {
     /// Diarize a complete recording in one pass, for imported files.
     func diarizeWholeRecording(_ samples: [Float]) async throws -> [SpeakerTurn] {
         guard let pipeline else { return [] }
-        return Self.turns(from: try await pipeline.manager.process(audio: samples))
+        do {
+            return Self.turns(from: try await pipeline.manager.process(audio: samples))
+        } catch OfflineDiarizationError.noSpeechDetected {
+            return []
+        }
     }
 
     func reset() {

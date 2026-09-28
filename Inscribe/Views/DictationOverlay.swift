@@ -162,10 +162,16 @@ final class DictationOverlayController {
         position(panel)
     }
 
-    /// Match the panel's height to the text, moving only its bottom edge.
+    /// Grow the panel to fit the text, moving only its bottom edge.
     ///
     /// The panel used to be 92 points tall whatever it held, so a dictation past a
     /// line and a half showed its last two lines and hid everything before them.
+    ///
+    /// It never shrinks here. The text loses a line and gains it back when a
+    /// hypothesis shortens across a line break, and it drops several lines when the
+    /// rewrite's first words replace the dictation. Following either pulled the bottom
+    /// edge up and walked it back down. `show()` puts the panel back to one line for
+    /// the next dictation.
     ///
     /// It runs when the text reports a new height, not when new text is set. The text
     /// is laid out on a later pass, so a height read straight after setting it belonged
@@ -187,7 +193,7 @@ final class DictationOverlayController {
             min(model.textHeight, ceiling) + Self.bandHeight + Self.contentSpacing + Self.verticalPadding,
             Self.minimumHeight
         )
-        guard abs(panel.frame.height - height) > 0.5 else { return }
+        guard height > panel.frame.height + 0.5 else { return }
 
         // The top edge stays where it is and the bottom edge moves, so each new line
         // lands below the last, the way a page fills. An NSWindow's origin is its
@@ -409,13 +415,13 @@ private final class DragHandleView: NSView {
 
         // A click that moves nothing is not a drag. Saving on every mouse-up turned a
         // stray click into a chosen spot and pinned the panel to that screen. The
-        // top-left corner is compared because it is what gets saved, and because a
-        // panel growing under a held click moves its origin but not that corner.
-        let before = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        // pointer is compared rather than the frame, because the panel keeps growing
+        // under a held click, and once it reaches the bottom of the screen it grows
+        // upward and moves every corner.
+        let before = NSEvent.mouseLocation
         // Runs the whole drag before returning.
         window.performDrag(with: event)
-        let after = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-        if after != before {
+        if NSEvent.mouseLocation != before {
             onDragEnded?()
         }
     }
@@ -480,7 +486,7 @@ private struct DictationOverlayView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // Measured at its full height, above the cap. The capped frame fills
                 // whatever height the panel offers it, so measured below the cap the
-                // text reported the panel's own height back and the panel never shrank.
+                // text reported the panel's own height back instead of its own.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                     model.textHeight = height
                     model.resizePanel()

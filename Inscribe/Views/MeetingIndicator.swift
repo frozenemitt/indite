@@ -196,9 +196,11 @@ final class MeetingIndicatorController {
     /// Where the user left it, or the top right — out of the way of the thing the
     /// meeting is actually about.
     ///
-    /// A saved spot is pulled inside the screen it mostly lies on. Any overlap used to
-    /// be enough, so a spot left straddling an edge, by a drag or by displays being
-    /// rearranged, opened the panel mostly off screen.
+    /// A saved spot that lies wholly on a screen comes back exactly, even beside the
+    /// Dock or under the menu bar, because the user put it there. A spot that crosses
+    /// the edge of the screen it mostly lies on, left by a drag or by displays being
+    /// rearranged, is pulled into that screen's usable area. Any overlap used to be
+    /// enough, so such a spot opened the panel mostly off screen.
     private func position(_ panel: NSPanel?) {
         guard let panel else { return }
 
@@ -210,11 +212,15 @@ final class MeetingIndicatorController {
             }
             if let screen = NSScreen.screens.max(by: { overlap($0) < overlap($1) }),
                overlap(screen) > 0 {
-                let visible = screen.visibleFrame
-                panel.setFrameOrigin(NSPoint(
-                    x: min(max(x, visible.minX), visible.maxX - Self.width),
-                    y: min(max(y, visible.minY), visible.maxY - Self.height)
-                ))
+                if screen.frame.contains(saved) {
+                    panel.setFrameOrigin(saved.origin)
+                } else {
+                    let visible = screen.visibleFrame
+                    panel.setFrameOrigin(NSPoint(
+                        x: min(max(x, visible.minX), visible.maxX - Self.width),
+                        y: min(max(y, visible.minY), visible.maxY - Self.height)
+                    ))
+                }
                 return
             }
         }
@@ -262,9 +268,9 @@ private struct MeetingIndicatorView: View {
                 .allowsHitTesting(false)
 
             HStack(spacing: 10) {
-                Image(systemName: model.isPaused ? "pause.fill" : "record.circle.fill")
+                Image(systemName: model.isPaused ? "pause.circle.fill" : "record.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(model.isPaused ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.red))
+                    .foregroundStyle(model.isPaused ? Color.orange : Color.red)
 
                 Text(MeetingExporter.durationLabel(model.seconds))
                     .font(.caption.monospacedDigit())
@@ -295,10 +301,12 @@ private struct MeetingIndicatorView: View {
                         .contentShape(Rectangle())
                 }
                 .disabled(!model.canPauseOrResume)
-                .help(model.isPaused ? "Resume" : "Pause")
+                .help(model.canPauseOrResume
+                      ? (model.isPaused ? "Resume" : "Pause")
+                      : "Inscribe is dictating. Finish that first.")
 
                 Button(action: model.stop) {
-                    Label("Stop and Save", systemImage: "stop.fill")
+                    Label("Stop", systemImage: "stop.fill")
                         .labelStyle(.iconOnly)
                         .frame(width: 24, height: 20)
                         .contentShape(Rectangle())

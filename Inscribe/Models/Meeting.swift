@@ -184,12 +184,14 @@ extension Meeting {
             context.insert(speaker)
         }
 
-        // The same passes `rawTranscript` gets, in the same order: the listed words
-        // spelled, then the pause marks and the replacements. Every reader prefers the
-        // utterances once there is attribution, so without them the displayed and
-        // exported meeting would read "type script" where the raw transcript has
-        // "TypeScript", keep the recognizer's pause marks, and skip the user's word
-        // replacements.
+        // The listed words spelled, then the pause marks and the replacements, as
+        // `rawTranscript` gets them. Every reader prefers the utterances once there is
+        // attribution, so without these passes the displayed and exported meeting would
+        // read "type script" where the raw transcript has "TypeScript", keep the
+        // recognizer's pause marks, and skip the user's word replacements. The
+        // utterances still hold the recognizer's first guess. Where `rawTranscript`
+        // took a second guess for a listed word (`Vocabulary.choose`), the two texts
+        // can differ.
         for item in aligned {
             let utterance = Utterance(
                 speakerId: item.speakerId,

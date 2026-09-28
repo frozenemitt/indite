@@ -18,7 +18,7 @@ struct QuickTranscribeIntent: AppIntent {
 
     static let openAppWhenRun: Bool = false
 
-    @Parameter(title: "Duration", description: "Recording duration in seconds (5-120)", default: 15)
+    @Parameter(title: "Duration", description: "Recording duration in seconds (5-300)", default: 15)
     var duration: Int
 
     /// Picked from the list rather than typed. A typed name had to match exactly, and
@@ -39,7 +39,7 @@ struct QuickTranscribeIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         // Validate duration
-        let recordingDuration = min(max(duration, 5), 120)
+        let recordingDuration = min(max(duration, 5), 300)
 
         // The app's engine, not a new one: a second engine records over whatever the
         // app is already doing, because the guard that refuses that is instance state.

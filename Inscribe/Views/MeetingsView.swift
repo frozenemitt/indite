@@ -59,7 +59,7 @@ struct MeetingsView: View {
                 // The new meeting joins the list only once it records, so this is what
                 // says the click was heard. It said "No Meeting Selected" for the
                 // seconds the speaker models take to load.
-                ProgressView("Starting Meeting…")
+                ProgressView("Preparing…")
             } else {
                 ContentUnavailableView {
                     Label("No Meeting Selected", systemImage: "waveform")
@@ -209,6 +209,16 @@ struct MeetingsView: View {
         meeting != recorder.activeMeeting
     }
 
+    /// Why the microphone is unavailable to a meeting, named by whoever holds it.
+    private var microphoneHeldReason: String? {
+        guard engine.isBusy else { return nil }
+        switch engine.owner {
+        case .dictation: return "Inscribe is dictating. Finish that first."
+        case .shortcut: return "A shortcut is recording."
+        case .meeting, nil: return nil
+        }
+    }
+
     @ViewBuilder
     private var recordButton: some View {
         switch recorder.state {
@@ -222,7 +232,7 @@ struct MeetingsView: View {
             // A dictation holds the same microphone. Without this the button looked
             // available, did nothing when clicked, and said nothing about why.
             .disabled(engine.isBusy)
-            .help(engine.isBusy ? "Inscribe is dictating. Finish that first." : "Start Meeting (⌘N)")
+            .help(microphoneHeldReason ?? "Start Meeting (⌘N)")
 
         // Saving has its own mark. A red record button through it read as still
         // recording, while the page said "Saving…".
@@ -358,13 +368,27 @@ private extension Meeting {
     /// rather than from the speaker's place in the list. By place, merging Speaker 2
     /// away moved Speaker 3 up one and recolored every line of theirs. A label with no
     /// number, "Unattributed", is gray.
+    ///
+    /// Numbers eight apart share a color, so after merges Speaker 1 and Speaker 9 could
+    /// be the only two left, both blue. Speakers therefore take their colors in label
+    /// order, and a speaker whose color an earlier one holds takes the next free color.
+    /// That moves a color only in a meeting whose speakers were numbered past eight.
+    /// Once all eight colors are held, a speaker takes its own color again.
     func color(forSpeakerId id: String) -> Color {
         let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
-        guard let label = speakers.first(where: { $0.speakerId == id })?.generatedLabel,
-              let number = label.split(separator: " ").last.flatMap({ Int($0) }),
-              number >= 1
-        else { return .secondary }
-        return palette[(number - 1) % palette.count]
+        var taken = Set<Int>()
+        for speaker in sortedSpeakers {
+            guard let number = speaker.generatedLabel.split(separator: " ").last.flatMap({ Int($0) }),
+                  number >= 1
+            else { continue }
+            let preferred = (number - 1) % palette.count
+            let slot = (0..<palette.count)
+                .map { (preferred + $0) % palette.count }
+                .first(where: { !taken.contains($0) }) ?? preferred
+            if speaker.speakerId == id { return palette[slot] }
+            taken.insert(slot)
+        }
+        return .secondary
     }
 }
 
@@ -399,7 +423,7 @@ private struct MeetingDetailView: View {
                     // Opened with the page rather than at the first click, so a
                     // recording that will not open says so before any line is clicked.
                     // Not while live, when the file is still being written.
-                    .task { player.load(fileName: meeting.audioFileName) }
+                    .task { await player.load(fileName: meeting.audioFileName) }
                     .inspector(isPresented: $showsInspector) {
                         inspector
                             .inspectorColumnWidth(min: 240, ideal: 290, max: 400)
@@ -408,7 +432,7 @@ private struct MeetingDetailView: View {
         }
         .onDisappear { player.unload() }
         .alert(
-            "Export Failed",
+            "Couldn\u{2019}t Export Meeting",
             isPresented: Binding(
                 get: { exportError != nil },
                 set: { if !$0 { exportError = nil } }
@@ -633,7 +657,8 @@ private struct MeetingDetailView: View {
             player.pause()
             return
         }
-        player.load(fileName: meeting.audioFileName)
+        // Opened as the page appeared. The lines offer playback only once it has.
+        guard player.loadedFileName == meeting.audioFileName else { return }
         player.follow(meeting.orderedUtterances)
         if !player.isPlaying,
            player.currentTime > utterance.start, player.currentTime < utterance.end {
@@ -1031,6 +1056,16 @@ private struct LiveMeetingView: View {
         }
     }
 
+    /// Why the microphone is unavailable to a meeting, named by whoever holds it.
+    private var microphoneHeldReason: String? {
+        guard engine.isBusy else { return nil }
+        switch engine.owner {
+        case .dictation: return "Inscribe is dictating. Finish that first."
+        case .shortcut: return "A shortcut is recording."
+        case .meeting, nil: return nil
+        }
+    }
+
     @ViewBuilder
     private var buttons: some View {
         if recorder.state == .recording || recorder.state == .paused {
@@ -1045,7 +1080,7 @@ private struct LiveMeetingView: View {
                 // A dictation taken during the pause holds the microphone, and a resume
                 // then fails and leaves the meeting paused.
                 .disabled(recorder.isPaused && engine.isBusy)
-                .help(recorder.isPaused && engine.isBusy ? "Inscribe is dictating. Finish that first." : "")
+                .help(recorder.isPaused ? (microphoneHeldReason ?? "") : "")
 
                 Button {
                     Task { await recorder.stop(in: modelContext) }

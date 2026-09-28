@@ -97,6 +97,13 @@ class FoundationModelsHelper {
     /// once asked for free text instead. Builds a fresh session with the same
     /// instructions rather than reusing the failed one, since the refusal is now
     /// part of that session's transcript and would colour every turn after it.
+    ///
+    /// The answer is returned as written. Measured on the macOS 27 model, 21
+    /// plain-text retries of seven guardrail-refused Clean Up and Summarize
+    /// requests, and 143 other plain-text answers, never opened with a preamble
+    /// such as "Here is the text:". A first line ending in a colon was always the
+    /// user's own content, like "Agenda for tomorrow:", so stripping one would
+    /// delete real text.
     static func generateTextAfterGuardrailViolation(
         instructions: String,
         prompt: String,

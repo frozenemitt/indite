@@ -157,8 +157,8 @@ final class MeetingAudioWriter: @unchecked Sendable {
 
         guard let name, MeetingAudioStore.fileExists(named: name) else { return nil }
 
-        // A file that exists but holds no audio is worse than none: the meeting would
-        // show a playback bar that opens an empty recording.
+        // A file that exists but holds no audio is worse than none: every line of the
+        // meeting would offer to play, and clicking one would play nothing.
         guard framesWritten > 0 else {
             Self.log.error("Recording captured no audio; discarding the empty file")
             MeetingAudioStore.delete(fileNamed: name)

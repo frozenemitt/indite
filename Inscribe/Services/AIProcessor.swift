@@ -1,7 +1,6 @@
 import Foundation
 import os
 import FoundationModels
-import Observation
 
 // MARK: - Structured Output
 
@@ -16,7 +15,6 @@ struct TranscriptionResult {
 
 /// AI-powered text processor using Apple's on-device FoundationModels
 @MainActor
-@Observable
 final class AIProcessor {
 
     // MARK: - State
@@ -57,12 +55,15 @@ final class AIProcessor {
     /// - Parameter surroundingText: What is already in the field being dictated into.
     ///   Given to the model as background so a reply matches the thread it belongs to.
     ///   It is explicitly marked as context to be read but not rewritten.
+    /// - Parameter usesWarmSession: True only for the dictation that called `prewarm`.
+    ///   Every other request builds its own session and leaves the warm one alone.
     /// - Parameter onPartial: Called with the rewrite so far, each time it grows, for
     ///   a caller that shows it while the model is still writing.
     func process(
         text: String,
         promptId: UUID? = nil,
         surroundingText: String? = nil,
+        usesWarmSession: Bool = false,
         onPartial: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         // Get the prompt
@@ -81,6 +82,7 @@ final class AIProcessor {
             text: text,
             prompt: prompt,
             surroundingText: surroundingText,
+            usesWarmSession: usesWarmSession,
             onPartial: onPartial
         )
     }
@@ -144,6 +146,7 @@ final class AIProcessor {
         text: String,
         prompt: Prompt,
         surroundingText: String? = nil,
+        usesWarmSession: Bool = false,
         onPartial: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         guard !text.isEmpty else {
@@ -167,10 +170,12 @@ final class AIProcessor {
         // The session warmed while this was being spoken, if it was warmed for this
         // prompt with its current instructions. Taken rather than borrowed: a
         // session carries its own transcript, so the next dictation gets a fresh one.
-        // A request for any other prompt, such as a meeting summary running while
-        // the user dictates, leaves it for the dictation it was loaded for.
+        // Only the dictation that loaded it may take it. Any other request, such as a
+        // meeting summary running while the user dictates, builds its own session even
+        // when its prompt is the same one.
         let session: LanguageModelSession
-        if let warmSession, warmPromptId == prompt.id, warmInstructions == prompt.systemPrompt {
+        if usesWarmSession, let warmSession,
+           warmPromptId == prompt.id, warmInstructions == prompt.systemPrompt {
             session = warmSession
             discardPrewarm()
         } else {

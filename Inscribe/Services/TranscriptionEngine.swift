@@ -903,9 +903,9 @@ enum TranscriptionEngineError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .microphoneNotAuthorized:
-            return "Microphone access not authorized"
+            return "Microphone access not authorized. Allow Inscribe in System Settings → Privacy & Security → Microphone."
         case .speechRecognitionNotAuthorized:
-            return "Speech Recognition access not authorized. Allow Inscribe in System Settings > Privacy & Security > Speech Recognition."
+            return "Speech Recognition access not authorized. Allow Inscribe in System Settings → Privacy & Security → Speech Recognition."
         case .setupFailed(let reason):
             return "Setup failed: \(reason)"
         case .transcriptionFailed(let reason):

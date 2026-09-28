@@ -211,7 +211,7 @@ final class PromptConfiguration {
             isBuiltIn: true
         ),
         Prompt(
-            id: formalPromptId,
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
             name: "Make Formal",
             systemPrompt: "You are an expert editor specializing in transforming casual spoken transcriptions into polished, professional written prose.",
             userTemplate: """
@@ -229,7 +229,7 @@ final class PromptConfiguration {
             isBuiltIn: true
         ),
         Prompt(
-            id: casualPromptId,
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000004")!,
             name: "Make Casual",
             systemPrompt: "You are an expert editor specializing in transforming formal or stiff transcriptions into natural, conversational written prose.",
             userTemplate: """
@@ -247,7 +247,7 @@ final class PromptConfiguration {
             isBuiltIn: true
         ),
         Prompt(
-            id: punctuationPromptId,
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000005")!,
             name: "Fix Punctuation",
             systemPrompt: "You are an expert punctuation editor specializing in adding proper punctuation to spoken transcriptions without altering any words.",
             userTemplate: """
@@ -280,15 +280,6 @@ final class PromptConfiguration {
 
     /// The built-in "Summarize" prompt ID
     static let summarizePromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-
-    /// The built-in "Make Formal" prompt ID
-    static let formalPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
-
-    /// The built-in "Make Casual" prompt ID
-    static let casualPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
-
-    /// The built-in "Fix Punctuation" prompt ID
-    static let punctuationPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000005")!
 
     // MARK: - Initialization
 

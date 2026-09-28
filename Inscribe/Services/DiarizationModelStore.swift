@@ -205,7 +205,8 @@ enum DiarizationModelStore {
         )
     }
 
-    /// Hash every installed file and compare it against what the repository publishes.
+    /// Check every published file FluidAudio loads against the repository's content hash;
+    /// a file missing from disk counts as a mismatch.
     ///
     /// File size was the first thing I reached for and it is not good enough: two
     /// different files can share a size, and a model can be retrained without changing

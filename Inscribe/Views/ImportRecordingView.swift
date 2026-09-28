@@ -13,8 +13,7 @@ import AppKit
 struct ImportRecordingView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.modelContext) private var modelContext
-
-    @State private var diarizer = MeetingDiarizer()
+    @Environment(\.appearsActive) private var appearsActive
 
     @State private var droppedURL: URL?
     @State private var separateSpeakers = true
@@ -71,10 +70,21 @@ struct ImportRecordingView: View {
                     .foregroundStyle(.green)
             }
 
+            if let savedMeeting, !savedMeeting.rawTranscript.isEmpty {
+                Divider()
+                transcriptPreview(savedMeeting.rawTranscript)
+            }
+
             Spacer()
         }
         .padding(20)
         .frame(minWidth: 520, minHeight: 420)
+        // The models are installed from the Settings window. Read the disk whenever this
+        // window becomes active again, so the toggle and its caption match what is
+        // installed.
+        .onChange(of: appearsActive) { _, active in
+            if active { speakerModelsInstalled = DiarizationModelStore.isInstalled }
+        }
     }
 
     // MARK: - Views
@@ -110,6 +120,28 @@ struct ImportRecordingView: View {
         // Disabled during a run. accept() turns away any file chosen then, so the panel
         // opened only to discard the choice without a word.
         .disabled(isRunning)
+    }
+
+    /// The meeting's saved text, after TextProcessor, so what is read and copied here is
+    /// what the meeting holds rather than the recognizer's first output.
+    private func transcriptPreview(_ transcript: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Transcript")
+                    .font(.headline)
+                Spacer()
+                Button("Copy") { ClipboardService.copy(transcript) }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+            }
+
+            ScrollView {
+                Text(transcript)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 220)
+        }
     }
 
     // MARK: - File Selection
@@ -157,8 +189,9 @@ struct ImportRecordingView: View {
         }
 
         droppedURL = url
-        // Checked with every file, so models installed from Settings while this window
-        // was open are seen.
+        // Read with every file. The body reads it again whenever the window comes
+        // forward, so models installed from Settings while this window was open are
+        // seen without choosing the file again.
         speakerModelsInstalled = DiarizationModelStore.isInstalled
         errorMessage = nil
         savedMeeting = nil
@@ -184,6 +217,9 @@ struct ImportRecordingView: View {
                 if separateSpeakers && speakerModelsInstalled {
                     progressNote = "Separating speakers…"
                     do {
+                        // A new diarizer for each import, so it loads the models installed
+                        // now. One kept by the window never reloaded after an update.
+                        let diarizer = MeetingDiarizer()
                         try await diarizer.loadModels()
                         // Decoded off the main actor: reading an hour-long file is one
                         // synchronous pass, and this Task inherits the view's isolation.

@@ -173,11 +173,12 @@ struct ScribeApp: App {
                 .environment(meetingRecorder)
                 .modelContainer(Self.modelContainer)
         } label: {
-            // The dictation's own delivery, not every AI request in flight. A meeting
-            // summary running in the background turned the icon into the brain.
+            // The dictation's own AI rewrite, not its whole delivery and not every AI
+            // request in flight. With AI off, the brain showed on every release; a meeting
+            // summary running in the background also turned the icon into the brain.
             MenuBarIcon(
                 isRecording: transcriptionEngine.isRecording,
-                isProcessing: coordinator.isDelivering
+                isProcessing: coordinator.isRewriting
             )
         }
         .menuBarExtraStyle(.window)
@@ -344,8 +345,9 @@ struct ScribeApp: App {
         /// `AXIsProcessTrusted()` answers false while the app is still finishing launch,
         /// even when access has been granted, so the single check above reads it as
         /// missing and the tap never gets built. Nothing retried: the key did nothing,
-        /// Settings said "Not listening", and the only way out was to nudge a hotkey
-        /// field there, because changing one calls `rearm()`.
+        /// Settings showed "Accessibility access is required to detect the hotkey."
+        /// even though access had been granted, and the only way out was to nudge a
+        /// hotkey field there, because changing one calls `rearm()`.
         /// It also covers access granted minutes later, without a relaunch.
         private func armWhenTrustArrives() {
             Task { @MainActor in

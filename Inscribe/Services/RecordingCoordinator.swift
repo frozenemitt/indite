@@ -82,6 +82,11 @@ final class RecordingCoordinator {
     /// away from the sentence being spoken right now.
     private(set) var isDelivering = false
 
+    /// True only while the dictation's own AI rewrite runs. What the menu bar's brain
+    /// icon follows: `isDelivering` also covers the engine drain and the paste, which
+    /// run with AI off too.
+    private(set) var isRewriting = false
+
     /// True only while *this* coordinator's dictation is running.
     ///
     /// Not `engine.isRecording`: the engine is shared with meeting mode, and a meeting
@@ -96,13 +101,18 @@ final class RecordingCoordinator {
         engine.owner == .dictation && (engine.phase == .starting || engine.phase == .recording)
     }
 
-    /// True from the moment a dictation starts coming up until its words are in the
-    /// history, or it turns out to have none.
+    /// True, while the history is on, from the moment a dictation starts recording
+    /// until its words are in the history, or it turns out to have none.
+    ///
+    /// A start still coming up holds no words, because the user waits for the start
+    /// sound before speaking, so a quit does not wait on it. A start that is waiting
+    /// on the previous dictation's stop is still covered by `stopTask`. With the
+    /// history off there is nowhere to keep the words, so a quit does not wait either.
     ///
     /// The history is written only once the engine has let go, so a quit anywhere in
     /// this span would otherwise lose every word spoken.
     var hasUnsavedDictation: Bool {
-        startTask != nil || stopTask != nil || isRecording
+        settings.keepDictationHistory && (stopTask != nil || isRecording)
     }
 
     /// The most recent app other than Inscribe to come to the front.
@@ -145,8 +155,9 @@ final class RecordingCoordinator {
         self.settings = settings
         #if os(macOS)
         self.overlay = DictationOverlayController(settings: settings)
-        // Checked as the observer below checks it. Inscribe in front at launch became
-        // its own fallback target, and History's Insert pasted into Inscribe's window.
+        // Checked as the observer below checks it, so Inscribe is never its own target.
+        // With Inscribe in front at launch, no app is known until another comes
+        // forward, and text delivered before then goes to the clipboard.
         if let app = NSWorkspace.shared.frontmostApplication,
            app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastExternalApp = app
@@ -490,19 +501,26 @@ final class RecordingCoordinator {
         // Held so the deadline can cancel it. `withDeadline` only stops waiting, and a
         // rewrite left running kept streaming into the next dictation's panel and held
         // the menu bar in its processing state until the model finished.
+        isRewriting = true
         let aiPass = Task { [aiProcessor, onPartial, surroundingText] in
             try await aiProcessor.process(
                 text: transcript,
                 promptId: promptId,
                 surroundingText: surroundingText,
+                usesWarmSession: true,
                 onPartial: onPartial
             )
         }
+        // Whatever the pass did with it, the session warmed for this dictation is spent:
+        // a prompt switched mid-dictation leaves it unused.
+        defer { aiProcessor.discardPrewarm() }
         let finalText: String
         do {
             finalText = try await withDeadline(seconds: Self.aiDeadline) { try await aiPass.value }
+            isRewriting = false
             AudioFeedbackService.shared.stopProcessingLoop()
         } catch {
+            isRewriting = false
             aiPass.cancel()
             // A failed AI pass must not cost the user their words, and neither may a
             // model that never answers: past the deadline the raw transcript goes out.
@@ -609,7 +627,6 @@ final class RecordingCoordinator {
     /// words were meant for. A stop already in flight writes its own entry inside the
     /// stop task, so waiting on that task is enough.
     func saveDictationForQuit() async {
-        if let startTask { await startTask.value }
         if let stopTask {
             _ = await stopTask.value
             return
@@ -629,8 +646,11 @@ final class RecordingCoordinator {
         aiProcessor.discardPrewarm()
 
         let raw = await engine.stopRecording(owner: .dictation)
-        _ = recordHistory(TextProcessor.process(raw, replacements: settings.wordReplacements))
-        Log.dictation.notice("Kept the dictation in the history on quit")
+        if recordHistory(TextProcessor.process(raw, replacements: settings.wordReplacements)) != nil {
+            Log.dictation.notice("Kept the dictation in the history on quit")
+        } else {
+            Log.dictation.notice("Stopped the dictation on quit; it had no words to keep")
+        }
     }
 
     // MARK: - Output

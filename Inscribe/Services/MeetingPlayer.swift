@@ -20,7 +20,8 @@ final class MeetingPlayer {
     // timer, so the opt-out sits on the property rather than the whole class.
     nonisolated(unsafe) private var ticker: Timer?
 
-    /// File currently loaded, so switching meetings reloads rather than replaying.
+    /// The recording that opened, or nil. A repeated load of the same file does nothing,
+    /// and the transcript offers playback only while this is set.
     private(set) var loadedFileName: String?
 
     private(set) var isPlaying = false
@@ -44,8 +45,12 @@ final class MeetingPlayer {
     // MARK: - Loading
 
     /// Load a meeting's recording, doing nothing if it is already loaded.
+    ///
+    /// The file opens off the main thread, so a long recording does not stall the
+    /// window. A load whose task was cancelled, because another meeting was selected,
+    /// publishes nothing.
     @discardableResult
-    func load(fileName: String?) -> Bool {
+    func load(fileName: String?) async -> Bool {
         guard let fileName, MeetingAudioStore.fileExists(named: fileName) else {
             unload()
             return false
@@ -56,8 +61,8 @@ final class MeetingPlayer {
         stop()
 
         do {
-            let player = try AVAudioPlayer(contentsOf: MeetingAudioStore.url(forFileNamed: fileName))
-            player.prepareToPlay()
+            let player = try await Self.open(MeetingAudioStore.url(forFileNamed: fileName))
+            guard !Task.isCancelled else { return false }
 
             self.player = player
             loadedFileName = fileName
@@ -65,11 +70,19 @@ final class MeetingPlayer {
             lastError = nil
             return true
         } catch {
-            lastError = error.localizedDescription
+            if !Task.isCancelled {
+                lastError = error.localizedDescription
+            }
             Self.log.error("Could not open the recording: \(error, privacy: .public)")
             unload()
             return false
         }
+    }
+
+    /// Open a recording on the concurrent pool rather than the caller's actor.
+    @concurrent
+    nonisolated static func open(_ url: URL) async throws -> sending AVAudioPlayer {
+        try AVAudioPlayer(contentsOf: url)
     }
 
     func unload() {

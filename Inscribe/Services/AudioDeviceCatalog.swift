@@ -58,11 +58,17 @@ enum AudioDeviceCatalog {
     }
 
     /// Yields whenever a device is added or removed, or the default input changes.
+    ///
+    /// The listener is a C function with a context pointer, not a block. Swift wraps
+    /// a closure in a new block at every call, so the block API never receives the
+    /// block it registered, removes nothing, and still reports success. The same
+    /// function and context in both calls let the HAL match the removal.
     static func changes() -> AsyncStream<Void> {
         AsyncStream { continuation in
+            let sink = ChangeSink(continuation)
+            let context = Unmanaged.passUnretained(sink).toOpaque()
             let system = AudioObjectID(kAudioObjectSystemObject)
             let selectors = [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice]
-            let listener: @Sendable (UInt32, UnsafePointer<AudioObjectPropertyAddress>) -> Void = { _, _ in continuation.yield() }
 
             for selector in selectors {
                 var address = AudioObjectPropertyAddress(
@@ -70,9 +76,10 @@ enum AudioDeviceCatalog {
                     mScope: kAudioObjectPropertyScopeGlobal,
                     mElement: kAudioObjectPropertyElementMain
                 )
-                AudioObjectAddPropertyListenerBlock(system, &address, .main, listener)
+                AudioObjectAddPropertyListener(system, &address, ChangeSink.proc, context)
             }
 
+            // Capturing `sink` here keeps it alive until its listeners are gone.
             continuation.onTermination = { _ in
                 for selector in selectors {
                     var address = AudioObjectPropertyAddress(
@@ -80,9 +87,28 @@ enum AudioDeviceCatalog {
                         mScope: kAudioObjectPropertyScopeGlobal,
                         mElement: kAudioObjectPropertyElementMain
                     )
-                    AudioObjectRemovePropertyListenerBlock(system, &address, .main, listener)
+                    AudioObjectRemovePropertyListener(
+                        system, &address, ChangeSink.proc, Unmanaged.passUnretained(sink).toOpaque()
+                    )
                 }
             }
+        }
+    }
+
+    /// Carries a stream's continuation to the listener function through its context pointer.
+    ///
+    /// The HAL calls `proc` on its own notification thread. `yield` is thread-safe, and
+    /// the stream's consumer resumes on its own actor.
+    private final class ChangeSink: Sendable {
+        let continuation: AsyncStream<Void>.Continuation
+
+        init(_ continuation: AsyncStream<Void>.Continuation) {
+            self.continuation = continuation
+        }
+
+        static let proc: AudioObjectPropertyListenerProc = { _, _, _, context in
+            Unmanaged<ChangeSink>.fromOpaque(context!).takeUnretainedValue().continuation.yield()
+            return noErr
         }
     }
 

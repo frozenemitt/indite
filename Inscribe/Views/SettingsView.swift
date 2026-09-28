@@ -110,7 +110,10 @@ struct GeneralSettingsView: View {
 
                 if settings.keepDictationHistory {
                     Picker("Keep the last", selection: $settings.dictationHistoryLimit) {
-                        ForEach([25, 50, 100, 250, 500], id: \.self) { limit in
+                        // The stored limit joins the list when it is not on it. The
+                        // stepper saved any multiple of 10, and a menu with no entry
+                        // for the value in force shows a blank title.
+                        ForEach(Set([25, 50, 100, 250, 500, settings.dictationHistoryLimit]).sorted(), id: \.self) { limit in
                             Text("\(limit)").tag(limit)
                         }
                     }
@@ -1291,10 +1294,12 @@ struct DictationSettingsView: View {
 
             Section("Recording") {
                 // A menu of lengths: the 30-second stepper this replaced took up to
-                // 119 clicks to cross its range.
+                // 119 clicks to cross its range. A length it saved that is not listed
+                // joins the menu, which otherwise shows a blank title, and seconds are
+                // allowed so 90 reads as 1 min, 30 sec rather than 2 min.
                 Picker("Maximum length", selection: $settings.maxRecordingSeconds) {
-                    ForEach([60, 120, 300, 600, 900, 1800, 3600], id: \.self) { seconds in
-                        Text(Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes])))
+                    ForEach(Set([60, 120, 300, 600, 900, 1800, 3600, settings.maxRecordingSeconds]).sorted(), id: \.self) { seconds in
+                        Text(Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes, .seconds])))
                             .tag(seconds)
                     }
                 }
@@ -1502,30 +1507,65 @@ struct AppProfilesSettingsView: View {
     /// Choose an app from the Applications folder, as System Settings does for login
     /// items, so it need not be running and the user never types a bundle identifier.
     private func addApp() {
+        guard let window = NSApp.keyWindow else { return }
+
         let panel = NSOpenPanel()
         panel.directoryURL = URL(filePath: "/Applications")
         panel.allowedContentTypes = [.application]
         panel.allowsMultipleSelection = false
 
-        guard panel.runModal() == .OK,
-              let url = panel.url,
-              let bundle = Bundle(url: url),
-              let bundleID = bundle.bundleIdentifier else { return }
-        guard !profiles.contains(where: { $0.bundleIdentifier == bundleID }) else { return }
+        // Apps that already have a profile are greyed out. Chosen, they closed the
+        // panel and changed nothing, which looked like a failed add.
+        let filter = ExistingProfileFilter(taken: Set(profiles.map(\.bundleIdentifier)))
+        panel.delegate = filter
 
-        let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-            ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
-            ?? url.deletingPathExtension().lastPathComponent
+        // A sheet on the Settings window. Run modally, the panel floated free of the
+        // window and blocked every other one in the app, the menu bar's Stop Meeting
+        // included.
+        Task {
+            let response = await panel.beginSheetModal(for: window)
+            // The panel holds its delegate weakly, so the filter is kept alive here
+            // until the sheet has closed.
+            withExtendedLifetime(filter) {}
 
-        profiles.append(AppProfile(
-            bundleIdentifier: bundleID,
-            appName: name,
-            promptId: nil,
-            outputModeRaw: nil,
-            autoSubmit: nil
-        ))
-        profiles.sort { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
-        commit()
+            guard response == .OK,
+                  let url = panel.url,
+                  let bundle = Bundle(url: url),
+                  let bundleID = bundle.bundleIdentifier else { return }
+            // The filter cannot see through a Finder alias, which the panel resolves
+            // to the app it points at. commit() cannot hold two profiles for one app.
+            guard !profiles.contains(where: { $0.bundleIdentifier == bundleID }) else { return }
+
+            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+                ?? url.deletingPathExtension().lastPathComponent
+
+            profiles.append(AppProfile(
+                bundleIdentifier: bundleID,
+                appName: name,
+                promptId: nil,
+                outputModeRaw: nil,
+                autoSubmit: nil
+            ))
+            profiles.sort { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
+            commit()
+        }
+    }
+}
+
+/// Greys out apps that already have a profile in the Add App panel.
+@MainActor
+private final class ExistingProfileFilter: NSObject, NSOpenSavePanelDelegate {
+    private let taken: Set<String>
+
+    init(taken: Set<String>) {
+        self.taken = taken
+    }
+
+    func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
+        // Folders stay enabled so the user can still open them.
+        guard url.pathExtension == "app" else { return true }
+        return !taken.contains(Bundle(url: url)?.bundleIdentifier ?? "")
     }
 }
 
@@ -1765,8 +1805,10 @@ struct MeetingAudioSection: View {
                 // Nothing here tests the permission. The only test creates a tap, and
                 // a refused permission may not refuse one, so the test could report
                 // access macOS never gave. It also held the main thread while the audio
-                // server answered. A meeting reports system audio that stays silent.
-                Button("Open System Settings") {
+                // server answered. A meeting reports system audio that stays silent, so
+                // the link names the permission to check rather than saying whether it
+                // was given.
+                Button("Allow Inscribe in Screen & System Audio Recording…") {
                     SystemAudioCapture.openSystemSettings()
                 }
                 .buttonStyle(.link)

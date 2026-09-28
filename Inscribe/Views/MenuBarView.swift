@@ -89,10 +89,15 @@ struct MenuBarView: View {
                 Text(recordingButtonTitle)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Only while the key works. After a reinstall breaks the Accessibility
-                // grant, the tap is gone and the menu went on advertising the key.
+                // The key is named only while it works. After a reinstall breaks the
+                // Accessibility grant, the tap is gone, and the menu went on advertising
+                // a key that did nothing. The tooltip says where to turn it back on.
                 if hotkeyMonitor.isRunning {
                     triggerLabel
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Hotkey off")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -107,7 +112,8 @@ struct MenuBarView: View {
                 .fill(coordinator.isCancellable ? Color.red.opacity(0.1) : Color.clear)
         )
         .disabled(coordinator.isDelivering || dictationBlockedReason != nil)
-        .help(dictationBlockedReason ?? "")
+        .help(dictationBlockedReason
+              ?? (hotkeyMonitor.isRunning ? "" : "The hotkey is not listening. See Settings > Hotkey."))
     }
 
     // MARK: - Prompt Section
@@ -221,7 +227,10 @@ struct MenuBarView: View {
                 }
             } label: {
                 HStack {
-                    Image(systemName: meetingRecorder.isRecording ? "stop.circle.fill" : "person.2.wave.2")
+                    // The stop icon while paused too, where the row also reads "Stop
+                    // Meeting". Red only while the microphone is live.
+                    Image(systemName: meetingRecorder.isRecording || meetingRecorder.isPaused
+                          ? "stop.circle.fill" : "person.2.wave.2")
                         .foregroundStyle(meetingRecorder.isRecording ? .red : .primary)
                     Text(meetingButtonTitle)
                     Spacer()
@@ -231,8 +240,7 @@ struct MenuBarView: View {
             .buttonStyle(.plain)
             .padding(.vertical, 4)
             .disabled(!meetingButtonEnabled)
-            .help(meetingRecorder.state == .idle && transcriptionEngine.isBusy
-                  ? "Inscribe is dictating. Finish that first." : "")
+            .help(meetingRecorder.state == .idle ? (microphoneHeldReason ?? "") : "")
 
             // Shown only when a pause or resume can act. During "Preparing…" and
             // "Saving…" the row offered a pause that did nothing.
@@ -255,11 +263,12 @@ struct MenuBarView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 4)
-                // A dictation taken during the pause holds the microphone, and a resume
-                // then fails with an error sound and leaves the meeting paused.
+                // A dictation or a shortcut recorded during the pause holds the
+                // microphone, and a resume then fails with an error sound and leaves the
+                // meeting paused. The meeting's own resume grays the row out too, with no
+                // tooltip, since a second click then does nothing.
                 .disabled(meetingRecorder.isPaused && transcriptionEngine.isBusy)
-                .help(meetingRecorder.isPaused && transcriptionEngine.isBusy
-                      ? "Inscribe is dictating. Finish that first." : "")
+                .help(meetingRecorder.isPaused ? (microphoneHeldReason ?? "") : "")
             }
 
             Button {
@@ -300,6 +309,20 @@ struct MenuBarView: View {
             }
             .buttonStyle(.plain)
             .padding(.vertical, 4)
+        }
+    }
+
+    /// Why a meeting cannot start or resume, when a dictation or a shortcut holds the
+    /// engine.
+    ///
+    /// Asked of the engine's owner, as `dictationBlockedReason` is. Keyed to `isBusy`
+    /// alone, the tooltip blamed a dictation while a shortcut was recording.
+    private var microphoneHeldReason: String? {
+        guard transcriptionEngine.isBusy else { return nil }
+        switch transcriptionEngine.owner {
+        case .dictation: return "Inscribe is dictating. Finish that first."
+        case .shortcut: return "A shortcut is recording."
+        case .meeting, nil: return nil
         }
     }
 

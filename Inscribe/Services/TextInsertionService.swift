@@ -171,6 +171,15 @@ enum TextInsertionService {
             return .copiedToClipboard
         }
 
+        // With no app to aim at, the system-wide focused field is Inscribe's own, such
+        // as the History search box, and ⌘V pasted into Inscribe's window.
+        guard let targetApp else {
+            log.notice("No app to type into — clipboard only")
+            lastInsertion = nil
+            ClipboardService.copy(text)
+            return .copiedToClipboard
+        }
+
         await restoreFocusIfNeeded(to: targetApp)
 
         // Nothing was typed into an app, so there is nothing for ⌘Z to take back.
@@ -178,7 +187,7 @@ enum TextInsertionService {
 
         guard let field = await awaitFocusedTextElement(in: targetApp) else {
             log.notice("""
-                No focused text field in \(targetApp?.localizedName ?? "target", privacy: .public) \
+                No focused text field in \(targetApp.localizedName ?? "target", privacy: .public) \
                 — falling back to clipboard
                 """)
             ClipboardService.copy(text)
@@ -195,12 +204,23 @@ enum TextInsertionService {
         // The field was found by asking the target app, but ⌘V goes to whatever app is
         // in front. macOS can refuse the activation above, and the text then landed in
         // the app the user had moved on to — a Mail draft instead of a Slack reply.
-        if let targetApp, NSWorkspace.shared.frontmostApplication?.processIdentifier != targetApp.processIdentifier {
-            log.error("""
-                \(targetApp.localizedName ?? "The target app", privacy: .public) is not in front \
-                — leaving the transcript on the clipboard instead of pasting into \
-                \(appName, privacy: .public)
-                """)
+        // Inscribe itself in front is refused whatever the target: its focused field is
+        // its own, such as the History search box.
+        let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let inscribeInFront = frontPID == ProcessInfo.processInfo.processIdentifier
+        if inscribeInFront || frontPID != targetApp.processIdentifier {
+            if inscribeInFront {
+                log.error("""
+                    Inscribe is in front — leaving the transcript on the clipboard instead \
+                    of pasting into its own window
+                    """)
+            } else {
+                log.error("""
+                    \(targetApp.localizedName ?? "The target app", privacy: .public) is not in front \
+                    — leaving the transcript on the clipboard instead of pasting into \
+                    \(appName, privacy: .public)
+                    """)
+            }
             ClipboardService.copy(text)
             return .copiedToClipboard
         }

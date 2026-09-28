@@ -57,12 +57,12 @@ Optionally the model is also shown the text already in the field you are dictati
 
 Everything runs on-device. Audio and text are never uploaded.
 
-Inscribe reaches the network only to fetch models, never to send your data:
+Inscribe reaches the network only to fetch models and check them for updates, never to send your data:
 
 - Apple downloads its speech model through `AssetInventory` on first use.
 - The CoreML speaker models (pyannote community-1, through FluidAudio) download from HuggingFace only when you press Install Models, Update Now or Re-download Models in Settings. Check for Updates reads the repository's public metadata, and Inscribe verifies the installed files against the content hashes HuggingFace publishes: SHA-256 for weights, git blob hashes for the rest.
 
-Meetings and imports never reach the network, because Inscribe keeps FluidAudio in offline mode. Without the speaker models installed, they record and transcribe without speaker labels.
+Meetings and imports never download speaker models, because Inscribe keeps FluidAudio in offline mode. Without the speaker models installed, they record and transcribe without speaker labels.
 
 Dictation history stores what you dictate in plain text on this Mac. It is a setting, and it can be switched off.
 

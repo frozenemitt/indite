@@ -250,12 +250,6 @@ final class AppSettings {
         self.stopSoundName = UserDefaults.standard.string(forKey: "stopSoundName") ?? "Pop"
         self.completeSoundName = UserDefaults.standard.string(forKey: "completeSoundName") ?? "Glass"
         self.errorSoundName = UserDefaults.standard.string(forKey: "errorSoundName") ?? "Basso"
-        // "Play sound during AI processing" is gone; None in Processing Loop is the off
-        // switch now. Someone who had that switch off keeps the silence.
-        if UserDefaults.standard.object(forKey: "playProcessingIndicator") as? Bool == false {
-            UserDefaults.standard.set("none", forKey: "processingSoundName")  // SoundCatalog.noneID
-        }
-        UserDefaults.standard.removeObject(forKey: "playProcessingIndicator")
         self.processingSoundName = UserDefaults.standard.string(forKey: "processingSoundName") ?? "Bottle"
         self.hotkeyString = UserDefaults.standard.string(forKey: "hotkeyString") ?? "⌃⌥⌘C"
         self.hotkeyActivationModeRaw = UserDefaults.standard.string(forKey: "hotkeyActivationModeRaw") ?? "pushToTalk"

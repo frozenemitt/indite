@@ -99,6 +99,9 @@ struct DictationHistoryView: View {
     private var list: some View {
         List {
             ForEach(filtered) { dictation in
+                let countLabel = dictation.characterCount == 1
+                    ? "1 character" : "\(dictation.characterCount) characters"
+
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         timestamp(for: dictation)
@@ -126,8 +129,8 @@ struct DictationHistoryView: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .monospacedDigit()
-                            .help("\(dictation.characterCount) characters")
-                            .accessibilityLabel("\(dictation.characterCount) characters")
+                            .help(countLabel)
+                            .accessibilityLabel(countLabel)
                     }
 
                     Text(dictation.text)

@@ -215,9 +215,11 @@ final class MeetingRecorder {
     /// recording plays only line by line and a meeting that never finished has no
     /// speaker lines.
     ///
-    /// A meeting that saved no words is deleted rather than closed. It crashed while
-    /// preparing or before its first checkpoint, and closed it sat in the list as an
-    /// empty 0:00 meeting for ever.
+    /// A meeting that saved no words and no recorded time is deleted rather than
+    /// closed. It crashed while preparing or before its first checkpoint, and closed it
+    /// sat in the list as an empty 0:00 meeting for ever. A meeting that recorded time
+    /// but heard no words is closed like any other, so its length shows that the
+    /// capture failed.
     ///
     /// The end is placed where the last checkpoint's audio ran out, the last moment
     /// known to have been captured. The transcript is whatever that checkpoint saved.
@@ -245,7 +247,8 @@ final class MeetingRecorder {
             MeetingAudioStore.delete(fileNamed: meeting.audioFileName)
             meeting.audioFileName = nil
 
-            if meeting.rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if meeting.recordedDuration == 0,
+               meeting.rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 context.delete(meeting)
                 deleted += 1
                 continue
@@ -265,7 +268,7 @@ final class MeetingRecorder {
         Log.meetings.notice("""
             Closed \(meetings.count - deleted, privacy: .public) meetings left open \
             by a crash or force quit, deleted \(deleted, privacy: .public) that had \
-            saved no words
+            saved nothing
             """)
     }
 
@@ -485,7 +488,7 @@ final class MeetingRecorder {
     /// Say so, once, if system audio has been silent through the first minute.
     ///
     /// See `SystemAudioLevelProbe`: a refused permission may record silence rather than
-    /// fail, and Settings would still call system audio available.
+    /// fail.
     private func checkSystemAudioLevel() {
         guard systemAudioActive, !systemAudioLevelChecked, recordedSeconds >= 60 else { return }
         systemAudioLevelChecked = true
@@ -817,7 +820,10 @@ final class MeetingRecorder {
             do {
                 turns = try await diarizer.finish()
             } catch {
-                lastError = "Speaker separation failed: \(error.localizedDescription)"
+                // An earlier problem, such as the recognizer's, stays the one shown.
+                if lastError == nil {
+                    lastError = "Speaker separation failed: \(error.localizedDescription)"
+                }
                 Log.meetings.error("Speaker separation failed: \(error, privacy: .public)")
             }
         }
@@ -1005,7 +1011,6 @@ final class MeetingRecorder {
         engine.collectTimedSegments = false
         await drainDiarizerFeed()
         await diarizer.reset()
-        diarizationActive = false
 
         // The tap and its aggregate outlive the app if not destroyed, so this runs on
         // every exit path rather than only the successful one. Off the main thread for
@@ -1013,5 +1018,6 @@ final class MeetingRecorder {
         let capture = systemAudio
         await Task.detached { capture.stop() }.value
         systemAudioActive = false
+        diarizationActive = false
     }
 }
