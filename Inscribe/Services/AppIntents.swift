@@ -72,9 +72,6 @@ struct QuickTranscribeIntent: AppIntent {
             AudioFeedbackService.shared.playIfEnabled(.recordingStarted, settings: settings)
             #if os(iOS)
             AudioFeedbackService.shared.playStartHaptic()
-
-            // Start Live Activity
-            await LiveActivityManager.shared.startRecordingActivity()
             #endif
 
             // Record for specified duration
@@ -84,21 +81,15 @@ struct QuickTranscribeIntent: AppIntent {
             AudioFeedbackService.shared.playIfEnabled(.recordingStopped, settings: settings)
             #if os(iOS)
             AudioFeedbackService.shared.playStopHaptic()
-
-            // Transition Live Activity to processing
-            LiveActivityManager.shared.transitionToProcessing()
             #endif
 
             // Stop and get transcription
             let transcription = TextProcessor.process(
-                try await engine.stopRecording(owner: .shortcut),
+                await engine.stopRecording(owner: .shortcut),
                 replacements: settings.wordReplacements
             )
 
             guard !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                #if os(iOS)
-                await LiveActivityManager.shared.endActivity()
-                #endif
                 return .result(
                     value: "",
                     dialog: "No speech was detected. Please try again."
@@ -137,11 +128,6 @@ struct QuickTranscribeIntent: AppIntent {
             }
 
             recordHistory(finalText, raw: transcription, promptName: appliedPrompt, settings: settings)
-
-            // End Live Activity and show notification
-            #if os(iOS)
-            await LiveActivityManager.shared.endActivity()
-            #endif
 
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
 
@@ -184,167 +170,10 @@ struct QuickTranscribeIntent: AppIntent {
             }
 
             #if os(iOS)
-            await LiveActivityManager.shared.endActivity()
             AudioFeedbackService.shared.playErrorHaptic()
             #endif
             AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
             throw error
-        }
-    }
-}
-
-// MARK: - Record Transcription Intent
-
-/// Full featured recording intent with customizable duration and AI processing
-struct RecordTranscriptionIntent: AppIntent {
-    static let title: LocalizedStringResource = "Record and Transcribe"
-    static let description = IntentDescription("Record audio, transcribe it, and optionally process with AI.")
-
-    static let openAppWhenRun: Bool = false
-
-    @Parameter(title: "Duration", description: "Recording duration in seconds", default: 30)
-    var duration: Int
-
-    @Parameter(title: "Process with AI", description: "Apply AI processing to the transcription", default: true)
-    var processWithAI: Bool
-
-    @Parameter(title: "AI Action", description: "What to do with the transcription")
-    var aiAction: AIActionEnum?
-
-    @Parameter(title: "Copy to Clipboard", default: true)
-    var copyToClipboard: Bool
-
-    static var parameterSummary: some ParameterSummary {
-        When(\.$processWithAI, .equalTo, true) {
-            Summary("Record for \(\.$duration) seconds and \(\.$aiAction)") {
-                \.$copyToClipboard
-            }
-        } otherwise: {
-            Summary("Record for \(\.$duration) seconds") {
-                \.$copyToClipboard
-            }
-        }
-    }
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let recordingDuration = min(max(duration, 5), 300)
-
-        // The app's engine, not a new one: a second engine records over whatever the
-        // app is already doing, because the guard that refuses that is instance state.
-        let engine = TranscriptionEngine.shared
-        let settings = AppSettings()
-        var started = false
-
-        do {
-            try await engine.startRecording(
-                owner: .shortcut,
-                vocabulary: settings.vocabularyHints,
-                inputDeviceUID: settings.inputDeviceUID
-            )
-            started = true
-            // The same sounds the hotkey and the other action make. This one used to
-            // record in silence, with nothing to say when to start talking.
-            AudioFeedbackService.shared.playIfEnabled(.recordingStarted, settings: settings)
-            try await Task.sleep(nanoseconds: UInt64(recordingDuration) * 1_000_000_000)
-            AudioFeedbackService.shared.playIfEnabled(.recordingStopped, settings: settings)
-            let transcription = TextProcessor.process(
-                try await engine.stopRecording(owner: .shortcut),
-                replacements: settings.wordReplacements
-            )
-
-            guard !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                return .result(value: "", dialog: "No speech detected.")
-            }
-
-            var finalText = transcription
-            var dialogPrefix = "Transcription"
-            var aiProcessingFailed = false
-            var appliedAction: String?
-
-            // "Process with AI" with no action picked used to skip the AI pass without
-            // a word. It runs the default clean-up instead.
-            if processWithAI {
-                let action = aiAction ?? .cleanup
-                let promptConfig = PromptConfiguration()
-                let aiProcessor = AIProcessor(promptConfiguration: promptConfig)
-
-                do {
-                    finalText = try await aiProcessor.quickProcess(text: transcription, action: action.toQuickAction)
-                    dialogPrefix = action.rawValue
-                    if action != .raw { appliedAction = action.rawValue }
-                } catch {
-                    Log.intents.error("AI processing failed, using raw transcript: \(error, privacy: .public)")
-                    finalText = transcription
-                    aiProcessingFailed = true
-                }
-            }
-
-            if copyToClipboard {
-                ClipboardService.copy(finalText)
-            }
-
-            recordHistory(
-                finalText,
-                raw: transcription,
-                promptName: appliedAction,
-                settings: settings
-            )
-
-            let dialog = if aiProcessingFailed {
-                copyToClipboard
-                    ? "AI processing failed. Raw transcription copied to clipboard."
-                    : "AI processing failed. Raw transcription returned."
-            } else {
-                copyToClipboard
-                    ? "\(dialogPrefix) complete and copied to clipboard."
-                    : "\(dialogPrefix) complete."
-            }
-
-            return .result(value: finalText, dialog: IntentDialog(stringLiteral: dialog))
-
-        } catch {
-            // Same reason as the other intent: a cancelled run must not leave the
-            // microphone recording, and must not cancel a session that is not its own.
-            if started {
-                engine.cancelRecording(owner: .shortcut)
-            }
-            AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
-            throw error
-        }
-    }
-}
-
-// MARK: - AI Action Enum
-
-/// App Intent enum for AI processing actions
-enum AIActionEnum: String, AppEnum {
-    case cleanup = "Clean up"
-    case summarize = "Summarize"
-    case makeFormal = "Make formal"
-    case makeCasual = "Make casual"
-    case fixPunctuation = "Fix punctuation"
-    case raw = "No processing"
-
-    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "AI Action")
-
-    static let caseDisplayRepresentations: [AIActionEnum: DisplayRepresentation] = [
-        .cleanup: "Clean up grammar",
-        .summarize: "Summarize as bullets",
-        .makeFormal: "Make formal",
-        .makeCasual: "Make casual",
-        .fixPunctuation: "Fix punctuation only",
-        .raw: "No AI processing"
-    ]
-
-    var toQuickAction: AIProcessor.QuickAction {
-        switch self {
-        case .cleanup: return .cleanup
-        case .summarize: return .summarize
-        case .makeFormal: return .makeFormal
-        case .makeCasual: return .makeCasual
-        case .fixPunctuation: return .fixPunctuation
-        case .raw: return .raw
         }
     }
 }

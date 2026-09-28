@@ -14,11 +14,11 @@ struct ImportRecordingView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.modelContext) private var modelContext
 
-    @State private var transcriber = FileTranscriber()
     @State private var diarizer = MeetingDiarizer()
 
     @State private var droppedURL: URL?
     @State private var separateSpeakers = true
+    @State private var speakerModelsInstalled = false
     @State private var progressNote: String?
     @State private var savedMeeting: Meeting?
     @State private var errorMessage: String?
@@ -34,14 +34,19 @@ struct ImportRecordingView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                Toggle("Separate speakers", isOn: $separateSpeakers)
-                Text("Runs the same diarization meetings use. Slower, and worth it only when more than one person is talking.")
+                // Off without the models. Left on, a run transcribed the whole file and
+                // only then failed to separate speakers.
+                Toggle("Separate speakers", isOn: speakerModelsInstalled ? $separateSpeakers : .constant(false))
+                    .disabled(!speakerModelsInstalled)
+                Text(speakerModelsInstalled
+                     ? "Runs the same diarization meetings use. Slower, and worth it only when more than one person is talking."
+                     : "Install the speaker models in Settings → Dictation → Speaker Models to separate speakers.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 HStack {
                     Button("Transcribe") { run(url: droppedURL) }
-                        .disabled(transcriber.isBusy || progressNote != nil)
+                        .disabled(isRunning)
                         .keyboardShortcut(.defaultAction)
 
                     if let progressNote {
@@ -66,77 +71,63 @@ struct ImportRecordingView: View {
                     .foregroundStyle(.green)
             }
 
-            if !transcriber.transcript.isEmpty {
-                Divider()
-                transcriptPreview
-            }
-
             Spacer()
         }
         .padding(20)
         .frame(minWidth: 520, minHeight: 420)
-        .navigationTitle("Import Recording")
     }
 
     // MARK: - Views
 
     private var dropZone: some View {
-        RoundedRectangle(cornerRadius: 10)
-            .strokeBorder(
-                isTargeted ? Color.accentColor : Color.secondary.opacity(0.4),
-                style: StrokeStyle(lineWidth: 2, dash: [6])
-            )
-            .frame(height: 110)
-            .overlay {
-                VStack(spacing: 8) {
-                    Image(systemName: "waveform.badge.plus")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("Drop an audio or video file, or click to choose")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Text(FileTranscriber.supportedExtensions.joined(separator: "  "))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+        Button(action: chooseFile) {
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(
+                    isTargeted ? Color.accentColor : Color.secondary.opacity(0.4),
+                    style: StrokeStyle(lineWidth: 2, dash: [6])
+                )
+                .frame(height: 110)
+                .overlay {
+                    VStack(spacing: 8) {
+                        Image(systemName: "waveform.badge.plus")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                        Text("Drop an audio or video file, or click to choose")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { chooseFile() }
-            .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
-                loadDroppedFile(from: providers)
-            }
-    }
-
-    private var transcriptPreview: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Transcript")
-                    .font(.headline)
-                Spacer()
-                Button("Copy") { ClipboardService.copy(transcriber.transcript) }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-            }
-
-            ScrollView {
-                Text(transcriber.transcript)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 220)
+                // A plain button hit-tests only what it draws, and inside the dashed
+                // border it draws nothing.
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .keyboardShortcut("o", modifiers: .command)
+        .accessibilityLabel("Choose a recording")
+        .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
+            loadDroppedFile(from: providers)
+        }
+        // Disabled during a run. accept() turns away any file chosen then, so the panel
+        // opened only to discard the choice without a word.
+        .disabled(isRunning)
     }
 
     // MARK: - File Selection
 
     private func chooseFile() {
+        guard let window = NSApp.keyWindow else { return }
+
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.audio, .movie]
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        accept(url)
+        // A sheet on the window, as opening is in any document app. Run modally, the
+        // panel floated free of the window and blocked every other one in the app.
+        Task {
+            guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else { return }
+            accept(url)
+        }
     }
 
     private func loadDroppedFile(from providers: [NSItemProvider]) -> Bool {
@@ -153,20 +144,24 @@ struct ImportRecordingView: View {
     private var isRunning: Bool { progressNote != nil }
 
     private func accept(_ url: URL) {
-        // Ignored while a run is under way. Accepting resets the transcriber, and a
-        // run that was still separating speakers then saved a meeting with no timed
-        // runs: no speakers and no length.
+        // Ignored while a run is under way. The run clears the chosen file when it
+        // saves, so a file accepted mid-run would vanish without a word.
         guard !isRunning else { return }
 
-        guard FileTranscriber.supportedExtensions.contains(url.pathExtension.lowercased()) else {
-            errorMessage = "\(url.pathExtension.uppercased()) files cannot be read."
+        // Opened the way the transcriber opens it, so a file is turned away only when
+        // the run would fail on it. A list of extensions refused formats it reads, such
+        // as .aifc and .m4b, and its message named no format at all for a folder.
+        guard (try? AVAudioFile(forReading: url)) != nil else {
+            errorMessage = "\(url.lastPathComponent) has no audio Inscribe can read."
             return
         }
 
         droppedURL = url
+        // Checked with every file, so models installed from Settings while this window
+        // was open are seen.
+        speakerModelsInstalled = DiarizationModelStore.isInstalled
         errorMessage = nil
         savedMeeting = nil
-        transcriber.reset()
     }
 
     // MARK: - Running
@@ -180,29 +175,22 @@ struct ImportRecordingView: View {
 
         Task {
             do {
-                let text = try await transcriber.transcribe(
+                let (text, segments) = try await FileTranscriber.transcribe(
                     fileURL: url,
                     vocabulary: settings.vocabularyHints
                 )
-                // Copied at once. The transcriber is shared state, and anything that
-                // resets it during the speaker pass would otherwise empty these.
-                let segments = transcriber.timedSegments
 
                 var turns: [SpeakerTurn] = []
-                if separateSpeakers {
+                if separateSpeakers && speakerModelsInstalled {
                     progressNote = "Separating speakers…"
                     do {
-                        // One diarizer serves every import this window runs, and it
-                        // remembers the voices it has heard. Reset first, so the
-                        // speakers of the last file are not carried into this one.
-                        await diarizer.reset()
-                        try await diarizer.prepare()
+                        try await diarizer.loadModels()
                         // Decoded off the main actor: reading an hour-long file is one
                         // synchronous pass, and this Task inherits the view's isolation.
                         let samples = try await Task.detached {
                             try AudioFileSamples.read(from: url)
                         }.value
-                        turns = await diarizer.diarizeWholeRecording(samples)
+                        turns = try await diarizer.diarizeWholeRecording(samples)
                     } catch {
                         // Losing speaker labels should not lose the transcript.
                         errorMessage = "Speaker separation failed: \(error.localizedDescription)"
@@ -211,6 +199,9 @@ struct ImportRecordingView: View {
 
                 progressNote = "Saving…"
                 savedMeeting = save(url: url, transcript: text, segments: segments, turns: turns)
+                // Back to the empty drop zone. Left set, Transcribe stayed the default
+                // button, and Return imported the same file again as a second meeting.
+                droppedURL = nil
                 progressNote = nil
 
             } catch {
@@ -245,34 +236,13 @@ struct ImportRecordingView: View {
         )
         meeting.recordedDuration = length
 
-        let aligned = SpeakerAlignment.align(
-            transcript: segments,
-            turns: turns
+        meeting.applyAttribution(
+            timedSegments: segments,
+            turns: turns,
+            vocabulary: settings.vocabularyHints,
+            replacements: settings.wordReplacements,
+            in: modelContext
         )
-        let labels = SpeakerAlignment.generatedLabels(for: aligned)
-
-        for (speakerId, label) in labels {
-            let speaker = MeetingSpeaker(speakerId: speakerId, generatedLabel: label)
-            speaker.meeting = meeting
-            modelContext.insert(speaker)
-        }
-
-        // The same pass `rawTranscript` gets. Every reader prefers the utterances once
-        // there is attribution, so without this the meeting displays and exports the
-        // words "period" and "comma" while the raw transcript has the marks.
-        for item in aligned {
-            let utterance = Utterance(
-                speakerId: item.speakerId,
-                text: TextProcessor.process(
-                    item.text,
-                    replacements: settings.wordReplacements
-                ),
-                start: item.start,
-                end: item.end
-            )
-            utterance.meeting = meeting
-            modelContext.insert(utterance)
-        }
 
         modelContext.saveOrLog()
         return meeting

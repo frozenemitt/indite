@@ -37,7 +37,6 @@ enum Log {
     static let intents = make("Intents")
     static let clipboard = make("Clipboard")
     static let notifications = make("Notifications")
-    static let liveActivity = make("LiveActivity")
     static let store = make("Store")
 }
 

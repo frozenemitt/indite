@@ -10,9 +10,6 @@ struct SpeakerTurn: Sendable, Equatable {
     let start: TimeInterval
     let end: TimeInterval
 
-    /// How confident the diarizer is, 0–1. Low scores usually mean crosstalk.
-    let quality: Float
-
     func covers(_ time: TimeInterval) -> Bool {
         time >= start && time < end
     }
@@ -42,10 +39,20 @@ actor MeetingDiarizer {
     /// The meeting's audio at 16 kHz mono, written as it arrives.
     ///
     /// On disk rather than in memory: an hour is about 230 MB of float samples. One
-    /// fixed name, so a crash leaves at most one file behind, and the next meeting
-    /// overwrites it.
+    /// fixed name, so a crash leaves at most one file behind, and the next launch
+    /// deletes it.
+    ///
+    /// Every instance shares this name, so only a live meeting touches it. Two meetings
+    /// never record at once, but an import can run beside one; when an import deleted
+    /// this file, the meeting ended with no speakers.
     private static let recordingURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("meeting-diarization.caf")
+
+    /// Delete the audio a crash left behind. Called at launch, before any meeting can
+    /// start, so no live meeting is writing it.
+    static func removeLeftoverRecording() {
+        try? FileManager.default.removeItem(at: recordingURL)
+    }
 
     private static let format = AVAudioFormat(
         commonFormat: .pcmFormatFloat32,
@@ -69,10 +76,29 @@ actor MeetingDiarizer {
     // MARK: - Lifecycle
 
     /// Load the CoreML models from disk, and open the file the audio goes into.
-    ///
-    /// Throws when they are not installed rather than fetching them: a meeting is the
-    /// wrong moment to start a download, and the recording path stays offline.
     func prepare() async throws {
+        guard pipeline == nil else { return }
+        try await loadModels()
+
+        try? FileManager.default.removeItem(at: Self.recordingURL)
+        recording = try AVAudioFile(
+            forWriting: Self.recordingURL,
+            settings: Self.format.settings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
+        receivedSeconds = 0
+        Log.diarization.notice("Ready")
+    }
+
+    /// Load the CoreML models from disk, and nothing else.
+    ///
+    /// An import calls this rather than `prepare()`, because it separates samples held
+    /// in memory and must not touch the file a live meeting is writing.
+    ///
+    /// Throws when the models are not installed rather than fetching them: a meeting is
+    /// the wrong moment to start a download, and the recording path stays offline.
+    func loadModels() async throws {
         guard pipeline == nil else { return }
 
         // Starting a meeting must not reach the network: the models are installed from
@@ -95,16 +121,6 @@ actor MeetingDiarizer {
         let manager = OfflineDiarizerManager(config: config)
         manager.initialize(models: models)
         pipeline = Pipeline(manager: manager)
-
-        try? FileManager.default.removeItem(at: Self.recordingURL)
-        recording = try AVAudioFile(
-            forWriting: Self.recordingURL,
-            settings: Self.format.settings,
-            commonFormat: .pcmFormatFloat32,
-            interleaved: false
-        )
-        receivedSeconds = 0
-        Log.diarization.notice("Ready")
     }
 
     /// Add newly captured audio to the recording.
@@ -126,44 +142,38 @@ actor MeetingDiarizer {
     }
 
     /// Separate the speakers over everything recorded, and delete the recording.
-    func finish() async -> [SpeakerTurn] {
+    ///
+    /// Throws when separation fails, so the meeting can say why it has no speakers
+    /// rather than look as if separation never ran.
+    func finish() async throws -> [SpeakerTurn] {
         guard let pipeline, recording != nil else { return [] }
         recording = nil  // Closes the file.
         defer { try? FileManager.default.removeItem(at: Self.recordingURL) }
 
         let started = Date()
-        do {
-            let turns = Self.turns(from: try await pipeline.manager.process(Self.recordingURL))
-            Log.diarization.notice("""
-                Separated \(Int(self.receivedSeconds), privacy: .public)s into \
-                \(Set(turns.map(\.speakerId)).count, privacy: .public) speakers in \
-                \(Date().timeIntervalSince(started), format: .fixed(precision: 1), privacy: .public)s
-                """)
-            return turns
-        } catch {
-            Log.diarization.error("Speaker separation failed: \(error, privacy: .public)")
-            return []
-        }
+        let turns = Self.turns(from: try await pipeline.manager.process(Self.recordingURL))
+        Log.diarization.notice("""
+            Separated \(Int(self.receivedSeconds), privacy: .public)s into \
+            \(Set(turns.map(\.speakerId)).count, privacy: .public) speakers in \
+            \(Date().timeIntervalSince(started), format: .fixed(precision: 1), privacy: .public)s
+            """)
+        return turns
     }
 
     /// Diarize a complete recording in one pass, for imported files.
-    func diarizeWholeRecording(_ samples: [Float]) async -> [SpeakerTurn] {
+    func diarizeWholeRecording(_ samples: [Float]) async throws -> [SpeakerTurn] {
         guard let pipeline else { return [] }
-        recording = nil
-        try? FileManager.default.removeItem(at: Self.recordingURL)
-
-        do {
-            return Self.turns(from: try await pipeline.manager.process(audio: samples))
-        } catch {
-            Log.diarization.error("Speaker separation failed: \(error, privacy: .public)")
-            return []
-        }
+        return Self.turns(from: try await pipeline.manager.process(audio: samples))
     }
 
     func reset() {
         pipeline = nil
-        recording = nil
-        try? FileManager.default.removeItem(at: Self.recordingURL)
+        // Only the instance that opened the file deletes it, so resetting any other
+        // diarizer cannot take a live meeting's audio.
+        if recording != nil {
+            recording = nil
+            try? FileManager.default.removeItem(at: Self.recordingURL)
+        }
         receivedSeconds = 0
     }
 
@@ -181,8 +191,7 @@ actor MeetingDiarizer {
                 SpeakerTurn(
                     speakerId: segment.speakerId,
                     start: TimeInterval(segment.startTimeSeconds),
-                    end: TimeInterval(segment.endTimeSeconds),
-                    quality: segment.qualityScore
+                    end: TimeInterval(segment.endTimeSeconds)
                 )
             }
             .sorted { $0.start < $1.start }
@@ -280,8 +289,7 @@ enum AudioFileSamples {
 final class DiarizationAudioConverter: @unchecked Sendable {
 
     private let targetFormat: AVAudioFormat
-    private var converter: AVAudioConverter?
-    private var sourceFormat: AVAudioFormat?
+    private let converter = BufferConverter()
 
     init?() {
         guard let format = AVAudioFormat(
@@ -293,46 +301,13 @@ final class DiarizationAudioConverter: @unchecked Sendable {
         self.targetFormat = format
     }
 
-    /// Convert one buffer, rebuilding the converter if the input format changed.
+    /// Convert one buffer to the diarizer's format.
     func floats(from buffer: AVAudioPCMBuffer) -> [Float]? {
-        let inputFormat = buffer.format
-
-        if converter == nil || sourceFormat != inputFormat {
-            converter = AVAudioConverter(from: inputFormat, to: targetFormat)
-            // Mixed, not remapped. Without this the converter keeps channel 0 and drops
-            // the rest, and with system audio on, channel 0 is the microphone: the
-            // diarizer never heard anyone on the call.
-            converter?.downmix = true
-            sourceFormat = inputFormat
-        }
-        guard let converter else { return nil }
-
-        let ratio = targetFormat.sampleRate / inputFormat.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
-
-        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
-            return nil
-        }
-
-        var consumed = false
-        var conversionError: NSError?
-
-        converter.convert(to: output, error: &conversionError) { _, status in
-            if consumed {
-                status.pointee = .noDataNow
-                return nil
-            }
-            consumed = true
-            status.pointee = .haveData
-            return buffer
-        }
-
-        guard conversionError == nil,
+        guard let output = try? converter.convertBuffer(buffer, to: targetFormat),
               output.frameLength > 0,
               let channel = output.floatChannelData?[0] else {
             return nil
         }
-
         return Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
     }
 }

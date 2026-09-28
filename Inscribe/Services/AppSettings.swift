@@ -20,19 +20,9 @@ final class AppSettings {
 
     // MARK: - Behavior Settings
 
-    /// Whether to automatically copy to clipboard after transcription
-    var copyToClipboardAutomatically: Bool {
-        didSet { save("copyToClipboardAutomatically", copyToClipboardAutomatically) }
-    }
-
     /// Whether to play feedback sounds on start/stop
     var playFeedbackSounds: Bool {
         didSet { save("playFeedbackSounds", playFeedbackSounds) }
-    }
-
-    /// Whether to play a looping sound during AI processing
-    var playProcessingIndicator: Bool {
-        didSet { save("playProcessingIndicator", playProcessingIndicator) }
     }
 
     // MARK: - Sound Selection (macOS)
@@ -70,10 +60,10 @@ final class AppSettings {
         didSet { save("wordReplacements", wordReplacements) }
     }
 
-    /// Terms handed to the recognizer up front so it expects them.
+    /// Names and jargon the user listed.
     ///
-    /// Unlike replacements, which repair a wrong guess after the fact, these change
-    /// what the model is listening for — better for proper nouns it has never seen.
+    /// The recognizer ignores them. They pick among its second guesses and fix spelling
+    /// (see `Vocabulary`), and during dictation the keyword spotter listens for them.
     var vocabularyHints: [String] {
         didSet { save("vocabularyHints", vocabularyHints) }
     }
@@ -96,7 +86,7 @@ final class AppSettings {
     /// Keep the recording after a meeting ends.
     ///
     /// On by default: without the audio there is no way to check whether a speaker
-    /// correction is right, and no way to re-run diarization after a model update.
+    /// correction is right.
     var keepMeetingAudio: Bool {
         didSet { save("keepMeetingAudio", keepMeetingAudio) }
     }
@@ -254,14 +244,18 @@ final class AppSettings {
     init() {
         // Load saved settings with defaults
         self.aiEnabled = UserDefaults.standard.object(forKey: "aiEnabled") as? Bool ?? true
-        self.copyToClipboardAutomatically = UserDefaults.standard.object(forKey: "copyToClipboardAutomatically") as? Bool ?? true
         self.playFeedbackSounds = UserDefaults.standard.object(forKey: "playFeedbackSounds") as? Bool ?? true
         self.showNotifications = UserDefaults.standard.object(forKey: "showNotifications") as? Bool ?? true
-        self.playProcessingIndicator = UserDefaults.standard.object(forKey: "playProcessingIndicator") as? Bool ?? true
         self.startSoundName = UserDefaults.standard.string(forKey: "startSoundName") ?? "Morse"
         self.stopSoundName = UserDefaults.standard.string(forKey: "stopSoundName") ?? "Pop"
         self.completeSoundName = UserDefaults.standard.string(forKey: "completeSoundName") ?? "Glass"
         self.errorSoundName = UserDefaults.standard.string(forKey: "errorSoundName") ?? "Basso"
+        // "Play sound during AI processing" is gone; None in Processing Loop is the off
+        // switch now. Someone who had that switch off keeps the silence.
+        if UserDefaults.standard.object(forKey: "playProcessingIndicator") as? Bool == false {
+            UserDefaults.standard.set("none", forKey: "processingSoundName")  // SoundCatalog.noneID
+        }
+        UserDefaults.standard.removeObject(forKey: "playProcessingIndicator")
         self.processingSoundName = UserDefaults.standard.string(forKey: "processingSoundName") ?? "Bottle"
         self.hotkeyString = UserDefaults.standard.string(forKey: "hotkeyString") ?? "⌃⌥⌘C"
         self.hotkeyActivationModeRaw = UserDefaults.standard.string(forKey: "hotkeyActivationModeRaw") ?? "pushToTalk"
@@ -300,7 +294,7 @@ final class AppSettings {
             self.selectedPromptId = nil
         }
 
-        Log.settings.notice("Loaded settings - AI: \(self.aiEnabled, privacy: .public), Clipboard: \(self.copyToClipboardAutomatically, privacy: .public)")
+        Log.settings.notice("Loaded settings - AI: \(self.aiEnabled, privacy: .public)")
     }
 
     // MARK: - Per-App Profiles
@@ -350,10 +344,8 @@ final class AppSettings {
     func resetToDefaults() {
         aiEnabled = true
         selectedPromptId = nil
-        copyToClipboardAutomatically = true
         playFeedbackSounds = true
         showNotifications = true
-        playProcessingIndicator = true
         startSoundName = "Morse"
         stopSoundName = "Pop"
         completeSoundName = "Glass"
@@ -454,11 +446,20 @@ extension AppSettings {
         return .combo(keyCode: keyCode, modifiers: flags)
     }
 
-    /// The undo binding to hand `GlobalHotkeyMonitor`, if enabled and parseable.
+    /// `hotkeyString` as it should read on screen. The Space key is stored as a literal
+    /// space, which showed as a bare "⌃⌥⌘" and read as an unfinished binding.
+    var hotkeyDisplay: String {
+        hotkeyString.hasSuffix(" ") ? String(hotkeyString.dropLast()) + "Space" : hotkeyString
+    }
+
+    /// The undo binding to hand `GlobalHotkeyMonitor`: nil when switched off, when
+    /// unparseable, or when it is the dictation trigger. The monitor checks undo first,
+    /// so a clash silently stopped dictation. Dictation wins it now, and Settings says so.
     var undoHotkeyTrigger: HotkeyTrigger? {
         guard undoHotkeyEnabled,
               let (keyCode, flags) = parseHotkeyForEventTap(undoHotkeyString) else { return nil }
-        return .combo(keyCode: keyCode, modifiers: flags)
+        let undo = HotkeyTrigger.combo(keyCode: keyCode, modifiers: flags)
+        return undo == hotkeyTrigger ? nil : undo
     }
 
     /// Parse `hotkeyString` (e.g. "⌃⌥⌘C") into event-tap terms.

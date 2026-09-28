@@ -1,6 +1,5 @@
 @preconcurrency import AVFoundation
 import Foundation
-import os
 
 class BufferConverter {
     enum Error: Swift.Error {
@@ -42,17 +41,17 @@ class BufferConverter {
         }
 
         var nsError: NSError?
-        let bufferProcessedLock = OSAllocatedUnfairLock(initialState: false)
+        // A plain flag is enough: convert calls the input block synchronously on this thread.
+        var consumed = false
 
-        let status = converter.convert(to: conversionBuffer, error: &nsError) {
-            packetCount, inputStatusPointer in
-            let wasProcessed = bufferProcessedLock.withLock { bufferProcessed in
-                let wasProcessed = bufferProcessed
-                bufferProcessed = true
-                return wasProcessed
+        let status = converter.convert(to: conversionBuffer, error: &nsError) { _, inputStatus in
+            if consumed {
+                inputStatus.pointee = .noDataNow
+                return nil
             }
-            inputStatusPointer.pointee = wasProcessed ? .noDataNow : .haveData
-            return wasProcessed ? nil : buffer
+            consumed = true
+            inputStatus.pointee = .haveData
+            return buffer
         }
 
         guard status != .error else {

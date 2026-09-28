@@ -10,7 +10,6 @@ struct AudioInputDevice: Identifiable, Hashable, Sendable {
     /// device renames, unlike the numeric AudioDeviceID.
     let uid: String
     let name: String
-    let deviceID: AudioDeviceID
 
     var id: String { uid }
 
@@ -30,7 +29,7 @@ enum AudioDeviceCatalog {
                       let name = stringProperty(kAudioObjectPropertyName, for: id) else {
                     return nil
                 }
-                return AudioInputDevice(uid: uid, name: name, deviceID: id)
+                return AudioInputDevice(uid: uid, name: name)
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
@@ -56,6 +55,35 @@ enum AudioDeviceCatalog {
         )
         guard status == noErr else { return "System Default" }
         return stringProperty(kAudioObjectPropertyName, for: deviceID) ?? "System Default"
+    }
+
+    /// Yields whenever a device is added or removed, or the default input changes.
+    static func changes() -> AsyncStream<Void> {
+        AsyncStream { continuation in
+            let system = AudioObjectID(kAudioObjectSystemObject)
+            let selectors = [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice]
+            let listener: @Sendable (UInt32, UnsafePointer<AudioObjectPropertyAddress>) -> Void = { _, _ in continuation.yield() }
+
+            for selector in selectors {
+                var address = AudioObjectPropertyAddress(
+                    mSelector: selector,
+                    mScope: kAudioObjectPropertyScopeGlobal,
+                    mElement: kAudioObjectPropertyElementMain
+                )
+                AudioObjectAddPropertyListenerBlock(system, &address, .main, listener)
+            }
+
+            continuation.onTermination = { _ in
+                for selector in selectors {
+                    var address = AudioObjectPropertyAddress(
+                        mSelector: selector,
+                        mScope: kAudioObjectPropertyScopeGlobal,
+                        mElement: kAudioObjectPropertyElementMain
+                    )
+                    AudioObjectRemovePropertyListenerBlock(system, &address, .main, listener)
+                }
+            }
+        }
     }
 
     /// Resolve a UID straight to a device id.

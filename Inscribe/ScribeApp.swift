@@ -11,14 +11,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Called by ScribeApp to provide services for hotkey setup
     var onReady: (() -> Void)?
 
-    /// Finish and save any meeting still recording. Returns false when there was none.
+    /// Finish and save any meeting or dictation still recording. Returns false when
+    /// there was none.
     ///
     /// A meeting's transcript, utterances and speakers live in memory until stop()
     /// writes them, and the recording's AVAudioFile is only closed there too. Quitting
     /// mid-meeting without this loses the transcript outright and leaves an .m4a with
     /// no moov atom — a file that exists, so the app offers to play it, and cannot be
-    /// opened.
-    var finishActiveMeeting: (@MainActor (@escaping () -> Void) -> Bool)?
+    /// opened. A dictation reaches the history only once the engine has let go of it,
+    /// so quitting mid-dictation lost every word spoken.
+    var finishActiveWork: (@MainActor (@escaping () -> Void) -> Bool)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.app.notice("App finished launching")
@@ -26,9 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let finishActiveMeeting else { return .terminateNow }
+        guard let finishActiveWork else { return .terminateNow }
 
-        let needsSaving = finishActiveMeeting {
+        let needsSaving = finishActiveWork {
             NSApplication.shared.reply(toApplicationShouldTerminate: true)
         }
 
@@ -50,7 +52,6 @@ struct ScribeApp: App {
     @State private var settings: AppSettings
     @State private var promptConfig: PromptConfiguration
     @State private var transcriptionEngine: TranscriptionEngine
-    @State private var aiProcessor: AIProcessor
     @State private var coordinator: RecordingCoordinator
     @State private var meetingRecorder: MeetingRecorder
 
@@ -61,10 +62,8 @@ struct ScribeApp: App {
     /// because App Intents are built by the system and cannot be handed the app's
     /// dependencies — without this a shortcut could not write to history at all.
     static let modelContainer: ModelContainer = {
-        let log = Logger(subsystem: "com.inscribe.app", category: "Store")
         let schema = Schema(versionedSchema: MeetingSchemaV1.self)
         do {
-            #if os(macOS)
             // A file of our own, never the default. The Mac app is not sandboxed, so the
             // default is the shared ~/Library/Application Support/default.store — a file
             // Apple's icloudmailagent also keeps its data in. Each of the two rebuilt it
@@ -74,22 +73,18 @@ struct ScribeApp: App {
             let folder = URL.applicationSupportDirectory.appending(path: "Inscribe", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let config = ModelConfiguration(schema: schema, url: folder.appending(path: "Inscribe.store"))
-            #else
-            // Sandboxed, so the default location is already private to this app.
-            let config = ModelConfiguration(schema: schema)
-            #endif
             let container = try ModelContainer(
                 for: schema,
                 migrationPlan: MeetingMigrationPlan.self,
                 configurations: [config]
             )
-            log.notice("Meeting store opened on disk")
+            Log.store.notice("Meeting store opened on disk")
             MeetingStoreStatus.shared.setPersistent(true)
             return container
         } catch {
             // Falling back to memory keeps dictation working, but every meeting is
             // lost on quit — so it is recorded and shown, never silent.
-            log.error("Meeting store unavailable, falling back to memory: \(error, privacy: .public)")
+            Log.store.error("Meeting store unavailable, falling back to memory: \(error, privacy: .public)")
             MeetingStoreStatus.shared.setPersistent(false, reason: error.localizedDescription)
             let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             return try! ModelContainer(for: schema, configurations: [config])
@@ -103,10 +98,6 @@ struct ScribeApp: App {
     // MARK: - Initialization
 
     init() {
-        // Before anything reads a preference: the app has changed bundle identifier,
-        // and UserDefaults is keyed by it.
-        PreferencesMigration.runIfNeeded()
-
         // Built here rather than inline so the coordinator can be handed the very
         // same instances the views observe.
         let settings = AppSettings()
@@ -120,12 +111,8 @@ struct ScribeApp: App {
         self._settings = State(initialValue: settings)
         self._promptConfig = State(initialValue: prompts)
         self._transcriptionEngine = State(initialValue: engine)
-        self._aiProcessor = State(initialValue: processor)
         self._coordinator = State(initialValue: coordinator)
         self._meetingRecorder = State(initialValue: recorder)
-
-        // Register App Intents shortcuts
-        _ = InscribeShortcuts.self
 
         Log.app.notice("Initialized")
 
@@ -143,13 +130,18 @@ struct ScribeApp: App {
         )
         appDelegate.onReady = { launch.run() }
 
-        // Quitting mid-meeting must not discard it.
-        appDelegate.finishActiveMeeting = { done in
-            guard recorder.hasActiveMeeting else { return false }
+        // Quitting mid-meeting or mid-dictation must not discard it. The dictation is
+        // kept in the history, not pasted: during a logout or restart the app in front
+        // is not one the words were meant for.
+        appDelegate.finishActiveWork = { done in
+            let hasMeeting = recorder.hasActiveMeeting
+            let hasDictation = coordinator.hasUnsavedDictation
+            guard hasMeeting || hasDictation else { return false }
 
-            Log.app.notice("Quitting with a meeting open — saving it first")
+            Log.app.notice("Quitting with \(hasMeeting ? "a meeting" : "a dictation", privacy: .public) open — saving it first")
             Task { @MainActor in
-                await recorder.stop(in: Self.modelContainer.mainContext)
+                if hasMeeting { await recorder.stop(in: Self.modelContainer.mainContext) }
+                if hasDictation { await coordinator.saveDictationForQuit() }
                 done()
             }
             return true
@@ -162,8 +154,6 @@ struct ScribeApp: App {
     var body: some Scene {
         #if os(macOS)
         macOSScene
-        #else
-        iOSScene
         #endif
     }
 
@@ -178,15 +168,16 @@ struct ScribeApp: App {
                 .environment(settings)
                 .environment(promptConfig)
                 .environment(transcriptionEngine)
-                .environment(aiProcessor)
                 .environment(coordinator)
                 .environment(hotkeyMonitor)
                 .environment(meetingRecorder)
                 .modelContainer(Self.modelContainer)
         } label: {
+            // The dictation's own delivery, not every AI request in flight. A meeting
+            // summary running in the background turned the icon into the brain.
             MenuBarIcon(
                 isRecording: transcriptionEngine.isRecording,
-                isProcessing: aiProcessor.isProcessing
+                isProcessing: coordinator.isDelivering
             )
         }
         .menuBarExtraStyle(.window)
@@ -227,6 +218,7 @@ struct ScribeApp: App {
         Window("Dictation History", id: Self.historyWindowID) {
             DictationHistoryView()
                 .environment(settings)
+                .environment(coordinator)
                 .modelContainer(Self.modelContainer)
         }
         .defaultSize(width: 620, height: 520)
@@ -258,6 +250,11 @@ struct ScribeApp: App {
 
             // The coordinator keeps finished dictations, which needs the open store.
             coordinator.modelContext = ScribeApp.modelContainer.mainContext
+
+            // Ask for notification permission at launch. Otherwise the first banner is
+            // what creates the service, and it is posted before the request is answered,
+            // so the system drops it.
+            _ = NotificationService.shared
 
             wireHotkeyCallbacks()
             armHotkey()
@@ -346,9 +343,9 @@ struct ScribeApp: App {
         ///
         /// `AXIsProcessTrusted()` answers false while the app is still finishing launch,
         /// even when access has been granted, so the single check above reads it as
-        /// missing and the tap never gets built. Nothing retried: the menu bar said
-        /// "Not listening", the key did nothing, and the only way out was to open
-        /// Settings and nudge a hotkey field, because changing one calls `rearm()`.
+        /// missing and the tap never gets built. Nothing retried: the key did nothing,
+        /// Settings said "Not listening", and the only way out was to nudge a hotkey
+        /// field there, because changing one calls `rearm()`.
         /// It also covers access granted minutes later, without a relaunch.
         private func armWhenTrustArrives() {
             Task { @MainActor in
@@ -385,161 +382,7 @@ struct ScribeApp: App {
         }
     }
     #endif
-
-    // MARK: - iOS Scene
-
-    #if os(iOS)
-    @StateObject private var liveActivityManager = LiveActivityManager.shared
-
-    @SceneBuilder
-    private var iOSScene: some Scene {
-        WindowGroup {
-            iOSMainView()
-                .environment(settings)
-                .environment(promptConfig)
-                .environment(transcriptionEngine)
-                .environment(aiProcessor)
-                .environmentObject(liveActivityManager)
-                .onAppear {
-                    setupIOS()
-                }
-        }
-    }
-
-    private func setupIOS() {
-        // Request authorization on launch
-        Task {
-            _ = await transcriptionEngine.requestAuthorization()
-        }
-
-        // Request notification authorization
-        _ = NotificationService.shared
-
-        Log.app.notice("iOS setup complete")
-    }
-    #endif
 }
-
-// MARK: - iOS Main View
-
-#if os(iOS)
-struct iOSMainView: View {
-    @Environment(AppSettings.self) private var settings
-    @Environment(TranscriptionEngine.self) private var transcriptionEngine
-    @Environment(AIProcessor.self) private var aiProcessor
-
-    @State private var showSettings = false
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 32) {
-                Spacer()
-
-                // Status icon
-                Image(systemName: statusIcon)
-                    .font(.system(size: 80))
-                    .foregroundStyle(statusColor)
-                    .symbolEffect(.pulse, options: .repeating, isActive: transcriptionEngine.isRecording)
-
-                // Status text
-                VStack(spacing: 8) {
-                    Text(statusTitle)
-                        .font(.title)
-                        .fontWeight(.bold)
-
-                    Text(statusSubtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-
-                // Transcript preview
-                if !transcriptionEngine.currentTranscript.isEmpty || !transcriptionEngine.volatileText.isEmpty {
-                    ScrollView {
-                        Text(transcriptionEngine.currentTranscript + transcriptionEngine.volatileText)
-                            .font(.body)
-                            .padding()
-                    }
-                    .frame(maxHeight: 200)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.secondary.opacity(0.1))
-                    )
-                    .padding(.horizontal)
-                }
-
-                Spacer()
-
-                // Info text
-                VStack(spacing: 8) {
-                    Text("Use Shortcuts or Siri to start recording")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Text("\"Hey Siri, transcribe with Inscribe\"")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .italic()
-                }
-            }
-            .padding()
-            .navigationTitle("Inscribe")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gear")
-                    }
-                }
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-            }
-        }
-    }
-
-    private var statusIcon: String {
-        if transcriptionEngine.isRecording {
-            return "mic.fill"
-        } else if aiProcessor.isProcessing {
-            return "brain"
-        } else {
-            return "mic"
-        }
-    }
-
-    private var statusColor: Color {
-        if transcriptionEngine.isRecording {
-            return .red
-        } else if aiProcessor.isProcessing {
-            return .orange
-        } else {
-            return .blue
-        }
-    }
-
-    private var statusTitle: String {
-        if transcriptionEngine.isRecording {
-            return "Recording"
-        } else if aiProcessor.isProcessing {
-            return "Processing"
-        } else {
-            return "Ready"
-        }
-    }
-
-    private var statusSubtitle: String {
-        if transcriptionEngine.isRecording {
-            return "Listening..."
-        } else if aiProcessor.isProcessing {
-            return "Applying AI processing..."
-        } else {
-            return "Use Shortcuts to start a transcription"
-        }
-    }
-}
-#endif
 
 // MARK: - App Shortcuts
 

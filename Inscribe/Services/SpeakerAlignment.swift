@@ -26,9 +26,9 @@ enum SpeakerAlignment {
     ///
     /// The diarizer drops short stretches it takes for silence, and a word landing in
     /// one of those still belongs to whoever was talking around it. A word further than
-    /// this from every turn sits in a stretch the diarizer failed on, such as a chunk
-    /// that threw, and crediting it to the nearest turn put a minute of speech in the
-    /// mouth of whoever happened to speak next.
+    /// this from every turn sits in a stretch the diarizer failed on, and crediting it
+    /// to the nearest turn put a minute of speech in the mouth of whoever happened to
+    /// speak next.
     private static let nearestTurnReach: TimeInterval = 2
 
     /// Attribute each transcript run, then merge neighbours by the same speaker.

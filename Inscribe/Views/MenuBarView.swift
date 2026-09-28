@@ -8,21 +8,16 @@ struct MenuBarView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(PromptConfiguration.self) private var promptConfig
     @Environment(TranscriptionEngine.self) private var transcriptionEngine
-    @Environment(AIProcessor.self) private var aiProcessor
     @Environment(RecordingCoordinator.self) private var coordinator
     @Environment(MeetingRecorder.self) private var meetingRecorder
+    @Environment(GlobalHotkeyMonitor.self) private var hotkeyMonitor
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Status section
-            statusSection
-
-            Divider()
-                .padding(.vertical, 4)
-
-            // Recording control
+            // Dictation control
             recordingButton
 
             Divider()
@@ -53,105 +48,54 @@ struct MenuBarView: View {
         .frame(width: 280)
     }
 
-    // MARK: - Status Section
-
-    private var statusSection: some View {
-        HStack {
-            Image(systemName: statusIcon)
-                .font(.title2)
-                .foregroundStyle(statusColor)
-                .symbolEffect(.pulse, options: .repeating, isActive: transcriptionEngine.isRecording)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(statusTitle)
-                    .font(.headline)
-
-                Text(statusSubtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, 4)
-    }
-
-    private var statusIcon: String {
-        if transcriptionEngine.isRecording {
-            return "mic.fill"
-        } else if aiProcessor.isProcessing {
-            return "brain"
-        } else {
-            return "mic"
-        }
-    }
-
-    private var statusColor: Color {
-        if transcriptionEngine.isRecording {
-            return .red
-        } else if aiProcessor.isProcessing {
-            return .orange
-        } else {
-            return .secondary
-        }
-    }
-
-    private var statusTitle: String {
-        if meetingRecorder.isPaused {
-            return "Meeting paused"
-        } else if meetingRecorder.isRecording {
-            return "Meeting in progress"
-        } else if transcriptionEngine.isRecording {
-            return "Recording..."
-        } else if aiProcessor.isProcessing {
-            return "Processing..."
-        } else {
-            return "Ready"
-        }
-    }
-
-    private var statusSubtitle: String {
-        if transcriptionEngine.isRecording {
-            let charCount = transcriptionEngine.currentTranscript.count + transcriptionEngine.volatileText.count
-            return "\(charCount) characters"
-        } else if aiProcessor.isProcessing {
-            return "Applying AI prompt..."
-        } else {
-            if let destination = coordinator.lastDestination {
-                return "Last result went to \(destination)"
-            }
-            return "\(activationHint) \(triggerLabel)"
-        }
-    }
-
     // MARK: - Recording Button
 
-    /// The engine is busy with something that is not a dictation — a meeting.
+    /// Why the button cannot start a dictation, when something else holds the engine.
     ///
-    /// Asked of the coordinator rather than the engine: `transcriptionEngine.isRecording`
-    /// is true for meetings too, which had this button offering to stop a recording it
-    /// could not stop and then refusing the click in silence.
-    private var blockedByMeeting: Bool {
-        transcriptionEngine.isBusy && !coordinator.isRecording
+    /// Asked of the engine's owner rather than `coordinator.isRecording`, which is also
+    /// false while a dictation is starting or stopping. That grayed out the button
+    /// under its own dictation, with a tooltip blaming a meeting.
+    private var dictationBlockedReason: String? {
+        guard transcriptionEngine.isBusy else { return nil }
+        switch transcriptionEngine.owner {
+        case .meeting: return "A meeting is using the microphone."
+        case .shortcut: return "A shortcut is recording."
+        case .dictation, nil: return nil
+        }
+    }
+
+    /// "Stop" from the moment a dictation starts coming up, because `toggle()` reads a
+    /// press during the start as a stop.
+    ///
+    /// "Processing…" follows the dictation's own delivery, not every AI request in
+    /// flight, which also counted a meeting summary running in the background. That
+    /// grayed out this button while the hotkey went on dictating normally.
+    private var recordingButtonTitle: String {
+        if coordinator.isDelivering { return "Processing…" }
+        return coordinator.isCancellable ? "Stop Dictation" : "Start Dictation"
     }
 
     private var recordingButton: some View {
         Button {
             Task {
-                await toggleRecording()
+                await coordinator.toggle()
             }
         } label: {
             HStack {
-                Image(systemName: coordinator.isRecording ? "stop.fill" : "record.circle")
+                Image(systemName: coordinator.isCancellable ? "stop.fill" : "record.circle")
                     .font(.title3)
-                    .foregroundStyle(coordinator.isRecording ? .red : .primary)
+                    .foregroundStyle(coordinator.isCancellable ? .red : .primary)
 
-                Text(coordinator.isRecording ? "Stop Recording" : "Start Recording")
+                Text(recordingButtonTitle)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(triggerLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // Only while the key works. After a reinstall breaks the Accessibility
+                // grant, the tap is gone and the menu went on advertising the key.
+                if hotkeyMonitor.isRunning {
+                    triggerLabel
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .contentShape(Rectangle())
         }
@@ -160,10 +104,10 @@ struct MenuBarView: View {
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(coordinator.isRecording ? Color.red.opacity(0.1) : Color.clear)
+                .fill(coordinator.isCancellable ? Color.red.opacity(0.1) : Color.clear)
         )
-        .disabled(aiProcessor.isProcessing || blockedByMeeting)
-        .help(blockedByMeeting ? "A meeting is using the microphone." : "")
+        .disabled(coordinator.isDelivering || dictationBlockedReason != nil)
+        .help(dictationBlockedReason ?? "")
     }
 
     // MARK: - Prompt Section
@@ -223,6 +167,9 @@ struct MenuBarView: View {
 
     // MARK: - Quick Toggles
 
+    /// Each label fills the row so its switch sits at the trailing edge, where every
+    /// other row ends. At their own widths the two toggles were centered, and their
+    /// switches sat 11 points apart, left of center.
     private var quickToggles: some View {
         VStack(spacing: 4) {
             Toggle(isOn: Binding(
@@ -230,6 +177,7 @@ struct MenuBarView: View {
                 set: { settings.aiEnabled = $0 }
             )) {
                 Label("AI Processing", systemImage: "brain")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .toggleStyle(.switch)
             .controlSize(.small)
@@ -239,6 +187,7 @@ struct MenuBarView: View {
                 set: { coordinator.skipAIOnce = $0 }
             )) {
                 Label("Skip AI This Time", systemImage: "forward.fill")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .toggleStyle(.switch)
             .controlSize(.small)
@@ -281,9 +230,13 @@ struct MenuBarView: View {
             }
             .buttonStyle(.plain)
             .padding(.vertical, 4)
-            .disabled(transcriptionEngine.isBusy && !meetingRecorder.hasActiveMeeting)
+            .disabled(!meetingButtonEnabled)
+            .help(meetingRecorder.state == .idle && transcriptionEngine.isBusy
+                  ? "Inscribe is dictating. Finish that first." : "")
 
-            if meetingRecorder.hasActiveMeeting {
+            // Shown only when a pause or resume can act. During "Preparing…" and
+            // "Saving…" the row offered a pause that did nothing.
+            if meetingRecorder.isRecording || meetingRecorder.isPaused {
                 Button {
                     Task {
                         if meetingRecorder.isPaused {
@@ -302,6 +255,11 @@ struct MenuBarView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 4)
+                // A dictation taken during the pause holds the microphone, and a resume
+                // then fails with an error sound and leaves the meeting paused.
+                .disabled(meetingRecorder.isPaused && transcriptionEngine.isBusy)
+                .help(meetingRecorder.isPaused && transcriptionEngine.isBusy
+                      ? "Inscribe is dictating. Finish that first." : "")
             }
 
             Button {
@@ -309,7 +267,7 @@ struct MenuBarView: View {
             } label: {
                 HStack {
                     Image(systemName: "list.bullet.rectangle")
-                    Text("Meetings...")
+                    Text("Meetings")
                     Spacer()
                 }
                 .contentShape(Rectangle())
@@ -322,7 +280,7 @@ struct MenuBarView: View {
             } label: {
                 HStack {
                     Image(systemName: "waveform.badge.plus")
-                    Text("Import Recording...")
+                    Text("Import Recording…")
                     Spacer()
                 }
                 .contentShape(Rectangle())
@@ -335,7 +293,7 @@ struct MenuBarView: View {
             } label: {
                 HStack {
                     Image(systemName: "clock.arrow.circlepath")
-                    Text("Dictation History...")
+                    Text("Dictation History")
                     Spacer()
                 }
                 .contentShape(Rectangle())
@@ -348,10 +306,20 @@ struct MenuBarView: View {
     private var meetingButtonTitle: String {
         switch meetingRecorder.state {
         case .idle: "Start Meeting"
-        case .preparing: "Preparing..."
-        case .recording: "Stop Meeting"
-        case .paused: "Stop Meeting (Paused)"
-        case .finishing: "Saving..."
+        case .preparing: "Preparing…"
+        case .recording, .paused: "Stop Meeting"
+        case .finishing: "Saving…"
+        }
+    }
+
+    /// "Preparing…" and "Saving…" report progress and cannot be acted on, as in the
+    /// Meetings window. A click on "Preparing…" used to wait for the start and then
+    /// stop, saving a meeting a second or two long.
+    private var meetingButtonEnabled: Bool {
+        switch meetingRecorder.state {
+        case .idle: !transcriptionEngine.isBusy
+        case .recording, .paused: true
+        case .preparing, .finishing: false
         }
     }
 
@@ -359,10 +327,15 @@ struct MenuBarView: View {
 
     private var footerSection: some View {
         VStack(spacing: 4) {
-            SettingsLink {
+            // Activated for the same reason as `show(_:)`: an open Settings window
+            // behind another app's otherwise stays there.
+            Button {
+                openSettings()
+                NSApp.activate()
+            } label: {
                 HStack {
                     Image(systemName: "gear")
-                    Text("Settings...")
+                    Text("Settings…")
                     Spacer()
                     Text("⌘,")
                         .font(.caption)
@@ -395,31 +368,26 @@ struct MenuBarView: View {
     // MARK: - Trigger Description
 
     /// What the user actually presses, so the menu never advertises a stale shortcut.
-    private var triggerLabel: String {
-        settings.useGlobeKey ? "🌐" : settings.hotkeyString
-    }
-
-    private var activationHint: String {
-        settings.hotkeyActivationMode == .pushToTalk ? "Hold" : "Press"
-    }
-
-    // MARK: - Actions
-
-    private func toggleRecording() async {
-        await coordinator.toggle()
+    ///
+    /// The Globe key is drawn with its SF Symbol, as macOS draws it in menus. The emoji
+    /// came out as a colored globe in an otherwise monochrome popover.
+    private var triggerLabel: Text {
+        settings.useGlobeKey ? Text(Image(systemName: "globe")) : Text(settings.hotkeyDisplay)
     }
 }
 
 // MARK: - Menu Bar Icon
 
+/// The status bar draws this as a template image, so only the symbol's shape can say
+/// what is happening; a color set here never shows.
 struct MenuBarIcon: View {
     let isRecording: Bool
     let isProcessing: Bool
 
     var body: some View {
+        // Named, or VoiceOver reads the status item as the symbol.
         Image(systemName: iconName)
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(iconColor)
+            .accessibilityLabel("Inscribe")
     }
 
     private var iconName: String {
@@ -431,32 +399,6 @@ struct MenuBarIcon: View {
             return "mic"
         }
     }
-
-    private var iconColor: Color {
-        if isRecording {
-            return .red
-        } else if isProcessing {
-            return .orange
-        } else {
-            return .primary
-        }
-    }
-}
-
-#Preview {
-    let settings = AppSettings()
-    let prompts = PromptConfiguration()
-    let engine = TranscriptionEngine()
-    let processor = AIProcessor(promptConfiguration: prompts)
-
-    return MenuBarView()
-        .environment(settings)
-        .environment(prompts)
-        .environment(engine)
-        .environment(processor)
-        .environment(RecordingCoordinator(engine: engine, aiProcessor: processor, settings: settings))
-        .environment(MeetingRecorder(engine: engine, settings: settings, aiProcessor: processor))
-        .modelContainer(for: [Meeting.self, Utterance.self, MeetingSpeaker.self], inMemory: true)
 }
 
 #endif

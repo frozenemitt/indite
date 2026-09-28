@@ -20,8 +20,8 @@ final class AudioFeedbackService {
         case processingComplete
         case error
 
+        #if os(iOS)
         var systemSoundID: UInt32 {
-            #if os(iOS)
             switch self {
             case .recordingStarted:
                 return 1113  // begin_record.caf
@@ -31,24 +31,6 @@ final class AudioFeedbackService {
                 return 1057  // Tink
             case .error:
                 return 1053  // Basso
-            }
-            #else
-            // macOS uses NSSound instead
-            return 0
-            #endif
-        }
-
-        #if os(macOS)
-        var macOSSoundName: String {
-            switch self {
-            case .recordingStarted:
-                return "Morse"
-            case .recordingStopped:
-                return "Pop"
-            case .processingComplete:
-                return "Glass"
-            case .error:
-                return "Basso"
             }
         }
         #endif
@@ -66,15 +48,6 @@ final class AudioFeedbackService {
 
     // MARK: - Public API
 
-    /// Play a feedback sound using default sound names
-    func play(_ sound: Sound) {
-        #if os(iOS)
-        AudioServicesPlaySystemSound(sound.systemSoundID)
-        #elseif os(macOS)
-        NSSound(named: sound.macOSSoundName)?.play()
-        #endif
-    }
-
     /// Play a feedback sound if enabled, using the user's chosen sound
     func playIfEnabled(_ sound: Sound, settings: AppSettings) {
         guard settings.playFeedbackSounds else { return }
@@ -89,10 +62,11 @@ final class AudioFeedbackService {
     // MARK: - Processing Loop (macOS)
 
     #if os(macOS)
-    /// Start a looping sound to indicate AI processing is in progress
-    func startProcessingLoop(soundId: String = "Bottle") {
+    /// Start a looping sound to show AI processing is in progress. The None sound plays
+    /// nothing, because `makeNSSound` returns nil for it.
+    func startProcessingLoop(settings: AppSettings) {
         stopProcessingLoop()
-        guard let sound = SoundCatalog.shared.makeNSSound(for: soundId) else { return }
+        guard let sound = SoundCatalog.shared.makeNSSound(for: settings.processingSoundName) else { return }
         sound.loops = true
         sound.play()
         loopingSound = sound
@@ -100,17 +74,8 @@ final class AudioFeedbackService {
 
     /// Stop the processing loop sound
     func stopProcessingLoop() {
-        // Named sounds can come back as one shared instance, so the loop flag set on
-        // it would stay set wherever that sound played next.
-        loopingSound?.loops = false
         loopingSound?.stop()
         loopingSound = nil
-    }
-
-    /// Start processing loop if the processing indicator is enabled
-    func startProcessingLoopIfEnabled(settings: AppSettings) {
-        guard settings.playProcessingIndicator else { return }
-        startProcessingLoop(soundId: settings.processingSoundName)
     }
     #endif
 

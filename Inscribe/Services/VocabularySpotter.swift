@@ -95,7 +95,7 @@ final class VocabularySpotter: Sendable {
         private var frameDuration: Double = 0
         private var nextWindowEnd = Session.window
         private var reading: Task<Void, Never>?
-        private var converter: AVAudioConverter?
+        private let converter = BufferConverter()
         private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
 
         fileprivate init(spotter: CtcKeywordSpotter, tokenizer: CtcTokenizer) {
@@ -184,29 +184,12 @@ final class VocabularySpotter: Sendable {
 
         /// The buffer as 16 kHz mono floats, which the model reads.
         private func resampled(_ buffer: AVAudioPCMBuffer) -> [Float]? {
-            if buffer.format.commonFormat == .pcmFormatFloat32, buffer.format.sampleRate == 16_000,
-               buffer.format.channelCount == 1, let data = buffer.floatChannelData {
-                return Array(UnsafeBufferPointer(start: data[0], count: Int(buffer.frameLength)))
-            }
             if buffer.format.commonFormat == .pcmFormatInt16, buffer.format.sampleRate == 16_000,
                buffer.format.channelCount == 1, let data = buffer.int16ChannelData {
                 return UnsafeBufferPointer(start: data[0], count: Int(buffer.frameLength)).map { Float($0) / 32_768 }
             }
-            if converter == nil || converter?.inputFormat != buffer.format {
-                converter = AVAudioConverter(from: buffer.format, to: format)
-            }
-            guard let converter else { return nil }
-            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * 16_000 / buffer.format.sampleRate) + 32
-            guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
-            var given = false
-            var error: NSError?
-            converter.convert(to: output, error: &error) { _, status in
-                if given { status.pointee = .noDataNow; return nil }
-                given = true
-                status.pointee = .haveData
-                return buffer
-            }
-            guard error == nil, let data = output.floatChannelData else { return nil }
+            guard let output = try? converter.convertBuffer(buffer, to: format),
+                  let data = output.floatChannelData else { return nil }
             return Array(UnsafeBufferPointer(start: data[0], count: Int(output.frameLength)))
         }
     }

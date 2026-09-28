@@ -22,11 +22,8 @@ final class DictationOverlayController {
 
     private let model = OverlayModel()
     private let settings: AppSettings
-    /// Held so the panel's move notifications keep arriving for the life of the app.
     /// Held so the desktop-change notifications keep arriving for the life of the app.
     private var spaceObserver: (any NSObjectProtocol)?
-
-    /// Measured to size the panel: the glass view around it reports nothing useful.
 
     static let minimumHeight: CGFloat = 92
     static let width: CGFloat = 460
@@ -41,6 +38,7 @@ final class DictationOverlayController {
 
     init(settings: AppSettings) {
         self.settings = settings
+        model.resizePanel = { [weak self] in self?.fitToText() }
     }
 
     // MARK: - Presentation
@@ -49,6 +47,7 @@ final class DictationOverlayController {
         model.text = ""
         model.rewrite = ""
         model.isProcessing = false
+        model.spectrum = []
 
         // A panel the window server has taken off the other desktops is thrown away
         // and rebuilt, because it cannot be talked back onto them.
@@ -93,7 +92,6 @@ final class DictationOverlayController {
         // a panel-tall block of text that often to say the same words is waste.
         guard model.text != text else { return }
         model.text = text
-        growToFit()
     }
 
     /// Fade the whole panel, glass included.
@@ -111,12 +109,17 @@ final class DictationOverlayController {
     /// a second makes the material recomposite on every tick and the panel goes
     /// muddy.
     private func applyOpacity() {
-        guard let glassView else { return }
-
         let wanted = settings.overlayOpacity
-        guard abs(glassView.alphaValue - wanted) > 0.001 else { return }
+
+        // The rim is checked on its own. It starts from a different default than the
+        // glass, so a pane set fully solid matched the glass, returned early, and left
+        // the rim at three quarters.
+        if abs(model.paneOpacity - wanted) > 0.001 {
+            model.paneOpacity = wanted
+        }
+
+        guard let glassView, abs(glassView.alphaValue - wanted) > 0.001 else { return }
         glassView.alphaValue = wanted
-        model.paneOpacity = wanted
     }
 
     /// The words and the band carry their own setting, so a pane turned right down can
@@ -139,7 +142,6 @@ final class DictationOverlayController {
     func showRewrite(_ text: String) {
         guard model.isProcessing, model.rewrite != text else { return }
         model.rewrite = text
-        growToFit()
     }
 
     func hide() {
@@ -147,6 +149,7 @@ final class DictationOverlayController {
         model.text = ""
         model.rewrite = ""
         model.isProcessing = false
+        model.spectrum = []
     }
 
     /// Forget a dragged position, so the panel returns to the bottom of the screen.
@@ -159,11 +162,16 @@ final class DictationOverlayController {
         position(panel)
     }
 
-    /// Match the panel's height to the text, growing downward from a fixed top edge.
+    /// Match the panel's height to the text, moving only its bottom edge.
     ///
     /// The panel used to be 92 points tall whatever it held, so a dictation past a
     /// line and a half showed its last two lines and hid everything before them.
-    private func growToFit() {
+    ///
+    /// It runs when the text reports a new height, not when new text is set. The text
+    /// is laid out on a later pass, so a height read straight after setting it belonged
+    /// to the words before, and a line that wrapped on the last word before a pause
+    /// stayed cut off until the next word arrived.
+    private func fitToText() {
         guard let panel else { return }
 
         let ceiling = availableTextHeight(for: panel)
@@ -176,14 +184,14 @@ final class DictationOverlayController {
         // its own bounds, which come from the panel, so every view was being told its
         // height by the one thing that wanted to be told. The panel stopped growing.
         let height = max(
-            model.textHeight + Self.bandHeight + Self.contentSpacing + Self.verticalPadding,
+            min(model.textHeight, ceiling) + Self.bandHeight + Self.contentSpacing + Self.verticalPadding,
             Self.minimumHeight
         )
         guard abs(panel.frame.height - height) > 0.5 else { return }
 
-        // The top edge stays where it is and the panel grows downward, so each new
-        // line lands below the last, the way a page fills. An NSWindow's origin is
-        // its bottom-left corner, so holding the top means moving the origin down.
+        // The top edge stays where it is and the bottom edge moves, so each new line
+        // lands below the last, the way a page fills. An NSWindow's origin is its
+        // bottom-left corner, so holding the top means moving the origin.
         //
         // Once the bottom reaches the bottom of the screen, the panel grows upward
         // instead. `show()` puts the panel back where the user left it, so the next
@@ -196,7 +204,10 @@ final class DictationOverlayController {
            frame.minY < visible.minY + Self.screenMargin {
             frame.origin.y = visible.minY + Self.screenMargin
         }
-        panel.setFrame(frame, display: true)
+        // Not displayed here. The text's measurement calls this from inside SwiftUI's
+        // layout pass, where forcing a display would lay the hosting view out again
+        // within its own layout. The new frame is drawn on the next pass.
+        panel.setFrame(frame, display: false)
     }
 
     /// Kept clear between the panel and the edges of the screen.
@@ -242,6 +253,9 @@ final class DictationOverlayController {
         panel.ignoresMouseEvents = false
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = Self.collectionBehavior
+        // Stays up when Inscribe is hidden, which would otherwise take the panel away
+        // in the middle of a dictation.
+        panel.canHide = false
 
         // The SwiftUI content swallows the mouse, so `isMovableByWindowBackground`
         // never sees a click and the panel could not be dragged at all. This view sits
@@ -337,20 +351,36 @@ final class DictationOverlayController {
                 self.position(self.panel)
                 self.applyOpacity()
                 self.applyContentOpacity()
-                self.growToFit()
+                self.fitToText()
                 self.panel?.orderFrontRegardless()
             }
         }
     }
 
     /// Where the user left it, or the bottom centre of the screen holding the pointer.
+    ///
+    /// A saved spot is pulled inside the screen it mostly lies on. Any overlap used to
+    /// be enough, so a spot left straddling an edge, by a drag or by displays being
+    /// rearranged, opened the panel mostly off screen on every dictation. The setting
+    /// itself is left alone, so the spot comes back if the old arrangement does.
     private func position(_ panel: NSPanel?) {
         guard let panel else { return }
 
-        if let x = settings.overlayOriginX, let y = settings.overlayOriginY,
-           NSScreen.screens.contains(where: { $0.frame.intersects(NSRect(x: x, y: y, width: Self.width, height: Self.minimumHeight)) }) {
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
-            return
+        if let x = settings.overlayOriginX, let y = settings.overlayOriginY {
+            let saved = NSRect(x: x, y: y, width: Self.width, height: Self.minimumHeight)
+            func overlap(_ screen: NSScreen) -> CGFloat {
+                let shared = screen.frame.intersection(saved)
+                return shared.width * shared.height
+            }
+            if let screen = NSScreen.screens.max(by: { overlap($0) < overlap($1) }),
+               overlap(screen) > 0 {
+                let visible = screen.visibleFrame
+                panel.setFrameOrigin(NSPoint(
+                    x: min(max(x, visible.minX), visible.maxX - Self.width),
+                    y: min(max(y, visible.minY), visible.maxY - Self.minimumHeight)
+                ))
+                return
+            }
         }
 
         let mouse = NSEvent.mouseLocation
@@ -375,9 +405,19 @@ private final class DragHandleView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
+
+        // A click that moves nothing is not a drag. Saving on every mouse-up turned a
+        // stray click into a chosen spot and pinned the panel to that screen. The
+        // top-left corner is compared because it is what gets saved, and because a
+        // panel growing under a held click moves its origin but not that corner.
+        let before = NSPoint(x: window.frame.minX, y: window.frame.maxY)
         // Runs the whole drag before returning.
-        window?.performDrag(with: event)
-        onDragEnded?()
+        window.performDrag(with: event)
+        let after = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        if after != before {
+            onDragEnded?()
+        }
     }
 }
 
@@ -387,13 +427,17 @@ private final class DragHandleView: NSView {
 final class OverlayModel {
     var text = ""
     var isProcessing = false
-    /// The AI's rewrite as far as it has got, shown in place of "Processing…".
+    /// The AI's rewrite as far as it has got, shown in place of the dictated words.
     var rewrite = ""
     /// Loudness per frequency band, 0 to 1, low to high — one per bar.
     var spectrum: [Double] = []
 
-    /// How tall the text has laid itself out, which is what sizes the panel.
+    /// How tall the text lays itself out in full, before the cap below clips it. It is
+    /// what sizes the panel.
     var textHeight: CGFloat = 0
+
+    /// Handed in by the controller so a new measurement resizes the panel.
+    var resizePanel: () -> Void = {}
 
     /// How solid the pane behind is, so the rim drawn on top can match it.
     var paneOpacity: Double = 0.75
@@ -401,8 +445,8 @@ final class OverlayModel {
     /// How solid the words and the band are.
     var contentOpacity: Double = 1.0
 
-    /// How tall the text may grow before older lines are pushed off the top. Set from
-    /// the room left between the panel's bottom edge and the top of its screen.
+    /// How tall the text may grow before older lines are pushed off the top: the text
+    /// room in the tallest panel the screen's visible height can hold.
     var maxTextHeight: CGFloat = DictationOverlayView.lineHeight * 5
 }
 
@@ -431,14 +475,18 @@ private struct DictationOverlayView: View {
             // the way round you need while you are still talking.
             Text(displayText)
                 .font(.title3)
-                .foregroundStyle(model.text.isEmpty ? .secondary : .primary)
+                .foregroundStyle(isDimmed ? .secondary : .primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(maxHeight: model.maxTextHeight, alignment: .bottom)
-                .clipped()
+                // Measured at its full height, above the cap. The capped frame fills
+                // whatever height the panel offers it, so measured below the cap the
+                // text reported the panel's own height back and the panel never shrank.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                     model.textHeight = height
+                    model.resizePanel()
                 }
+                .frame(maxHeight: model.maxTextHeight, alignment: .bottom)
+                .clipped()
         }
         // The contents carry their own setting; the rim below belongs to the pane and
         // takes the pane's.
@@ -477,9 +525,19 @@ private struct DictationOverlayView: View {
         .environment(\.colorScheme, .dark)
     }
 
+    /// The dictation stays up, dimmed, until the rewrite starts replacing it.
+    ///
+    /// Swapping it for "Processing…" on release hid the words at the moment the user
+    /// wants to check them, to say what the band's amber already says.
     private var displayText: String {
-        if model.isProcessing { return model.rewrite.isEmpty ? "Processing…" : model.rewrite }
-        return model.text.isEmpty ? "Listening…" : model.text
+        if model.isProcessing, !model.rewrite.isEmpty { return model.rewrite }
+        if !model.text.isEmpty { return model.text }
+        return model.isProcessing ? "Processing…" : "Listening…"
+    }
+
+    /// A placeholder, or a dictation waiting for its rewrite, is drawn dimmed.
+    private var isDimmed: Bool {
+        model.isProcessing ? model.rewrite.isEmpty : model.text.isEmpty
     }
 }
 

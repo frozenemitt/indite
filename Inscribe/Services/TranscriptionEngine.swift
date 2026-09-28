@@ -1,5 +1,4 @@
 import AVFoundation
-import Combine
 import Foundation
 import Speech
 import Observation
@@ -144,7 +143,6 @@ final class TranscriptionEngine {
     /// drained stream from one still delivering.
     private var resultsEnded = false
 
-    private let bufferConverter = BufferConverter()
     private var analyzerFormat: AVAudioFormat?
 
     /// Rare, and worth keeping: a dictation that goes wrong in a launched app leaves
@@ -152,10 +150,6 @@ final class TranscriptionEngine {
     nonisolated static let log = Logger(subsystem: "com.inscribe.app", category: "Dictation")
 
     // MARK: - Configuration
-
-    static let defaultLocale = Locale(
-        components: .init(languageCode: .english, script: nil, languageRegion: .unitedStates)
-    )
 
     private static let fallbackLocales = [
         Locale(components: .init(languageCode: .english, script: nil, languageRegion: .unitedStates)),
@@ -255,10 +249,9 @@ final class TranscriptionEngine {
         screenTerms = []
         spectrum = []
 
-        // Check authorization
-        guard await checkAuthorization() else {
+        if let missing = await missingAuthorization() {
             release()
-            throw TranscriptionEngineError.notAuthorized
+            throw missing
         }
 
         // Setup speech recognition first
@@ -352,7 +345,7 @@ final class TranscriptionEngine {
 
     /// Stop recording and return the final transcript
     @discardableResult
-    func stopRecording(owner: SessionOwner = .dictation) async throws -> String {
+    func stopRecording(owner: SessionOwner = .dictation) async -> String {
         guard phase == .recording else {
             Log.dictation.notice("Not recording, ignoring stop request")
             return currentTranscript
@@ -404,7 +397,6 @@ final class TranscriptionEngine {
 
         analyzerInputContinuation?.finish()
 
-        var finalized = true
         let analyzer = speechAnalyzer
         let finishedInTime = await Self.bounded(3) {
             do {
@@ -417,22 +409,9 @@ final class TranscriptionEngine {
         if !finishedInTime {
             // Seen on recordings of a few tens of milliseconds: finalization simply
             // never returns. Waiting forever costs the whole engine.
-            finalized = false
             Self.log.error("finalize did not return in 3s — giving up on the tail")
             self.error = .transcriptionFailed("The recogniser did not finish.")
         }
-        // Drained rather than cancelled, for the same reason the audio stream above is.
-        //
-        // The transcriber holds a whole dictation as unconfirmed text and only turns it
-        // into finalized runs when `finalizeAndFinishThroughEndOfInput` asks it to. That
-        // call also ends the results stream, so awaiting the task here consumes every
-        // one of those runs and returns when the stream does. Cancelling instead broke
-        // the loop on its next turn and threw the entire dictation away, leaving only
-        // whatever volatile snapshot happened to be held — a word or two of a long
-        // sentence, delivered without any error to say the rest was dropped.
-        //
-        // A finalize that threw leaves no promise that the stream will end, so that one
-        // case still cancels.
 
         // Give the results loop a moment of the main actor, then end it. Never wait on
         // it to finish on its own.
@@ -446,8 +425,8 @@ final class TranscriptionEngine {
         //
         // Finalization has already returned by this point, so whatever it produced is
         // queued and needs only a slice of the main actor to be taken up. That is the
-        // difference from the version that lost the ending: it cancelled before
-        // finalizing, not after.
+        // difference from an earlier version that lost the end of every dictation: it
+        // cancelled before finalizing, not after.
         //
         // The moment is at most 150 ms, and usually far less: the loop marks the stream
         // ended, and the wait stops there instead of sitting out the full length.
@@ -476,8 +455,6 @@ final class TranscriptionEngine {
             volatileText = ""
         }
 
-        release()
-
         spectrum = []
         let drainMs = Int(drainTime / .milliseconds(1))
         if let spotting {
@@ -501,6 +478,12 @@ final class TranscriptionEngine {
         audioLog?.finish(recognized: currentTranscript, firstGuesses: firstGuesses, vocabulary: vocabulary)
         audioLog = nil
         Self.log.notice("recording stopped, delivering \(self.currentTranscript.count, privacy: .public) chars; \(finalAtRelease, privacy: .public) of \(heardAtRelease, privacy: .public) were final at release; results \(drained ? "drained" : "cut off", privacy: .public) after \(drainMs, privacy: .public) ms")
+
+        // Released last. The wait on the spotter above gives up the main actor, and a
+        // start taken in that gap would clear this session's transcript, segments and
+        // screen names before they were put back together, so this stop would deliver
+        // nothing.
+        release()
         return currentTranscript
     }
 
@@ -590,14 +573,14 @@ final class TranscriptionEngine {
 
     // MARK: - Authorization
 
-    private func checkAuthorization() async -> Bool {
-        // Check microphone access
-        let micAuthorized = await checkMicrophoneAuthorization()
-        guard micAuthorized else { return false }
-
-        // Check speech recognition access
-        let speechAuthorized = await checkSpeechRecognitionAuthorization()
-        return speechAuthorized
+    /// The permission that is missing, or nil when both are granted.
+    ///
+    /// Returned as the error for that permission, so the message names the setting
+    /// the user has to change rather than blaming the microphone for both.
+    private func missingAuthorization() async -> TranscriptionEngineError? {
+        guard await checkMicrophoneAuthorization() else { return .microphoneNotAuthorized }
+        guard await checkSpeechRecognitionAuthorization() else { return .speechRecognitionNotAuthorized }
+        return nil
     }
 
     private func checkMicrophoneAuthorization() async -> Bool {
@@ -612,16 +595,11 @@ final class TranscriptionEngine {
             Log.dictation.notice("Requesting microphone access...")
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             Log.dictation.notice("Microphone access granted: \(granted, privacy: .public)")
-            if !granted {
-                error = .notAuthorized
-            }
             return granted
         case .denied, .restricted:
             Log.dictation.error("Microphone access denied or restricted")
-            error = .notAuthorized
             return false
         @unknown default:
-            error = .notAuthorized
             return false
         }
     }
@@ -639,17 +617,15 @@ final class TranscriptionEngine {
                 }
             }
         case .denied, .restricted:
-            error = .notAuthorized
             return false
         @unknown default:
-            error = .notAuthorized
             return false
         }
     }
 
     /// Request authorization proactively (call on app launch)
     func requestAuthorization() async -> Bool {
-        await checkAuthorization()
+        await missingAuthorization() == nil
     }
 
     // MARK: - Speech Recognition Setup
@@ -802,7 +778,7 @@ final class TranscriptionEngine {
     /// `attributeOptions: [.audioTimeRange]` makes the transcriber stamp each run with
     /// when it was spoken. That timestamp is what lets speaker attribution be real
     /// rather than a proportional guess at how the text divides up.
-    private nonisolated static func timedRuns(from text: AttributedString) -> [TimedTranscriptSegment] {
+    nonisolated static func timedRuns(from text: AttributedString) -> [TimedTranscriptSegment] {
         var segments: [TimedTranscriptSegment] = []
 
         for run in text.runs {
@@ -827,7 +803,7 @@ final class TranscriptionEngine {
     /// opened, while the user waited to speak.
     private static var cachedLocale: Locale?
 
-    private func resolveSupportedLocale() async throws -> Locale {
+    func resolveSupportedLocale() async throws -> Locale {
         if let cached = Self.cachedLocale { return cached }
 
         let supported = await SpeechTranscriber.supportedLocales
@@ -911,28 +887,13 @@ final class TranscriptionEngine {
         speechAnalyzer = nil
         analyzerFormat = nil
     }
-
-    deinit {
-        MainActor.assumeIsolated {
-            Log.dictation.notice("Deallocating...")
-            recognitionTask?.cancel()
-            audioProcessingTask?.cancel()
-            audioCaptureHelper?.stopCapture()
-            // Inline cleanup
-            audioCaptureHelper = nil
-            audioProcessingTask = nil
-            speechTranscriber = nil
-            speechAnalyzer = nil
-            analyzerInputContinuation = nil
-            analyzerFormat = nil
-        }
-    }
 }
 
 // MARK: - Errors
 
 enum TranscriptionEngineError: Error, LocalizedError {
-    case notAuthorized
+    case microphoneNotAuthorized
+    case speechRecognitionNotAuthorized
     case setupFailed(String)
     case transcriptionFailed(String)
     case localeNotSupported
@@ -941,8 +902,10 @@ enum TranscriptionEngineError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAuthorized:
+        case .microphoneNotAuthorized:
             return "Microphone access not authorized"
+        case .speechRecognitionNotAuthorized:
+            return "Speech Recognition access not authorized. Allow Inscribe in System Settings > Privacy & Security > Speech Recognition."
         case .setupFailed(let reason):
             return "Setup failed: \(reason)"
         case .transcriptionFailed(let reason):

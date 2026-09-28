@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import os
 
 /// A recorded meeting: the transcript, who said what, and an optional summary.
 @Model
@@ -110,10 +111,10 @@ final class Utterance {
         self.end = end
     }
 
-    /// Position in the meeting as mm:ss, for display.
+    /// Position in the meeting, for display, in the same m:ss or h:mm:ss form as every
+    /// other time shown for a meeting.
     var timestampLabel: String {
-        let total = Int(start)
-        return String(format: "%02d:%02d", total / 60, total % 60)
+        MeetingExporter.durationLabel(start)
     }
 }
 
@@ -141,5 +142,67 @@ final class MeetingSpeaker {
 
     var resolvedName: String {
         name.trimmingCharacters(in: .whitespaces).isEmpty ? generatedLabel : name
+    }
+}
+
+extension Meeting {
+    /// Speakers in label order, "Speaker 2" before "Speaker 10".
+    ///
+    /// Labels are compared as Finder compares names, numbers by value. Plain string
+    /// order put "Speaker 10" before "Speaker 2".
+    var sortedSpeakers: [MeetingSpeaker] {
+        speakers.sorted { $0.generatedLabel.localizedStandardCompare($1.generatedLabel) == .orderedAscending }
+    }
+
+    /// Turn timed transcript runs plus speaker turns into stored speakers and utterances.
+    ///
+    /// Recorded and imported meetings both store theirs through this, so a change to how
+    /// attribution is stored reaches both.
+    ///
+    /// - Returns: Whether any utterance was stored.
+    @discardableResult
+    func applyAttribution(
+        timedSegments: [TimedTranscriptSegment],
+        turns: [SpeakerTurn],
+        vocabulary: [String],
+        replacements: [String: String],
+        in context: ModelContext
+    ) -> Bool {
+        // Without timings there is nothing to align against; the raw transcript on the
+        // meeting is the whole result.
+        guard !timedSegments.isEmpty else {
+            Log.meetings.notice("No timed segments — transcript kept without attribution")
+            return false
+        }
+
+        let aligned = SpeakerAlignment.align(transcript: timedSegments, turns: turns)
+        let labels = SpeakerAlignment.generatedLabels(for: aligned)
+
+        for (speakerId, label) in labels {
+            let speaker = MeetingSpeaker(speakerId: speakerId, generatedLabel: label)
+            speaker.meeting = self
+            context.insert(speaker)
+        }
+
+        // The same passes `rawTranscript` gets, in the same order: the listed words
+        // spelled, then the pause marks and the replacements. Every reader prefers the
+        // utterances once there is attribution, so without them the displayed and
+        // exported meeting would read "type script" where the raw transcript has
+        // "TypeScript", keep the recognizer's pause marks, and skip the user's word
+        // replacements.
+        for item in aligned {
+            let utterance = Utterance(
+                speakerId: item.speakerId,
+                text: TextProcessor.process(
+                    Vocabulary.spell(item.text, terms: vocabulary),
+                    replacements: replacements
+                ),
+                start: item.start,
+                end: item.end
+            )
+            utterance.meeting = self
+            context.insert(utterance)
+        }
+        return !aligned.isEmpty
     }
 }

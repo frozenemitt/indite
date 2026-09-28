@@ -60,6 +60,16 @@ final class MeetingRecorder {
     /// Whether this meeting is recording system playback as well as the microphone.
     private(set) var systemAudioActive = false
 
+    /// Meetings whose summary is being written.
+    ///
+    /// Kept here rather than in the view that asked for it. That view is rebuilt for
+    /// every meeting selected, so a summary still running looked finished when the user
+    /// came back, and Summarize started a second one alongside it.
+    private(set) var summarizing: Set<PersistentIdentifier> = []
+
+    /// Why a meeting's last summary failed, until one is asked for again.
+    private(set) var summaryErrors: [PersistentIdentifier: String] = [:]
+
     // MARK: - Session Bookkeeping
 
     /// Timed runs from every session so far, already shifted onto the meeting clock.
@@ -199,15 +209,26 @@ final class MeetingRecorder {
     /// Close the meetings a crash or a force quit left open.
     ///
     /// Such a meeting has no end, so every list showed it as still running and its
-    /// length growing for ever. Its recording was never closed either, which leaves an
-    /// AAC file with audio in it but no index, one AVAudioPlayer cannot open; the
-    /// playback bar offered it and then did nothing. That file is deleted, because
-    /// nothing in the app can read it, and the meeting stops pointing at it.
+    /// length growing for ever. Its recording is deleted and the meeting stops pointing
+    /// at it. The file was never closed, which leaves AAC audio with no index that
+    /// AVAudioPlayer cannot open. Even a readable one could not be played, because a
+    /// recording plays only line by line and a meeting that never finished has no
+    /// speaker lines.
+    ///
+    /// A meeting that saved no words is deleted rather than closed. It crashed while
+    /// preparing or before its first checkpoint, and closed it sat in the list as an
+    /// empty 0:00 meeting for ever.
     ///
     /// The end is placed where the last checkpoint's audio ran out, the last moment
     /// known to have been captured. The transcript is whatever that checkpoint saved.
     private func closeInterruptedMeetings(in context: ModelContext) {
         guard state == .idle else { return }
+
+        // The 16 kHz copy kept for speaker separation survives a crash as well, about
+        // 230 MB an hour left in the temporary folder, whatever the "Keep the
+        // recording" setting says. Nothing can be writing it yet, since no meeting has
+        // started.
+        MeetingDiarizer.removeLeftoverRecording()
 
         let open = FetchDescriptor<Meeting>(predicate: #Predicate { $0.endedAt == nil })
         let meetings: [Meeting]
@@ -219,12 +240,17 @@ final class MeetingRecorder {
         }
         guard !meetings.isEmpty else { return }
 
+        var deleted = 0
         for meeting in meetings {
-            if meeting.audioFileName != nil,
-               !MeetingAudioStore.isPlayable(fileNamed: meeting.audioFileName) {
-                MeetingAudioStore.delete(fileNamed: meeting.audioFileName)
-                meeting.audioFileName = nil
+            MeetingAudioStore.delete(fileNamed: meeting.audioFileName)
+            meeting.audioFileName = nil
+
+            if meeting.rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                context.delete(meeting)
+                deleted += 1
+                continue
             }
+
             meeting.endedAt = meeting.startedAt.addingTimeInterval(meeting.recordedDuration)
 
             // Checkpoints save the words as heard; the replacements a finished meeting
@@ -236,7 +262,11 @@ final class MeetingRecorder {
         }
 
         context.saveOrLog()
-        Log.meetings.notice("Closed \(meetings.count, privacy: .public) meetings left open by a crash or force quit")
+        Log.meetings.notice("""
+            Closed \(meetings.count - deleted, privacy: .public) meetings left open \
+            by a crash or force quit, deleted \(deleted, privacy: .public) that had \
+            saved no words
+            """)
     }
 
     #if os(macOS)
@@ -289,6 +319,8 @@ final class MeetingRecorder {
                         spectrum: self.engine.owner == .meeting ? self.engine.spectrum : [],
                         seconds: self.recordedSeconds,
                         isPaused: self.isPaused,
+                        canPauseOrResume: self.state == .recording
+                            || (self.state == .paused && !self.engine.isBusy),
                         error: self.lastError
                     )
                 } else if showing {
@@ -604,7 +636,7 @@ final class MeetingRecorder {
 
         // Taken before the stop is awaited, which is when capture ends; see harvestSession.
         let sessionEndedAt = Date()
-        let transcript = (try? await engine.stopRecording(owner: .meeting)) ?? engine.currentTranscript
+        let transcript = await engine.stopRecording(owner: .meeting)
         reportEngineError()
         harvestSession(transcript: transcript, endedAt: sessionEndedAt)
 
@@ -743,6 +775,12 @@ final class MeetingRecorder {
 
         let wasRecording = state == .recording
         state = .finishing
+        // Hidden now, not when the save ends. The panel cannot tell a meeting that is
+        // saving from one that records, and for the whole save it showed a red record
+        // glyph, a frozen clock, and Pause and Stop buttons that did nothing.
+        #if os(macOS)
+        stopIndicator()
+        #endif
 
         let task = Task { await self.finish(meeting, wasRecording: wasRecording, in: context) }
         finishTask = task
@@ -764,7 +802,7 @@ final class MeetingRecorder {
             // afterwards must not be recorded into this meeting.
             engine.audioTap = nil
 
-            let transcript = (try? await engine.stopRecording(owner: .meeting)) ?? engine.currentTranscript
+            let transcript = await engine.stopRecording(owner: .meeting)
             reportEngineError()
             harvestSession(transcript: transcript, endedAt: stoppedAt)
 
@@ -774,26 +812,46 @@ final class MeetingRecorder {
         }
 
         await drainDiarizerFeed()
-        let turns = diarizationActive ? await diarizer.finish() : []
+        var turns: [SpeakerTurn] = []
+        if diarizationActive {
+            do {
+                turns = try await diarizer.finish()
+            } catch {
+                lastError = "Speaker separation failed: \(error.localizedDescription)"
+                Log.meetings.error("Speaker separation failed: \(error, privacy: .public)")
+            }
+        }
 
         meeting.endedAt = stoppedAt
         meeting.recordedDuration = completedAudioSeconds
-        meeting.audioFileName = audioWriter.finish()
+        // Read before finish(), which clears it.
         reportRecordingFailure()
+        meeting.audioFileName = audioWriter.finish()
         meeting.rawTranscript = TextProcessor.process(
             accumulatedTranscript,
             replacements: settings.wordReplacements
         )
 
-        applyAttribution(timedSegments: collectedSegments, turns: turns, to: meeting, in: context)
+        let attributed = meeting.applyAttribution(
+            timedSegments: collectedSegments,
+            turns: turns,
+            vocabulary: settings.vocabularyHints,
+            replacements: settings.wordReplacements,
+            in: context
+        )
+
+        // A recording plays only line by line, so a meeting without speaker lines has
+        // nothing that can play it. Kept, it filled about 30 MB an hour of disk that no
+        // part of the app could reach, and the meeting never said "no recording kept".
+        if !attributed {
+            MeetingAudioStore.delete(fileNamed: meeting.audioFileName)
+            meeting.audioFileName = nil
+        }
 
         context.saveOrLog()
         await teardown()
 
         state = .idle
-        #if os(macOS)
-        stopIndicator()
-        #endif
         activeMeeting = nil
         AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
 
@@ -806,56 +864,7 @@ final class MeetingRecorder {
             """)
     }
 
-    // MARK: - Attribution
-
-    /// Turn timed transcript runs plus speaker turns into stored utterances.
-    private func applyAttribution(
-        timedSegments: [TimedTranscriptSegment],
-        turns: [SpeakerTurn],
-        to meeting: Meeting,
-        in context: ModelContext
-    ) {
-        // Without timings there is nothing to align against; the raw transcript on the
-        // meeting is the whole result.
-        guard !timedSegments.isEmpty else {
-            Log.meetings.notice("No timed segments — transcript kept without attribution")
-            return
-        }
-
-        let aligned = SpeakerAlignment.align(transcript: timedSegments, turns: turns)
-        let labels = SpeakerAlignment.generatedLabels(for: aligned)
-
-        for (speakerId, label) in labels {
-            let speaker = MeetingSpeaker(speakerId: speakerId, generatedLabel: label)
-            speaker.meeting = meeting
-            context.insert(speaker)
-        }
-
-        // The same pass `rawTranscript` gets. Every reader prefers the utterances once
-        // there is attribution, so without this the meeting displays and exports the
-        // words "period" and "comma" while the raw transcript has the marks.
-        for item in aligned {
-            let utterance = Utterance(
-                speakerId: item.speakerId,
-                text: TextProcessor.process(
-                    item.text,
-                    replacements: settings.wordReplacements
-                ),
-                start: item.start,
-                end: item.end
-            )
-            utterance.meeting = meeting
-            context.insert(utterance)
-        }
-    }
-
     // MARK: - Summary
-
-    /// The built-in "Summarize" prompt.
-    ///
-    /// A meeting summary used to run whatever prompt was chosen for dictation, which is
-    /// usually a cleanup pass and handed back the transcript tidied, not summarized.
-    private static let summarizePromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
 
     /// Generate an AI summary for a finished meeting.
     ///
@@ -863,41 +872,61 @@ final class MeetingRecorder {
     /// about a quarter of an hour used to exceed it and fail. A transcript too long for
     /// one request is summarized in pieces that each fit, and the piece summaries are
     /// then summarized together, as many rounds as it takes to fit in one request.
-    func summarize(_ meeting: Meeting, in context: ModelContext) async throws {
-        var text = MeetingExporter.plainText(meeting)
-        guard !text.isEmpty else { return }
+    func summarize(_ meeting: Meeting, in context: ModelContext) async {
+        let id = meeting.persistentModelID
+        guard summarizing.insert(id).inserted else { return }
+        summaryErrors[id] = nil
+        defer { summarizing.remove(id) }
 
-        let budget = Self.summaryInputBudget
+        do {
+            var text = MeetingExporter.plainText(meeting)
+            guard !text.isEmpty else { return }
 
-        while true {
-            let tokens = await Self.estimatedTokens(in: text)
-            guard tokens > budget else { break }
+            let budget = Self.summaryInputBudget
 
-            // Characters per token for this text, measured rather than assumed, with a
-            // tenth held back because the pieces will not all tokenize alike.
-            let charactersPerToken = Double(text.count) / Double(max(tokens, 1))
-            let pieceLimit = max(1, Int(Double(budget) * charactersPerToken * 0.9))
+            while true {
+                let tokens = await Self.estimatedTokens(in: text)
+                guard tokens > budget else { break }
 
-            var summaries: [String] = []
-            for piece in Self.pieces(of: text, limit: pieceLimit) {
-                summaries.append(try await aiProcessor.process(text: piece, promptId: Self.summarizePromptId))
-                guard !meeting.isDeleted else { return }
+                // Characters per token for this text, measured rather than assumed,
+                // with a tenth held back because the pieces will not all tokenize alike.
+                let charactersPerToken = Double(text.count) / Double(max(tokens, 1))
+                let pieceLimit = max(1, Int(Double(budget) * charactersPerToken * 0.9))
+
+                var summaries: [String] = []
+                for piece in Self.pieces(of: text, limit: pieceLimit) {
+                    // The built-in Summarize prompt, not the one chosen for dictation.
+                    // That is usually a cleanup pass, and handed back the transcript
+                    // tidied, not summarized.
+                    summaries.append(try await aiProcessor.process(
+                        text: piece,
+                        promptId: PromptConfiguration.summarizePromptId
+                    ))
+                    guard !meeting.isDeleted, meeting.modelContext != nil else { return }
+                }
+
+                // A round that fails to shorten the text would repeat for ever. The
+                // last request below then reports the overflow as it always has.
+                let combined = summaries.joined(separator: "\n\n")
+                guard combined.count < text.count else { break }
+                text = combined
             }
 
-            // A round that fails to shorten the text would repeat for ever. The last
-            // request below then reports the overflow as it always has.
-            let combined = summaries.joined(separator: "\n\n")
-            guard combined.count < text.count else { break }
-            text = combined
+            let summary = try await aiProcessor.process(
+                text: text,
+                promptId: PromptConfiguration.summarizePromptId
+            )
+
+            // The summary takes long enough that the meeting can be deleted while it
+            // runs. Once that deletion is saved, `isDeleted` reads false again and only
+            // the missing context shows the meeting is gone.
+            guard !meeting.isDeleted, meeting.modelContext != nil else { return }
+
+            meeting.summary = summary
+            context.saveOrLog()
+        } catch {
+            summaryErrors[id] = error.localizedDescription
         }
-
-        let summary = try await aiProcessor.process(text: text, promptId: Self.summarizePromptId)
-
-        // The summary takes long enough that the meeting can be deleted while it runs.
-        guard !meeting.isDeleted else { return }
-
-        meeting.summary = summary
-        context.saveOrLog()
     }
 
     /// Tokens of transcript one summary request may carry.

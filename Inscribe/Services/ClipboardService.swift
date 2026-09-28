@@ -67,31 +67,4 @@ enum ClipboardService {
     /// The clipboard's current change count.
     static var changeCount: Int { NSPasteboard.general.changeCount }
     #endif
-
-    /// Read current clipboard contents (useful for testing)
-    static func read() -> String? {
-        #if os(macOS)
-        return NSPasteboard.general.string(forType: .string)
-        #else
-        return UIPasteboard.general.string
-        #endif
-    }
-
-    /// Check if clipboard has text content
-    static func hasText() -> Bool {
-        #if os(macOS)
-        return NSPasteboard.general.string(forType: .string) != nil
-        #else
-        return UIPasteboard.general.hasStrings
-        #endif
-    }
-
-    /// Clear the clipboard
-    static func clear() {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        #else
-        UIPasteboard.general.string = ""
-        #endif
-    }
 }
