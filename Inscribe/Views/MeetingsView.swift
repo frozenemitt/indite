@@ -6,6 +6,11 @@ import SwiftData
 import AppKit
 
 /// Browse recorded meetings, read them by speaker, rename speakers, and export.
+///
+/// Laid out as Voice Memos and Notes are: the list on the left, the transcript as the
+/// page, and the summary and speakers in an inspector on the right. The old single
+/// page stacked speakers, player and summary above the transcript, so the words
+/// started a screen down, and deleting a meeting needed a right-click.
 struct MeetingsView: View {
     @Environment(MeetingRecorder.self) private var recorder
     @Environment(TranscriptionEngine.self) private var engine
@@ -14,6 +19,9 @@ struct MeetingsView: View {
     @Query(sort: \Meeting.startedAt, order: .reverse) private var meetings: [Meeting]
 
     @State private var selection: Meeting?
+    @State private var searchText = ""
+    /// The meeting waiting on the delete confirmation.
+    @State private var pendingDeletion: Meeting?
 
     var body: some View {
         NavigationSplitView {
@@ -35,6 +43,7 @@ struct MeetingsView: View {
 
                 sidebar
             }
+            .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
         } detail: {
             // A deleted meeting is never shown. See the state change below.
             if let meeting = selection ?? recorder.activeMeeting,
@@ -43,18 +52,46 @@ struct MeetingsView: View {
                 // summary state across: click Generate on one, click another, and the
                 // second one's button span and stayed disabled until the first
                 // finished — and showed the first one's failure under its heading.
-                MeetingDetailView(meeting: meeting)
-                    .id(meeting.persistentModelID)
+                MeetingDetailView(meeting: meeting) {
+                    pendingDeletion = meeting
+                }
+                .id(meeting.persistentModelID)
             } else {
-                ContentUnavailableView(
-                    "No Meeting Selected",
-                    systemImage: "person.2.wave.2",
-                    description: Text("Start a meeting, or pick one from the list.")
-                )
+                ContentUnavailableView {
+                    Label("No Meeting Selected", systemImage: "waveform")
+                } description: {
+                    Text("Start a meeting, or pick one from the list.")
+                } actions: {
+                    if recorder.state == .idle {
+                        Button("Start Meeting") {
+                            Task { await recorder.start(in: modelContext) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(engine.isBusy)
+                    }
+                }
             }
         }
         .navigationTitle("Meetings")
-        .frame(minWidth: 720, minHeight: 460)
+        .frame(minWidth: 760, minHeight: 480)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                recordButton
+            }
+        }
+        .confirmationDialog(
+            "Delete \u{201C}\(pendingDeletion?.title ?? "")\u{201D}?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            presenting: pendingDeletion
+        ) { meeting in
+            Button("Delete", role: .destructive) { delete(meeting) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Its transcript, summary and recording will be deleted. This can\u{2019}t be undone.")
+        }
         .onChange(of: recorder.activeMeeting) { _, meeting in
             // Follow the meeting being recorded, so the live transcript is on screen.
             if let meeting { selection = meeting }
@@ -81,35 +118,64 @@ struct MeetingsView: View {
 
     private var sidebar: some View {
         List(selection: $selection) {
-            if meetings.isEmpty {
-                Text("No meetings yet")
-                    .foregroundStyle(.secondary)
-            }
-
-            ForEach(meetings) { meeting in
-                MeetingRow(
-                    meeting: meeting,
-                    isRecording: meeting == recorder.activeMeeting,
-                    isPaused: recorder.isPaused
-                )
-                    .tag(meeting)
-                    .contextMenu {
-                        Button("Delete", role: .destructive) {
-                            delete(meeting)
+            ForEach(sections, id: \.title) { section in
+                Section(section.title) {
+                    ForEach(section.meetings) { meeting in
+                        MeetingRow(
+                            meeting: meeting,
+                            showsTime: section.showsTime,
+                            isRecording: meeting == recorder.activeMeeting,
+                            isPaused: recorder.isPaused
+                        )
+                        .tag(meeting)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                pendingDeletion = meeting
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .disabled(!canDelete(meeting))
                         }
-                        // The meeting being prepared is already in this list and is not
-                        // named by activeMeeting until it records, so deleting during
-                        // "Preparing…" hands the recorder a model the store has dropped.
-                        .disabled(meeting == recorder.activeMeeting || recorder.state == .preparing)
+                        .contextMenu {
+                            Button("Delete\u{2026}", role: .destructive) {
+                                pendingDeletion = meeting
+                            }
+                            .disabled(!canDelete(meeting))
+                        }
                     }
+                }
             }
         }
-        .frame(minWidth: 220)
-        .toolbar {
-            ToolbarItem {
-                recordButton
+        .overlay {
+            if meetings.isEmpty {
+                ContentUnavailableView("No Meetings", systemImage: "waveform",
+                                       description: Text("Meetings you record appear here."))
+            } else if sections.isEmpty {
+                ContentUnavailableView.search(text: searchText)
             }
         }
+        .searchable(text: $searchText, placement: .sidebar, prompt: "Search")
+        // The Delete key, and Edit ▸ Delete.
+        .onDeleteCommand {
+            if let selection, canDelete(selection) { pendingDeletion = selection }
+        }
+    }
+
+    /// The meetings matching the search, grouped by when they happened, as Notes does.
+    private var sections: [MeetingSection] {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        let matching = query.isEmpty ? meetings : meetings.filter {
+            $0.title.localizedStandardContains(query)
+                || $0.rawTranscript.localizedStandardContains(query)
+        }
+        return MeetingSection.group(matching)
+    }
+
+    /// The meeting being prepared is already in the list and is not named by
+    /// activeMeeting until it records, so deleting during "Preparing…" hands the
+    /// recorder a model the store has dropped.
+    private func canDelete(_ meeting: Meeting) -> Bool {
+        meeting != recorder.activeMeeting && recorder.state != .preparing
     }
 
     @ViewBuilder
@@ -121,60 +187,30 @@ struct MeetingsView: View {
             } label: {
                 Label("Start Meeting", systemImage: "record.circle")
             }
+            .keyboardShortcut("n", modifiers: .command)
             // A dictation holds the same microphone. Without this the button looked
             // available, did nothing when clicked, and said nothing about why.
             .disabled(engine.isBusy)
-            .help(engine.isBusy ? "Inscribe is dictating. Finish that first." : "")
+            .help(engine.isBusy ? "Inscribe is dictating. Finish that first." : "Start Meeting (⌘N)")
 
         case .preparing:
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text("Preparing…")
-                    .font(.caption)
+            ProgressView().controlSize(.small)
+                .help("Preparing…")
+
+        case .recording, .paused, .finishing:
+            // The live page carries Pause and Stop; here it only says where to find it.
+            Button {
+                selection = recorder.activeMeeting
+            } label: {
+                Label("Show Recording", systemImage: recorder.isPaused ? "pause.circle.fill" : "record.circle.fill")
             }
-
-        case .recording:
-            HStack(spacing: 8) {
-                Button {
-                    Task { await recorder.pause() }
-                } label: {
-                    Label("Pause", systemImage: "pause.circle")
-                }
-
-                Button {
-                    Task { await recorder.stop(in: modelContext) }
-                } label: {
-                    Label("Stop", systemImage: "stop.circle.fill")
-                }
-                .tint(.red)
-            }
-
-        case .paused:
-            HStack(spacing: 8) {
-                Button {
-                    Task { await recorder.resume() }
-                } label: {
-                    Label("Resume", systemImage: "play.circle")
-                }
-
-                Button {
-                    Task { await recorder.stop(in: modelContext) }
-                } label: {
-                    Label("Stop", systemImage: "stop.circle.fill")
-                }
-                .tint(.red)
-            }
-
-        case .finishing:
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text("Saving…")
-                    .font(.caption)
-            }
+            .foregroundStyle(recorder.isPaused ? .orange : .red)
+            .help("Show the meeting being recorded")
         }
     }
 
     private func delete(_ meeting: Meeting) {
+        guard canDelete(meeting) else { return }
         if selection == meeting { selection = nil }
         // The recording is not owned by SwiftData, so cascade delete does not reach it.
         MeetingAudioStore.delete(fileNamed: meeting.audioFileName)
@@ -183,15 +219,55 @@ struct MeetingsView: View {
     }
 }
 
+// MARK: - Sections
+
+/// One heading of the list: Today, Yesterday, Previous 7 Days, and so on.
+private struct MeetingSection {
+    let title: String
+    let meetings: [Meeting]
+    /// Today's and yesterday's rows show a time, since the heading already says the day.
+    let showsTime: Bool
+
+    /// Meetings arrive newest first, so each heading's rows stay in that order.
+    static func group(_ meetings: [Meeting], now: Date = .now) -> [MeetingSection] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        var titles: [String] = []
+        var buckets: [String: [Meeting]] = [:]
+
+        for meeting in meetings {
+            let day = calendar.startOfDay(for: meeting.startedAt)
+            let daysAgo = calendar.dateComponents([.day], from: day, to: today).day ?? 0
+            let title: String
+            switch daysAgo {
+            case ..<1: title = "Today"
+            case 1: title = "Yesterday"
+            case 2..<7: title = "Previous 7 Days"
+            case 7..<30: title = "Previous 30 Days"
+            default:
+                title = meeting.startedAt.formatted(.dateTime.month(.wide).year())
+            }
+            if buckets[title] == nil { titles.append(title) }
+            buckets[title, default: []].append(meeting)
+        }
+
+        return titles.map { title in
+            MeetingSection(title: title, meetings: buckets[title] ?? [],
+                           showsTime: title == "Today" || title == "Yesterday")
+        }
+    }
+}
+
 // MARK: - Row
 
 private struct MeetingRow: View {
     let meeting: Meeting
+    let showsTime: Bool
     let isRecording: Bool
     var isPaused: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 if isRecording {
                     Image(systemName: isPaused ? "pause.circle.fill" : "record.circle.fill")
@@ -199,24 +275,45 @@ private struct MeetingRow: View {
                         .symbolEffect(.pulse, options: .repeating, isActive: !isPaused)
                 }
                 Text(meeting.title)
+                    .fontWeight(.semibold)
                     .lineLimit(1)
             }
 
             HStack(spacing: 6) {
-                Text(meeting.startedAt, style: .date)
+                Text(showsTime
+                     ? meeting.startedAt.formatted(date: .omitted, time: .shortened)
+                     : meeting.startedAt.formatted(date: .abbreviated, time: .omitted))
                 if meeting.endedAt != nil {
-                    Text("·")
                     Text(MeetingExporter.durationLabel(meeting.duration))
                 }
                 if meeting.hasSpeakerAttribution {
-                    Text("·")
                     Label("\(meeting.speakers.count)", systemImage: "person.2")
+                        .labelStyle(.titleAndIcon)
                 }
             }
-            .font(.caption)
+            .font(.subheadline)
             .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
+    }
+}
+
+// MARK: - Speaker colors
+
+private extension Meeting {
+    /// Speakers in label order, "Speaker 2" before "Speaker 10".
+    ///
+    /// Labels are compared as Finder compares names, numbers by value. Plain string
+    /// order put "Speaker 10" before "Speaker 2".
+    var sortedSpeakers: [MeetingSpeaker] {
+        speakers.sorted { $0.generatedLabel.localizedStandardCompare($1.generatedLabel) == .orderedAscending }
+    }
+
+    /// A color per speaker, the same in the transcript and the inspector.
+    func color(forSpeakerId id: String) -> Color {
+        let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
+        guard let index = sortedSpeakers.firstIndex(where: { $0.speakerId == id }) else { return .secondary }
+        return palette[index % palette.count]
     }
 }
 
@@ -224,11 +321,13 @@ private struct MeetingRow: View {
 
 private struct MeetingDetailView: View {
     @Bindable var meeting: Meeting
+    let onDelete: () -> Void
 
     @Environment(MeetingRecorder.self) private var recorder
     @Environment(AppSettings.self) private var settings
     @Environment(\.modelContext) private var modelContext
 
+    @AppStorage("meetingInspectorShown") private var showsInspector = true
     @State private var isSummarizing = false
     @State private var summaryError: String?
     @State private var exportError: String?
@@ -238,30 +337,16 @@ private struct MeetingDetailView: View {
     private var isLive: Bool { meeting == recorder.activeMeeting && recorder.hasActiveMeeting }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-
-                if isLive {
-                    liveTranscript
-                } else {
-                    // Shown whether or not the meeting has speakers. Hidden once there
-                    // were utterances, it kept quiet about a recognizer failure or a
-                    // recording that could not be saved in any meeting that had any.
-                    if let error = recorder.lastError {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+        Group {
+            if isLive {
+                LiveMeetingView(meeting: meeting)
+            } else {
+                transcriptPage
+                    .inspector(isPresented: $showsInspector) {
+                        inspector
+                            .inspectorColumnWidth(min: 240, ideal: 290, max: 400)
                     }
-
-                    speakerNames
-                    playbackBar
-                    summarySection
-                    transcript
-                }
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onChange(of: meeting.persistentModelID) { _, _ in
             // Reloaded, not just unloaded. `.onAppear` does not fire again when the
@@ -299,7 +384,7 @@ private struct MeetingDetailView: View {
         }
         .toolbar {
             if !isLive {
-                ToolbarItem {
+                ToolbarItemGroup(placement: .primaryAction) {
                     Menu {
                         ForEach(MeetingExporter.Format.allCases) { format in
                             Button("Save as \(format.displayName)…") { save(as: format) }
@@ -311,22 +396,65 @@ private struct MeetingDetailView: View {
                     } label: {
                         Label("Export", systemImage: "square.and.arrow.up")
                     }
+                    .help("Export or copy the transcript")
+
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .help("Delete this meeting")
+
+                    Button {
+                        showsInspector.toggle()
+                    } label: {
+                        Label("Inspector", systemImage: "sidebar.right")
+                    }
+                    .help(showsInspector ? "Hide summary and speakers" : "Show summary and speakers")
                 }
             }
         }
     }
 
-    // MARK: Sections
+    // MARK: Transcript page
+
+    private var transcriptPage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                header
+
+                // Shown whether or not the meeting has speakers. Hidden once there
+                // were utterances, it kept quiet about a recognizer failure or a
+                // recording that could not be saved in any meeting that had any.
+                if let error = recorder.lastError {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+
+                transcript
+            }
+            .padding(.horizontal, 32)
+            .padding(.vertical, 24)
+            .frame(maxWidth: 760, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+        // The player sits under the transcript, as it does in Voice Memos, rather
+        // than in the page, where it scrolled away with the first screenful.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if meeting.hasAudio {
+                PlaybackBar(meeting: meeting, player: player)
+            }
+        }
+    }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             TextField("Title", text: $meeting.title)
                 .textFieldStyle(.plain)
                 .font(.largeTitle.bold())
                 .onSubmit { modelContext.saveOrLog() }
 
-            HStack(spacing: 8) {
-                Text(meeting.startedAt.formatted(date: .abbreviated, time: .shortened))
+            HStack(spacing: 6) {
+                Text(meeting.startedAt.formatted(date: .long, time: .shortened))
                 if meeting.endedAt != nil {
                     Text("·")
                     Text(MeetingExporter.durationLabel(meeting.duration))
@@ -335,9 +463,9 @@ private struct MeetingDetailView: View {
                     Text("·")
                     Text("\(MeetingExporter.durationLabel(meeting.recordedDuration)) recorded")
                 }
-                if !isLive && !meeting.hasSpeakerAttribution {
+                if !meeting.hasAudio && meeting.endedAt != nil {
                     Text("·")
-                    Text("no speaker separation")
+                    Text("no recording kept")
                 }
             }
             .font(.subheadline)
@@ -345,154 +473,98 @@ private struct MeetingDetailView: View {
         }
     }
 
-    private var liveTranscript: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            switch recorder.state {
-            case .finishing:
-                // Separating speakers and saving takes a while on a long meeting, and
-                // a pulsing "Recording" through all of it read as still listening.
-                Label {
-                    Text("Saving…")
-                } icon: {
-                    ProgressView().controlSize(.small)
-                }
-            case .paused:
-                Label("Paused", systemImage: "pause.circle.fill")
-                    .foregroundStyle(.orange)
-            default:
-                Label("Recording", systemImage: "record.circle.fill")
-                    .foregroundStyle(.red)
-                    .symbolEffect(.pulse, options: .repeating)
-            }
-
-            // Errors during a meeting used to be set and never shown: a diarizer that
-            // would not load, system audio that would not start, a recognizer that
-            // failed part way.
-            if let error = recorder.lastError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-
-            // Only while capturing. Teardown clears the flag during the save, and the
-            // note would flash up at the very end of every meeting.
-            if settings.captureSystemAudioInMeetings, !recorder.systemAudioActive,
-               recorder.state == .recording || recorder.state == .paused {
-                Label("Microphone only. System audio is not being recorded, so other people on a call are not transcribed.",
-                      systemImage: "mic")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            let live = recorder.liveTranscript
-            Text(live.isEmpty ? "Listening…" : Self.tail(of: live))
-                .textSelection(.enabled)
-                .foregroundStyle(live.isEmpty ? .secondary : .primary)
-
-            Text("Speakers are separated once the meeting ends — attribution needs the whole recording to tell voices apart reliably.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    /// The end of a live transcript: its last few hundred words, marked as cut.
-    ///
-    /// The live text changes several times a second, and each change laid out the
-    /// whole meeting again, which on a long meeting kept the main thread busy for as
-    /// long as it ran. The end is what anyone reads while it grows; the whole of it is
-    /// in the meeting once it stops.
-    private static func tail(of text: String, words: Int = 300) -> String {
-        var index = text.endIndex
-        var spaces = 0
-
-        while index > text.startIndex {
-            let previous = text.index(before: index)
-            if text[previous] == " " {
-                spaces += 1
-                if spaces == words {
-                    return "…" + text[index...]
-                }
-            }
-            index = previous
-        }
-        return text
-    }
-
     @ViewBuilder
-    private var speakerNames: some View {
+    private var transcript: some View {
         if meeting.hasSpeakerAttribution {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Speakers")
-                        .font(.headline)
-                    Spacer()
-                    Button("Add Speaker") {
-                        _ = meeting.addSpeaker(in: modelContext)
-                        modelContext.saveOrLog()
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                }
+            let hasAudio = meeting.hasAudio
+            // Read once for every line. The player changes it only when playback
+            // crosses into another utterance, so this view redraws then and not
+            // on every tick of the clock.
+            let playingID = player.playingUtteranceID
 
-                // Here and in the menus below, labels are compared as Finder compares
-                // names, numbers by value. Plain string order put "Speaker 10" before
-                // "Speaker 2".
-                ForEach(meeting.speakers.sorted { $0.generatedLabel.localizedStandardCompare($1.generatedLabel) == .orderedAscending }) { speaker in
-                    HStack {
-                        Text(speaker.generatedLabel)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 90, alignment: .leading)
+            // Lazy, so a long meeting builds only the lines on screen.
+            LazyVStack(alignment: .leading, spacing: 18) {
+                ForEach(meeting.orderedUtterances) { utterance in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            speakerMenu(for: utterance)
 
-                        TextField("Name", text: Binding(
-                            get: { speaker.name },
-                            set: { speaker.name = $0 }
-                        ))
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { modelContext.saveOrLog() }
-
-                        Text("\(utteranceCount(for: speaker)) lines")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-
-                        // For when the diarizer split one person into two.
-                        Menu {
-                            ForEach(meeting.speakers.filter { $0.speakerId != speaker.speakerId }) { other in
-                                Button("Merge into \(other.resolvedName)") {
-                                    meeting.merge(speaker, into: other, in: modelContext)
-                                    modelContext.saveOrLog()
+                            // Hearing the moment is the only way to know whether an
+                            // attribution is right, so the timestamp plays it.
+                            if hasAudio {
+                                Button {
+                                    player.load(fileName: meeting.audioFileName)
+                                    player.follow(meeting.orderedUtterances)
+                                    player.play(from: utterance)
+                                } label: {
+                                    Label(utterance.timestampLabel, systemImage: "play.fill")
+                                        .labelStyle(.titleAndIcon)
+                                        .font(.caption.monospacedDigit())
                                 }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
+                                .help("Play from here")
+                            } else {
+                                Text(utterance.timestampLabel)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
                             }
-                        } label: {
-                            Image(systemName: "arrow.triangle.merge")
                         }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
-                        .disabled(meeting.speakers.count < 2)
+                        Text(utterance.text)
+                            .font(.body)
+                            .lineSpacing(3)
+                            .textSelection(.enabled)
                     }
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(utterance.persistentModelID == playingID
+                                  ? Color.accentColor.opacity(0.12) : .clear)
+                    )
+                    .padding(.horizontal, -10)
                 }
             }
+        } else if meeting.rawTranscript.isEmpty {
+            Text("No transcript was captured.")
+                .foregroundStyle(.secondary)
+        } else {
+            Text(meeting.rawTranscript)
+                .lineSpacing(3)
+                .textSelection(.enabled)
         }
     }
 
-    @ViewBuilder
+    // MARK: Inspector
+
+    private var inspector: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                summarySection
+                speakerSection
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     private var summarySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Summary")
                     .font(.headline)
                 Spacer()
-                Button {
-                    summarize()
-                } label: {
-                    if isSummarizing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text(meeting.summary == nil ? "Generate" : "Regenerate")
+                if meeting.summary != nil {
+                    Button {
+                        summarize()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
                     }
+                    .buttonStyle(.borderless)
+                    .disabled(isSummarizing)
+                    .help("Regenerate the summary")
                 }
-                .disabled(isSummarizing)
             }
 
             // Above the summary rather than instead of it: a failed Regenerate leaves
@@ -503,83 +575,93 @@ private struct MeetingDetailView: View {
                     .foregroundStyle(.red)
             }
 
-            if let summary = meeting.summary, !summary.isEmpty {
+            if isSummarizing {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Summarizing…")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.callout)
+            } else if let summary = meeting.summary, !summary.isEmpty {
                 Text(summary)
+                    .font(.callout)
                     .textSelection(.enabled)
-            } else if summaryError == nil {
-                Text("Summarizes the transcript on-device, in parts if it is long.")
-                    .font(.caption)
+            } else {
+                Text("A summary is written on this Mac, in parts if the meeting is long.")
+                    .font(.callout)
                     .foregroundStyle(.secondary)
+                Button("Summarize") { summarize() }
+                    .controlSize(.regular)
             }
         }
     }
 
-    private var transcript: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Transcript")
-                .font(.headline)
+    @ViewBuilder
+    private var speakerSection: some View {
+        if meeting.hasSpeakerAttribution {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Speakers")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        _ = meeting.addSpeaker(in: modelContext)
+                        modelContext.saveOrLog()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Add a speaker")
+                }
 
-            if meeting.hasSpeakerAttribution {
-                Text("Click a speaker name to correct who said it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                ForEach(meeting.sortedSpeakers) { speaker in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(meeting.color(forSpeakerId: speaker.speakerId))
+                            .frame(width: 10, height: 10)
 
-                let hasAudio = meeting.hasAudio
-                // Read once for every line. The player changes it only when playback
-                // crosses into another utterance, so this view redraws then and not
-                // on every tick of the clock.
-                let playingID = player.playingUtteranceID
+                        TextField(speaker.generatedLabel, text: Binding(
+                            get: { speaker.name },
+                            set: { speaker.name = $0 }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { modelContext.saveOrLog() }
 
-                // Lazy, so a long meeting builds only the lines on screen.
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(meeting.orderedUtterances) { utterance in
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                speakerMenu(for: utterance)
+                        Text("\(utteranceCount(for: speaker))")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .help("Lines attributed to this speaker")
 
-                                // Hearing the moment is the only way to know whether an
-                                // attribution is right, so the timestamp plays it.
-                                if hasAudio {
-                                    Button {
-                                        player.load(fileName: meeting.audioFileName)
-                                        player.follow(meeting.orderedUtterances)
-                                        player.play(from: utterance)
-                                    } label: {
-                                        HStack(spacing: 3) {
-                                            Image(systemName: "play.circle")
-                                            Text(utterance.timestampLabel)
-                                                .monospacedDigit()
-                                        }
-                                        .font(.caption)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .foregroundStyle(.secondary)
-                                    .help("Play from here")
-                                } else {
-                                    Text(utterance.timestampLabel)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .monospacedDigit()
+                        // For when the diarizer split one person into two.
+                        Menu {
+                            ForEach(meeting.sortedSpeakers.filter { $0.speakerId != speaker.speakerId }) { other in
+                                Button("Merge into \(other.resolvedName)") {
+                                    meeting.merge(speaker, into: other, in: modelContext)
+                                    modelContext.saveOrLog()
                                 }
                             }
-                            Text(utterance.text)
-                                .textSelection(.enabled)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
                         }
-                        .padding(.vertical, 3)
-                        .padding(.horizontal, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(utterance.persistentModelID == playingID
-                                      ? Color.accentColor.opacity(0.12) : .clear)
-                        )
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .disabled(meeting.speakers.count < 2)
+                        .help("Merge with another speaker")
                     }
                 }
-            } else if meeting.rawTranscript.isEmpty {
-                Text("No transcript was captured.")
+
+                Text("Click a speaker\u{2019}s name in the transcript to change who said that line.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-            } else {
-                Text(meeting.rawTranscript)
-                    .textSelection(.enabled)
+            }
+        } else if meeting.endedAt != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Speakers")
+                    .font(.headline)
+                Text("This meeting was not separated by speaker.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -588,24 +670,13 @@ private struct MeetingDetailView: View {
         meeting.utterances.count { $0.speakerId == speaker.speakerId }
     }
 
-    @ViewBuilder
-    private var playbackBar: some View {
-        if meeting.hasAudio {
-            PlaybackBar(meeting: meeting, player: player)
-        } else if meeting.endedAt != nil {
-            Text("No recording was kept for this meeting.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     // MARK: Corrections
 
     /// Reassign, or cut an utterance that holds two people.
     private func speakerMenu(for utterance: Utterance) -> some View {
         Menu {
             Section("Attribute to") {
-                ForEach(meeting.speakers.sorted { $0.generatedLabel.localizedStandardCompare($1.generatedLabel) == .orderedAscending }) { speaker in
+                ForEach(meeting.sortedSpeakers) { speaker in
                     Button {
                         meeting.reassign(utterance, to: speaker)
                         finishCorrection()
@@ -628,21 +699,24 @@ private struct MeetingDetailView: View {
             }
 
             if !UtteranceSplitPoint.candidates(in: utterance.text).isEmpty {
-                Button("Split This Line...") {
+                Button("Split This Line…") {
                     splitTarget = utterance
                 }
             }
         } label: {
-            HStack(spacing: 3) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(meeting.color(forSpeakerId: utterance.speakerId))
+                    .frame(width: 8, height: 8)
                 Text(meeting.displayName(forSpeakerId: utterance.speakerId))
-                    .font(.subheadline.bold())
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8))
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(meeting.color(forSpeakerId: utterance.speakerId))
             }
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .help("Change who said this")
     }
 
     /// Save, and drop any speaker left with nothing attributed to them.
@@ -687,9 +761,170 @@ private struct MeetingDetailView: View {
     }
 }
 
+// MARK: - Live Meeting
+
+/// The page while a meeting records: the clock, Pause and Stop, and the words so far.
+private struct LiveMeetingView: View {
+    @Bindable var meeting: Meeting
+
+    @Environment(MeetingRecorder.self) private var recorder
+    @Environment(AppSettings.self) private var settings
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        VStack(spacing: 0) {
+            controls
+                .padding(.vertical, 24)
+                .frame(maxWidth: .infinity)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    let live = recorder.liveTranscript
+                    Text(live.isEmpty ? "Listening…" : Self.tail(of: live))
+                        .font(.body)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .foregroundStyle(live.isEmpty ? .secondary : .primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text("Speakers are separated once the meeting ends: telling voices apart reliably needs the whole recording.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 32)
+                .padding(.vertical, 20)
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity)
+            }
+            // Pinned to the newest words, which is where anyone looks while it grows.
+            .defaultScrollAnchor(.bottom)
+        }
+    }
+
+    private var controls: some View {
+        VStack(spacing: 14) {
+            TextField("Title", text: $meeting.title)
+                .textFieldStyle(.plain)
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+                .onSubmit { modelContext.saveOrLog() }
+                .frame(maxWidth: 480)
+
+            status
+
+            // Recomputed each second: the recorder's clock is derived, not observed.
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                Text(MeetingPlayer.timeLabel(recorder.recordedSeconds))
+                    .font(.system(size: 48, weight: .light).monospacedDigit())
+                    .foregroundStyle(recorder.isPaused ? .secondary : .primary)
+            }
+
+            buttons
+
+            // Errors during a meeting used to be set and never shown: a diarizer that
+            // would not load, system audio that would not start, a recognizer that
+            // failed part way.
+            if let error = recorder.lastError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+            }
+
+            // Only while capturing. Teardown clears the flag during the save, and the
+            // note would flash up at the very end of every meeting.
+            if settings.captureSystemAudioInMeetings, !recorder.systemAudioActive,
+               recorder.state == .recording || recorder.state == .paused {
+                Label("Microphone only. System audio is not being recorded, so other people on a call are not transcribed.",
+                      systemImage: "mic")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+            }
+        }
+        .padding(.horizontal, 24)
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        switch recorder.state {
+        case .finishing:
+            // Separating speakers and saving takes a while on a long meeting, and
+            // a pulsing "Recording" through all of it read as still listening.
+            Label {
+                Text("Saving…")
+            } icon: {
+                ProgressView().controlSize(.small)
+            }
+            .foregroundStyle(.secondary)
+        case .paused:
+            Label("Paused", systemImage: "pause.circle.fill")
+                .foregroundStyle(.orange)
+        default:
+            Label("Recording", systemImage: "record.circle.fill")
+                .foregroundStyle(.red)
+                .symbolEffect(.pulse, options: .repeating)
+        }
+    }
+
+    @ViewBuilder
+    private var buttons: some View {
+        if recorder.state == .recording || recorder.state == .paused {
+            HStack(spacing: 12) {
+                Button {
+                    Task { recorder.isPaused ? await recorder.resume() : await recorder.pause() }
+                } label: {
+                    Label(recorder.isPaused ? "Resume" : "Pause",
+                          systemImage: recorder.isPaused ? "play.fill" : "pause.fill")
+                        .frame(minWidth: 90)
+                }
+
+                Button {
+                    Task { await recorder.stop(in: modelContext) }
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                        .frame(minWidth: 90)
+                }
+                .tint(.red)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: .command)
+                .help("Stop and save the meeting (⌘↩)")
+            }
+            .controlSize(.large)
+        }
+    }
+
+    /// The end of a live transcript: its last few hundred words, marked as cut.
+    ///
+    /// The live text changes several times a second, and each change laid out the
+    /// whole meeting again, which on a long meeting kept the main thread busy for as
+    /// long as it ran. The end is what anyone reads while it grows; the whole of it is
+    /// in the meeting once it stops.
+    private static func tail(of text: String, words: Int = 300) -> String {
+        var index = text.endIndex
+        var spaces = 0
+
+        while index > text.startIndex {
+            let previous = text.index(before: index)
+            if text[previous] == " " {
+                spaces += 1
+                if spaces == words {
+                    return "…" + text[index...]
+                }
+            }
+            index = previous
+        }
+        return text
+    }
+}
+
 // MARK: - Playback Bar
 
-/// Play, pause and scrub a meeting's recording.
+/// Play, pause and scrub a meeting's recording, pinned under the transcript.
 ///
 /// A view of its own because it reads the playback time, which changes four times a
 /// second. Read in the detail view's body, that time redrew the whole transcript
@@ -699,50 +934,55 @@ private struct PlaybackBar: View {
     let player: MeetingPlayer
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button {
-                player.load(fileName: meeting.audioFileName)
-                player.follow(meeting.orderedUtterances)
-                player.togglePlayPause()
-            } label: {
-                Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title2)
+        VStack(spacing: 6) {
+            // A recording that will not open used to leave a bar whose button did
+            // nothing, with the reason only in the log.
+            if let error = player.lastError {
+                Label("The recording could not be opened: \(error)", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
-            .buttonStyle(.plain)
 
-            Text(MeetingPlayer.timeLabel(player.currentTime))
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Button {
+                    player.load(fileName: meeting.audioFileName)
+                    player.follow(meeting.orderedUtterances)
+                    player.togglePlayPause()
+                } label: {
+                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.title3)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(player.isPlaying ? "Pause" : "Play")
 
-            Slider(
-                value: Binding(
-                    get: { player.currentTime },
-                    set: { player.seek(to: $0) }
-                ),
-                in: 0...max(player.duration, 1)
-            )
+                Text(MeetingPlayer.timeLabel(player.currentTime))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 40, alignment: .trailing)
 
-            Text(MeetingPlayer.timeLabel(player.duration))
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+                Slider(
+                    value: Binding(
+                        get: { player.currentTime },
+                        set: { player.seek(to: $0) }
+                    ),
+                    in: 0...max(player.duration, 1)
+                )
+                .controlSize(.small)
 
-            Text(MeetingAudioStore.formatted(bytes: MeetingAudioStore.size(ofFileNamed: meeting.audioFileName)))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+                Text(MeetingPlayer.timeLabel(player.duration))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 40, alignment: .leading)
+                    .help(MeetingAudioStore.formatted(bytes: MeetingAudioStore.size(ofFileNamed: meeting.audioFileName)))
+            }
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
         .onAppear { player.load(fileName: meeting.audioFileName) }
-
-        // A recording that will not open used to leave a bar whose button did
-        // nothing, with the reason only in the log.
-        if let error = player.lastError {
-            Label("The recording could not be opened: \(error)", systemImage: "exclamationmark.triangle")
-                .font(.caption)
-                .foregroundStyle(.orange)
-        }
     }
 }
 #endif
