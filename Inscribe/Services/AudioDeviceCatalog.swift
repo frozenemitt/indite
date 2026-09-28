@@ -21,10 +21,10 @@ struct AudioInputDevice: Identifiable, Hashable, Sendable {
 /// Lists the microphones available to record from.
 enum AudioDeviceCatalog {
 
-    /// Every device that has at least one input channel.
+    /// Every device that has at least one input channel, except private ones.
     static func inputDevices() -> [AudioInputDevice] {
         allDeviceIDs()
-            .filter { hasInputChannels($0) }
+            .filter { hasInputChannels($0) && !isPrivateAggregate($0) }
             .compactMap { id in
                 guard let uid = stringProperty(kAudioDevicePropertyDeviceUID, for: id),
                       let name = stringProperty(kAudioObjectPropertyName, for: id) else {
@@ -111,6 +111,28 @@ enum AudioDeviceCatalog {
         ) == noErr else { return [] }
 
         return ids
+    }
+
+    /// Whether a device is an aggregate that exists only inside this app.
+    ///
+    /// Core Audio builds one as soon as the app records, named
+    /// "CADefaultDeviceAggregate-<pid>-0", pairing the default microphone with the
+    /// default speakers; the meeting input is another. Both were listed as
+    /// microphones. Picking the first saved a device that is gone by the next launch,
+    /// so recording quietly fell back to the system default.
+    private static func isPrivateAggregate(_ deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioAggregateDevicePropertyComposition,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var composition: Unmanaged<CFDictionary>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFDictionary>?>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &composition) == noErr,
+              let dictionary = composition?.takeRetainedValue() as? [String: Any] else {
+            return false
+        }
+        return (dictionary[kAudioAggregateDeviceIsPrivateKey] as? Int) == 1
     }
 
     /// A device is an input if its input scope reports any channels at all.
