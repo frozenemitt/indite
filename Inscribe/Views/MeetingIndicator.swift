@@ -22,7 +22,7 @@ final class MeetingIndicatorController {
     private let settings: AppSettings
     private var moveObserver: (any NSObjectProtocol)?
     private var dragObserver: (any NSObjectProtocol)?
-    /// True from the start of a drag until `position` next places the panel.
+    /// True from the start of a drag until the first move made with the mouse button up.
     private var userIsDragging = false
     /// Held so the desktop-change notifications keep arriving for the life of the app.
     private var spaceObserver: (any NSObjectProtocol)?
@@ -164,6 +164,10 @@ final class MeetingIndicatorController {
                 guard let self, self.userIsDragging, let panel = self.panel else { return }
                 self.settings.meetingIndicatorOriginX = panel.frame.origin.x
                 self.settings.meetingIndicatorOriginY = panel.frame.origin.y
+                // The drag ends when the button is released. A later move in the same
+                // meeting, such as macOS moving the panel off an unplugged display,
+                // is the system's and must not replace the user's spot.
+                if NSEvent.pressedMouseButtons & 1 == 0 { self.userIsDragging = false }
             }
         }
 
@@ -218,13 +222,17 @@ final class MeetingIndicatorController {
     /// Where the user left it, or the top right — out of the way of the thing the
     /// meeting is actually about.
     ///
-    /// A saved spot is pulled inside the usable area of the screen it mostly lies on.
-    /// Any overlap used to be enough, so a spot left straddling an edge, by a drag or
-    /// by displays being rearranged, opened the panel mostly off screen. The menu bar
-    /// and the Dock sit above a floating panel, and a spot saved where they were hidden
-    /// during a full-screen call would otherwise reopen with its controls under them.
-    /// Only a drag is saved, so the setting keeps the spot the user chose. That spot
-    /// comes back when the Dock or the old arrangement of displays allows it.
+    /// A spot lying wholly on a screen comes back where the user put it, beside the Dock
+    /// included, and is only pulled down from under the menu bar. That is how macOS
+    /// places windows. Keeping the panel out of the Dock's strip moved it up by the
+    /// Dock's height at every meeting, because the usable area leaves out the whole
+    /// strip and not only the icons. The cost, accepted: a spot saved during a
+    /// full-screen call, when the Dock was hidden, can reopen under the Dock's icons.
+    ///
+    /// A spot straddling an edge, left by displays being rearranged, is pulled inside
+    /// the usable area of the screen it mostly lies on. Any overlap used to be enough,
+    /// and such a spot opened the panel mostly off screen. Only a drag is saved, so
+    /// neither correction replaces the spot the user chose.
     private func position(_ panel: NSPanel?) {
         guard let panel else { return }
         // A drag that has already finished must not claim the move made here.
@@ -239,10 +247,14 @@ final class MeetingIndicatorController {
             if let screen = NSScreen.screens.max(by: { overlap($0) < overlap($1) }),
                overlap(screen) > 0 {
                 let visible = screen.visibleFrame
-                panel.setFrameOrigin(NSPoint(
-                    x: min(max(x, visible.minX), visible.maxX - Self.width),
-                    y: min(max(y, visible.minY), visible.maxY - Self.height)
-                ))
+                if screen.frame.contains(saved) {
+                    panel.setFrameOrigin(NSPoint(x: x, y: min(y, visible.maxY - Self.height)))
+                } else {
+                    panel.setFrameOrigin(NSPoint(
+                        x: min(max(x, visible.minX), visible.maxX - Self.width),
+                        y: min(max(y, visible.minY), visible.maxY - Self.height)
+                    ))
+                }
                 return
             }
         }

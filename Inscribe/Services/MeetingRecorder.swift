@@ -228,7 +228,7 @@ final class MeetingRecorder {
     ///
     /// The end is placed at the start plus the recorded length. Pauses are not
     /// counted, so for a meeting that paused, the end comes before the last moment
-    /// captured. The transcript is whatever the last checkpoint saved.
+    /// captured. The transcript is whatever the last checkpoint or pause saved.
     private func closeInterruptedMeetings(in context: ModelContext) {
         guard state == .idle else { return }
 
@@ -856,7 +856,12 @@ final class MeetingRecorder {
         var turns: [SpeakerTurn] = []
         if diarizationActive {
             do {
+                let lost = await diarizer.lostSeconds
                 turns = try await diarizer.finish()
+                if lost >= 1, !turns.isEmpty {
+                    let gap = "Speaker separation missed \(MeetingExporter.durationLabel(lost)) of audio that could not be written to disk, so speakers after that point may be attributed early."
+                    lastError = lastError.map { "\($0)\n\(gap)" } ?? gap
+                }
             } catch {
                 // Added below whatever is already shown rather than replacing it. The
                 // microphone prompt was cleared above, and what remains still describes

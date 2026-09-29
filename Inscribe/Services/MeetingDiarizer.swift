@@ -73,6 +73,13 @@ actor MeetingDiarizer {
     /// describing the same moment.
     private(set) var receivedSeconds: TimeInterval = 0
 
+    /// Audio that reached this diarizer but could not be written to its file.
+    ///
+    /// Speaker separation runs on the file, so turns after a lost stretch come out
+    /// early by its length against the transcript. Kept so the meeting can say so
+    /// rather than show speakers that look right and are not.
+    private(set) var lostSeconds: TimeInterval = 0
+
     // MARK: - Lifecycle
 
     /// Load the CoreML models from disk, and open the file the audio goes into.
@@ -88,6 +95,7 @@ actor MeetingDiarizer {
             interleaved: false
         )
         receivedSeconds = 0
+        lostSeconds = 0
         Log.diarization.notice("Ready")
     }
 
@@ -137,6 +145,7 @@ actor MeetingDiarizer {
             try recording.write(from: buffer)
             receivedSeconds += Double(samples.count) / Double(Self.sampleRate)
         } catch {
+            lostSeconds += Double(samples.count) / Double(Self.sampleRate)
             Log.diarization.error("Could not keep audio for speaker separation: \(error, privacy: .public)")
         }
     }
@@ -150,9 +159,12 @@ actor MeetingDiarizer {
         recording = nil  // Closes the file.
         defer { try? FileManager.default.removeItem(at: Self.recordingURL) }
 
-        // An empty file means the audio never arrived, not that nobody spoke.
-        // FluidAudio reports both as "no speech", so the difference is told here.
-        guard receivedSeconds > 0 else { throw SeparationError.noAudio }
+        // An empty file means the audio never arrived or never could be written, not
+        // that nobody spoke. FluidAudio reports all three as "no speech", so the
+        // difference is told here.
+        guard receivedSeconds > 0 else {
+            throw lostSeconds > 0 ? SeparationError.notWritten : SeparationError.noAudio
+        }
 
         let started = Date()
         let result: DiarizationResult
@@ -193,6 +205,7 @@ actor MeetingDiarizer {
             try? FileManager.default.removeItem(at: Self.recordingURL)
         }
         receivedSeconds = 0
+        lostSeconds = 0
     }
 
     /// FluidAudio's manager is not marked Sendable. It is only ever used from this
@@ -205,7 +218,13 @@ actor MeetingDiarizer {
 
     enum SeparationError: LocalizedError {
         case noAudio
-        var errorDescription: String? { "It received no audio." }
+        case notWritten
+        var errorDescription: String? {
+            switch self {
+            case .noAudio: "It received no audio."
+            case .notWritten: "Its audio could not be written to disk."
+            }
+        }
     }
 
     private static func turns(from result: DiarizationResult) -> [SpeakerTurn] {
