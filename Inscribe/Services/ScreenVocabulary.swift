@@ -63,26 +63,29 @@ enum ScreenVocabulary {
     /// well (Drishti Quest). Days and months are left out: they are capitalised
     /// everywhere and never misheard.
     static func unusualWords(in text: String, limit: Int) -> [String] {
-        var counts: [String: Int] = [:]
-        for line in text.split(whereSeparator: { ".?!\n".contains($0) }) {
-            let words = line.split(whereSeparator: { $0.isWhitespace || ",;:()[]{}\"“”".contains($0) })
+        let lines = text.split(whereSeparator: { ".?!\n".contains($0) }).map { line in
+            line.split(whereSeparator: { $0.isWhitespace || ",;:()[]{}\"“”".contains($0) })
                 .map { word -> String in
-                    // "Nora's" is Nora.
-                    var word = String(word).trimmingCharacters(in: CharacterSet(charactersIn: "'’-"))
+                    // "@Category" and "📈Investment" are Category and Investment; "Nora's" is Nora.
+                    var word = String(word).trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
                     for suffix in ["'s", "’s"] where word.hasSuffix(suffix) { word.removeLast(2) }
                     return word
                 }
                 .filter { !$0.isEmpty }
+        }
+        let ordinary = ordinaryWords(among: lines.joined().filter { $0.first?.isUppercase == true })
+        var counts: [String: Int] = [:]
+        for words in lines {
             var run: [String] = []
             var runHasUnusual = false
             func closeRun() {
                 // "The B2B pilot", "Hi Jonathan": a capital that only opens the sentence.
-                while let first = run.first, commonWords.contains(first.lowercased()) { run.removeFirst() }
+                while let first = run.first, ordinary.contains(first.lowercased()) { run.removeFirst() }
                 if run.count > 1, run.count <= 3, runHasUnusual { counts[run.joined(separator: " "), default: 0] += 1 }
                 run = []; runHasUnusual = false
             }
             for word in words {
-                let unusual = isUnusual(word)
+                let unusual = isUnusual(word, ordinary: ordinary)
                 if unusual { counts[word, default: 0] += 1 }
                 // Names run on through capitalised words, not acronyms or codes:
                 // "Claude Code", but not "Karpathy LLM" or "Drishti Quest B2B".
@@ -111,15 +114,13 @@ enum ScreenVocabulary {
             .prefix(limit).map(\.word)
     }
 
-    private static func isUnusual(_ word: String) -> Bool {
+    private static func isUnusual(_ word: String, ordinary: Set<String>) -> Bool {
         guard word.count >= 3, word.contains(where: \.isLetter) else { return false }
         if word.contains(where: \.isNumber) { return true }
         if word.dropFirst().contains(where: \.isUppercase), word.contains(where: \.isLowercase) { return true }
         guard word.first?.isUppercase == true else { return false }
         let lower = word.lowercased()
-        // "Agreements", "Patterns": a heading's capital on an ordinary word's plural.
-        let singular = lower.hasSuffix("s") ? String(lower.dropLast()) : lower
-        return !commonWords.contains(lower) && !commonWords.contains(singular) && !calendarWords.contains(lower)
+        return !ordinary.contains(lower) && !calendarWords.contains(lower)
     }
 
     private static let calendarWords: Set<String> = [
@@ -128,12 +129,19 @@ enum ScreenVocabulary {
         "september", "october", "november", "december",
     ]
 
-    /// Ordinary English words: the lower-case entries of the system word list. Proper
-    /// nouns are listed there with a capital, so "Claude" and "Maine" are not in it.
-    private static let commonWords: Set<String> = {
-        guard let list = try? String(contentsOfFile: "/usr/share/dict/words", encoding: .utf8) else { return [] }
-        return Set(list.split(separator: "\n").lazy.filter { $0.first?.isLowercase == true }.map(String.init))
-    }()
+    /// The words, lower-cased, that the Mac's spell checker accepts in lower case:
+    /// ordinary English. "website", "merged" and "you're" are; "zelle", "coursera" and
+    /// "nora" are not, so a capital on those marks a name. Words the user taught the
+    /// Mac pass as well.
+    ///
+    /// Checked one word at a time: given many words at once, the checker accepts a
+    /// known name in lower case, "falkenstein" among them.
+    private static func ordinaryWords(among words: [String]) -> Set<String> {
+        Set(words.map { $0.lowercased() }).filter {
+            NSSpellChecker.shared.checkSpelling(of: $0, startingAt: 0, language: "en", wrap: false,
+                                                inSpellDocumentWithTag: 0, wordCount: nil).location == NSNotFound
+        }
+    }
 
     private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var value: CFTypeRef?
