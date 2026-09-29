@@ -277,8 +277,7 @@ struct ImportRecordingView: View {
         meeting.recordedDuration = length
 
         meeting.applyAttribution(
-            timedSegments: segments,
-            turns: turns,
+            tracks: [(segments, turns)],
             vocabulary: settings.vocabularyHints,
             replacements: settings.wordReplacements,
             in: modelContext

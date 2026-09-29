@@ -61,3 +61,21 @@ class BufferConverter {
         return conversionBuffer
     }
 }
+
+extension AVAudioPCMBuffer {
+    /// One channel of a non-interleaved float buffer, as a mono buffer of its own.
+    ///
+    /// A meeting that records a call hands on the microphone and the call as two
+    /// channels, and each is transcribed and separated into speakers on its own.
+    func channel(_ index: Int) -> AVAudioPCMBuffer? {
+        guard format.commonFormat == .pcmFormatFloat32, !format.isInterleaved,
+              index < Int(format.channelCount), let source = floatChannelData,
+              let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate,
+                                       channels: 1, interleaved: false),
+              let output = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: frameLength),
+              let destination = output.floatChannelData else { return nil }
+        output.frameLength = frameLength
+        destination[0].update(from: source[index], count: Int(frameLength))
+        return output
+    }
+}

@@ -36,22 +36,32 @@ actor MeetingDiarizer {
     /// What FluidAudio's models expect.
     static let sampleRate = 16_000
 
-    /// The meeting's audio at 16 kHz mono, written as it arrives.
+    /// This track's audio at 16 kHz mono, written as it arrives.
     ///
     /// On disk rather than in memory: an hour is about 230 MB of float samples. One
-    /// fixed name, so a crash leaves at most one file behind, and the next launch
-    /// deletes it.
-    ///
-    /// Every instance shares this name, so only a live meeting touches it. Two meetings
-    /// never record at once, but an import can run beside one; when an import deleted
-    /// this file, the meeting ended with no speakers.
-    private static let recordingURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("meeting-diarization.caf")
+    /// fixed name per track, the microphone and the call, so a crash leaves at most one
+    /// file for each behind, and the next launch deletes them. An import never opens
+    /// one: when imports shared this file, an import deleted a live meeting's audio and
+    /// the meeting ended with no speakers.
+    private let recordingURL: URL
+
+    private static let filePrefix = "meeting-diarization"
+
+    /// - Parameter track: Names this diarizer's file. A meeting recording a call runs
+    ///   one diarizer for the microphone and one for the call.
+    init(track: String = "microphone") {
+        recordingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(Self.filePrefix)-\(track).caf")
+    }
 
     /// Delete the audio a crash left behind. Called at launch, before any meeting can
     /// start, so no live meeting is writing it.
     static func removeLeftoverRecording() {
-        try? FileManager.default.removeItem(at: recordingURL)
+        let folder = FileManager.default.temporaryDirectory
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in names where name.hasPrefix(filePrefix) && name.hasSuffix(".caf") {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+        }
     }
 
     private static let format = AVAudioFormat(
@@ -87,9 +97,9 @@ actor MeetingDiarizer {
         guard pipeline == nil else { return }
         try await loadModels()
 
-        try? FileManager.default.removeItem(at: Self.recordingURL)
+        try? FileManager.default.removeItem(at: recordingURL)
         recording = try AVAudioFile(
-            forWriting: Self.recordingURL,
+            forWriting: recordingURL,
             settings: Self.format.settings,
             commonFormat: .pcmFormatFloat32,
             interleaved: false
@@ -157,7 +167,7 @@ actor MeetingDiarizer {
     func finish() async throws -> [SpeakerTurn] {
         guard let pipeline, recording != nil else { return [] }
         recording = nil  // Closes the file.
-        defer { try? FileManager.default.removeItem(at: Self.recordingURL) }
+        defer { try? FileManager.default.removeItem(at: recordingURL) }
 
         // An empty file means the audio never arrived or never could be written, not
         // that nobody spoke. FluidAudio reports all three as "no speech", so the
@@ -169,7 +179,7 @@ actor MeetingDiarizer {
         let started = Date()
         let result: DiarizationResult
         do {
-            result = try await pipeline.manager.process(Self.recordingURL)
+            result = try await pipeline.manager.process(recordingURL)
         } catch OfflineDiarizationError.noSpeechDetected {
             // Audio arrived and none of it was speech: no turns is a result, not a failure.
             Log.diarization.notice("Found no speech in \(Int(self.receivedSeconds), privacy: .public)s")
@@ -202,7 +212,7 @@ actor MeetingDiarizer {
         // diarizer cannot take a live meeting's audio.
         if recording != nil {
             recording = nil
-            try? FileManager.default.removeItem(at: Self.recordingURL)
+            try? FileManager.default.removeItem(at: recordingURL)
         }
         receivedSeconds = 0
         lostSeconds = 0
@@ -343,9 +353,10 @@ final class DiarizationAudioConverter: @unchecked Sendable {
         self.targetFormat = format
     }
 
-    /// Convert one buffer to the diarizer's format.
-    func floats(from buffer: AVAudioPCMBuffer) -> [Float]? {
-        guard let output = try? converter.convertBuffer(buffer, to: targetFormat),
+    /// Convert one buffer to the diarizer's format: one channel of it, or a mix of all.
+    func floats(from buffer: AVAudioPCMBuffer, channel: Int? = nil) -> [Float]? {
+        let source = channel.flatMap { buffer.channel($0) } ?? buffer
+        guard let output = try? converter.convertBuffer(source, to: targetFormat),
               output.frameLength > 0,
               let channel = output.floatChannelData?[0] else {
             return nil

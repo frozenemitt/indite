@@ -159,23 +159,34 @@ extension Meeting {
     /// Recorded and imported meetings both store theirs through this, so a change to how
     /// attribution is stored reaches both.
     ///
+    /// - Parameter tracks: One per recording source, each with its own words and its
+    ///   own speakers. A meeting recording a call has two, the microphone and the call;
+    ///   each is aligned against its own speakers only, then the lines are merged by
+    ///   time, so a voice on the call is never credited to someone in the room.
     /// - Returns: Whether any utterance was stored.
     @discardableResult
     func applyAttribution(
-        timedSegments: [TimedTranscriptSegment],
-        turns: [SpeakerTurn],
+        tracks: [(segments: [TimedTranscriptSegment], turns: [SpeakerTurn])],
         vocabulary: [String],
         replacements: [String: String],
         in context: ModelContext
     ) -> Bool {
         // Without timings there is nothing to align against; the raw transcript on the
         // meeting is the whole result.
-        guard !timedSegments.isEmpty else {
+        guard tracks.contains(where: { !$0.segments.isEmpty }) else {
             Log.meetings.notice("No timed segments — transcript kept without attribution")
             return false
         }
 
-        let aligned = SpeakerAlignment.align(transcript: timedSegments, turns: turns)
+        // The diarizer numbers each track's speakers from S1, so a second track's ids
+        // are marked to keep its people apart from the first's.
+        let aligned = tracks.enumerated().flatMap { index, track in
+            SpeakerAlignment.align(transcript: track.segments, turns: track.turns).map { utterance in
+                guard index > 0, utterance.speakerId != SpeakerAlignment.unknownSpeaker else { return utterance }
+                return AlignedUtterance(speakerId: "track\(index)-\(utterance.speakerId)", text: utterance.text,
+                                        start: utterance.start, end: utterance.end)
+            }
+        }.sorted { $0.start < $1.start }
         let labels = SpeakerAlignment.generatedLabels(for: aligned)
 
         for (speakerId, label) in labels {

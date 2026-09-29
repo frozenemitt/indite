@@ -98,6 +98,14 @@ final class TranscriptionEngine {
     /// Collect `timedSegments` during this recording.
     var collectTimedSegments = false
 
+    /// The one channel to transcribe, or nil to transcribe a mix of them all.
+    ///
+    /// A meeting recording a call sets 0, the microphone, and transcribes the call's
+    /// channel separately. One recognizer on a mix of both followed whichever side
+    /// was louder: a voice over a video through headphones was 5 to 8 times quieter
+    /// than the video, and only the video was transcribed.
+    var transcribedChannel: Int?
+
     /// A second consumer for the raw microphone buffers, such as diarization.
     ///
     /// Fanned out from the one capture rather than opening the microphone twice —
@@ -284,6 +292,7 @@ final class TranscriptionEngine {
         let spotter = spotterSession
         spectrumWanted.withLock { $0 = publishesSpectrum }
         let spectrumWanted = self.spectrumWanted
+        let transcribedChannel = self.transcribedChannel
 
         audioProcessingTask = Task.detached(priority: .userInitiated) { [weak self] in
             let converter = BufferConverter()
@@ -309,7 +318,8 @@ final class TranscriptionEngine {
                 }
 
                 do {
-                    let converted = try converter.convertBuffer(audioData.buffer, to: targetFormat)
+                    let source = transcribedChannel.flatMap { audioData.buffer.channel($0) } ?? audioData.buffer
+                    let converted = try converter.convertBuffer(source, to: targetFormat)
                     spotter?.append(converted)
                     let input = AnalyzerInput(buffer: converted)
                     analyzerContinuation?.yield(input)

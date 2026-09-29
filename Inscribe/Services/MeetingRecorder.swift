@@ -32,6 +32,23 @@ final class MeetingRecorder {
 
     private let diarizer = MeetingDiarizer()
     private let converter = DiarizationAudioConverter()
+
+    /// The other side of a call, when system audio is recorded: its own transcript and
+    /// its own speaker separation, merged with the microphone's by time. One
+    /// recognizer on a mix of both sides followed whichever was louder.
+    private let callDiarizer = MeetingDiarizer(track: "call")
+    private let callConverter = DiarizationAudioConverter()
+    private let callTranscriber = CallTranscriber()
+    /// Whether the session running now records the call as a track of its own.
+    private var recordsCall = false
+    /// Whether the call's speakers are being separated in this meeting.
+    private var callDiarizationActive = false
+    /// The call's words from finished sessions, on the meeting clock.
+    private var callSegments: [TimedTranscriptSegment] = []
+    /// The call's words in the session running now, stamped from the session's start.
+    private var liveCall: (segments: [TimedTranscriptSegment], pending: String) = ([], "")
+    private var callFeed: AsyncStream<[Float]>.Continuation?
+    private var callFeedTask: Task<Void, Never>?
     private let systemAudio = SystemAudioCapture()
     private let systemAudioProbe = SystemAudioLevelProbe()
     private let audioWriter = MeetingAudioWriter()
@@ -142,6 +159,22 @@ final class MeetingRecorder {
     /// taken during a pause appeared in the meeting window as though it were part of
     /// the meeting, and then vanished on stop, because it was never saved into one.
     var liveTranscript: String {
+        // With the call as its own track, both sides' finished words in the order they
+        // were spoken, then the words each side is still saying.
+        if recordsCall || !callSegments.isEmpty {
+            let offset = sessionOffset
+            let shift = { (segments: [TimedTranscriptSegment]) in
+                segments.map { TimedTranscriptSegment(text: $0.text, start: $0.start + offset, end: $0.end + offset) }
+            }
+            let microphoneNow = engine.owner == .meeting ? shift(engine.timedSegments) : []
+            let pending = [engine.owner == .meeting ? engine.volatileText : "", liveCall.pending]
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            return ([Self.merged(collectedSegments + microphoneNow + callSegments + shift(liveCall.segments))] + pending)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+
         let current = engine.owner == .meeting
             ? engine.currentTranscript + engine.volatileText
             : ""
@@ -394,6 +427,7 @@ final class MeetingRecorder {
         lastError = nil
         collectedSegments = []
         accumulatedTranscript = ""
+        callSegments = []
         sessionOffset = 0
         completedAudioSeconds = 0
 
@@ -435,6 +469,7 @@ final class MeetingRecorder {
         // Resolved before the tap is installed: building the system-audio device is
         // awaited, and nothing should find the tap attached while it is.
         let inputDeviceUID = await meetingInputDeviceUID()
+        await startCallTrack()
         installAudioTap()
 
         do {
@@ -612,14 +647,35 @@ final class MeetingRecorder {
             }
         }
 
+        // With the call as its own track, the microphone is channel 0 and the call
+        // channel 1, and each goes to its own transcriber and speaker separation.
+        let splitsCall = recordsCall
+        let diarizesCall = recordsCall && callDiarizationActive
+        let callDiarizer = self.callDiarizer
+        let callConverter = self.callConverter
+        let callTranscriber = self.callTranscriber
+        let (callStream, callContinuation) = AsyncStream<[Float]>.makeStream()
+        callFeed = callContinuation
+        callFeedTask = Task.detached {
+            for await samples in callStream {
+                await callDiarizer.append(samples)
+            }
+        }
+
         engine.audioTap = { buffer in
             probe?.inspect(buffer)
             if wantsAudio {
                 writer.append(buffer)
             }
             if wantsDiarization, let audioConverter,
-               let samples = audioConverter.floats(from: buffer) {
+               let samples = audioConverter.floats(from: buffer, channel: splitsCall ? 0 : nil) {
                 continuation.yield(samples)
+            }
+            if splitsCall, let call = buffer.channel(1) {
+                callTranscriber.append(call)
+                if diarizesCall, let callConverter, let samples = callConverter.floats(from: call) {
+                    callContinuation.yield(samples)
+                }
             }
         }
     }
@@ -633,6 +689,64 @@ final class MeetingRecorder {
         await diarizerFeedTask?.value
         diarizerFeed = nil
         diarizerFeedTask = nil
+        callFeed?.finish()
+        await callFeedTask?.value
+        callFeed = nil
+        callFeedTask = nil
+    }
+
+    /// Give the call a track of its own for the session about to start, when system
+    /// audio is being recorded.
+    private func startCallTrack() async {
+        recordsCall = false
+        if systemAudioActive {
+            // Separation is best-effort, as for the microphone. Loaded once a meeting;
+            // later sessions keep writing the same file.
+            if diarizationActive, !callDiarizationActive {
+                do {
+                    try await callDiarizer.prepare()
+                    callDiarizationActive = true
+                } catch {
+                    Log.meetings.error("Call diarizer unavailable: \(error, privacy: .public)")
+                }
+            }
+            liveCall = ([], "")
+            callTranscriber.onChange = { [weak self] segments, pending in
+                self?.liveCall = (segments, pending)
+            }
+            do {
+                try await callTranscriber.start(locale: try await engine.resolveSupportedLocale())
+                recordsCall = true
+            } catch {
+                lastError = "The call could not be transcribed on its own: \(error.localizedDescription)"
+                Log.meetings.error("Call transcriber unavailable: \(error, privacy: .public)")
+            }
+        }
+        engine.transcribedChannel = recordsCall ? 0 : nil
+    }
+
+    /// Collect the call's words from the session that just ended, on the meeting clock.
+    private func harvestCall() async {
+        guard recordsCall else { return }
+        let offset = sessionOffset
+        callSegments += await callTranscriber.finish().map {
+            TimedTranscriptSegment(text: $0.text, start: $0.start + offset, end: $0.end + offset)
+        }
+        liveCall = ([], "")
+    }
+
+    /// Everything said so far as one text: both sides by time when the call is its own
+    /// track, and the microphone's transcript otherwise.
+    private var plainTranscript: String {
+        callSegments.isEmpty ? accumulatedTranscript : Self.merged(collectedSegments + callSegments)
+    }
+
+    /// Runs from both sides in the order they were spoken, as one text.
+    private static func merged(_ segments: [TimedTranscriptSegment]) -> String {
+        segments
+            .sorted { $0.start < $1.start }
+            .reduce("") { SpeakerAlignment.joined($0, $1.text) }
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Stop capturing without ending the meeting.
@@ -664,6 +778,7 @@ final class MeetingRecorder {
         let sessionEndedAt = Date()
         let transcript = await engine.stopRecording(owner: .meeting)
         reportEngineError()
+        await harvestCall()
         harvestSession(transcript: transcript, endedAt: sessionEndedAt)
 
         // Turned off only once the session is harvested. The engine reads this flag on
@@ -705,6 +820,7 @@ final class MeetingRecorder {
         // Resolved before reconnecting, as in begin(): it may await the audio server,
         // and a dictation started meanwhile must not find this meeting's tap attached.
         let inputDeviceUID = await meetingInputDeviceUID()
+        await startCallTrack()
 
         // Reconnected here, having been cleared on pause.
         engine.collectTimedSegments = true
@@ -727,6 +843,9 @@ final class MeetingRecorder {
             engine.audioTap = nil
             engine.collectTimedSegments = false
             await drainDiarizerFeed()
+            // The call's transcriber was started for this session; nothing was heard.
+            _ = await callTranscriber.finish()
+            recordsCall = false
 
             lastError = error.localizedDescription
             AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
@@ -773,7 +892,7 @@ final class MeetingRecorder {
         // Written through and saved on every harvest, not only at stop(). A crash or a
         // kill during a pause then costs nothing, and one while recording costs no more
         // than the time since the last checkpoint.
-        activeMeeting?.rawTranscript = accumulatedTranscript
+        activeMeeting?.rawTranscript = plainTranscript
         activeMeeting?.recordedDuration = completedAudioSeconds
         activeMeeting?.modelContext?.saveOrLog()
     }
@@ -842,6 +961,7 @@ final class MeetingRecorder {
 
             let transcript = await engine.stopRecording(owner: .meeting)
             reportEngineError()
+            await harvestCall()
             harvestSession(transcript: transcript, endedAt: stoppedAt)
 
             // After the harvest, as in pause(): the stop is what makes the last words
@@ -876,13 +996,25 @@ final class MeetingRecorder {
         meeting.recordedDuration = completedAudioSeconds
         meeting.audioFileName = audioWriter.finish()
         meeting.rawTranscript = TextProcessor.process(
-            accumulatedTranscript,
+            plainTranscript,
             replacements: settings.wordReplacements
         )
 
+        var callTurns: [SpeakerTurn] = []
+        if callDiarizationActive {
+            do {
+                callTurns = try await callDiarizer.finish()
+            } catch {
+                let separation = "Speaker separation on the call failed: \(error.localizedDescription)"
+                lastError = lastError.map { "\($0)\n\(separation)" } ?? separation
+                Log.meetings.error("Call speaker separation failed: \(error, privacy: .public)")
+            }
+        }
+
         let attributed = meeting.applyAttribution(
-            timedSegments: collectedSegments,
-            turns: turns,
+            tracks: callSegments.isEmpty
+                ? [(collectedSegments, turns)]
+                : [(collectedSegments, turns), (callSegments, callTurns)],
             vocabulary: settings.vocabularyHints,
             replacements: settings.wordReplacements,
             in: context
@@ -1053,6 +1185,11 @@ final class MeetingRecorder {
         engine.collectTimedSegments = false
         await drainDiarizerFeed()
         await diarizer.reset()
+        await callDiarizer.reset()
+        _ = await callTranscriber.finish()
+        engine.transcribedChannel = nil
+        recordsCall = false
+        callDiarizationActive = false
 
         // The tap and its aggregate outlive the app if not destroyed, so this runs on
         // every exit path rather than only the successful one. Off the main thread for
