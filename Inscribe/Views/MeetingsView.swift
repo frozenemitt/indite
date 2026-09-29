@@ -939,14 +939,22 @@ private struct LiveMeetingView: View {
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                // Lazy, and in paragraphs: only those on screen are laid out, and only the
+                // last one changes as words arrive. As one Text, the whole meeting was laid
+                // out again several times a second.
+                LazyVStack(alignment: .leading, spacing: 12) {
                     let live = recorder.liveTranscript
-                    Text(live.isEmpty ? "Listening…" : Self.tail(of: live))
-                        .font(.body)
-                        .lineSpacing(3)
-                        .textSelection(.enabled)
-                        .foregroundStyle(live.isEmpty ? .secondary : .primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if live.isEmpty {
+                        Text("Listening…")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(Self.paragraphs(of: live).enumerated()), id: \.offset) { _, paragraph in
+                        Text(paragraph)
+                            .font(.body)
+                            .lineSpacing(3)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
                     // Only when there is a diarizer to do it. Without one, the page
                     // promised separation below the error saying there would be none.
@@ -1065,27 +1073,21 @@ private struct LiveMeetingView: View {
         }
     }
 
-    /// The end of a live transcript: its last few hundred words, marked as cut.
-    ///
-    /// The live text changes several times a second, and each change laid out the
-    /// whole meeting again, which on a long meeting kept the main thread busy for as
-    /// long as it ran. The end is what anyone reads while it grows; the whole of it is
-    /// in the meeting once it stops.
-    private static func tail(of text: String, words: Int = 300) -> String {
-        var index = text.endIndex
-        var spaces = 0
-
-        while index > text.startIndex {
-            let previous = text.index(before: index)
-            if text[previous] == " " {
-                spaces += 1
-                if spaces == words {
-                    return "…" + text[index...]
-                }
+    /// The live text in paragraphs, each closed at the first sentence end after 60
+    /// words. The boundaries depend only on the text before them, so earlier paragraphs
+    /// stay the same as the meeting grows.
+    private static func paragraphs(of text: String) -> [String] {
+        var paragraphs: [String] = []
+        var words: [Substring] = []
+        for word in text.split(separator: " ") {
+            words.append(word)
+            if words.count >= 60, let last = word.last, ".?!".contains(last) {
+                paragraphs.append(words.joined(separator: " "))
+                words = []
             }
-            index = previous
         }
-        return text
+        if !words.isEmpty { paragraphs.append(words.joined(separator: " ")) }
+        return paragraphs
     }
 }
 
