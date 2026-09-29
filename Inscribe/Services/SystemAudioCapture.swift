@@ -82,8 +82,12 @@ final class SystemAudioCapture: @unchecked Sendable {
                     kAudioSubTapDriftCompensationKey: true,
                     kAudioSubTapUIDKey: tap.uid
                 ]
-            ],
-            kAudioAggregateDeviceTapAutoStartKey: true
+            ]
+            // No tap auto-start. With it, the device's start "will wait until a tapped
+            // process begins receiving its first audio" (AudioHardware.h), so a meeting
+            // opened while nothing played delivered nothing: 0 of 6 starts with the
+            // speakers idle, 6 of 6 once a sound woke them. Without it the microphone's
+            // clock drives the device, and it started in 0.05 s with the speakers idle.
         ]
 
         // The microphone is the clock source: it is the device that cannot be
@@ -309,8 +313,11 @@ final class SystemAudioLevelProbe: @unchecked Sendable {
             return
         }
 
+        // The system audio is the right-hand channel of the buffers a combined device
+        // hands on; the left is the microphone, whose room noise would count as heard.
+        guard channels > 1 else { return }
         var peak: Float = 0
-        for channel in max(0, channels - 2)..<channels {
+        for channel in 1..<channels {
             var channelPeak: Float = 0
             if buffer.format.isInterleaved {
                 vDSP_maxmgv(data[0] + channel, vDSP_Stride(channels), &channelPeak, frames)
