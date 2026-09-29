@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import os
 
 /// A recorded meeting: the transcript, who said what, and an optional summary.
 @Model
@@ -110,10 +111,10 @@ final class Utterance {
         self.end = end
     }
 
-    /// Position in the meeting as mm:ss, for display.
+    /// Position in the meeting, for display, in the same m:ss or h:mm:ss form as every
+    /// other time shown for a meeting.
     var timestampLabel: String {
-        let total = Int(start)
-        return String(format: "%02d:%02d", total / 60, total % 60)
+        MeetingExporter.durationLabel(start)
     }
 }
 
@@ -141,5 +142,80 @@ final class MeetingSpeaker {
 
     var resolvedName: String {
         name.trimmingCharacters(in: .whitespaces).isEmpty ? generatedLabel : name
+    }
+}
+
+extension Meeting {
+    /// Speakers in label order, "Speaker 2" before "Speaker 10".
+    ///
+    /// Labels are compared as Finder compares names, numbers by value. Plain string
+    /// order put "Speaker 10" before "Speaker 2".
+    var sortedSpeakers: [MeetingSpeaker] {
+        speakers.sorted { $0.generatedLabel.localizedStandardCompare($1.generatedLabel) == .orderedAscending }
+    }
+
+    /// Turn timed transcript runs plus speaker turns into stored speakers and utterances.
+    ///
+    /// Recorded and imported meetings both store theirs through this, so a change to how
+    /// attribution is stored reaches both.
+    ///
+    /// - Parameter tracks: One per recording source, each with its own words and its
+    ///   own speakers. A meeting recording a call has two, the microphone and the call;
+    ///   each is aligned against its own speakers only, then the lines are merged by
+    ///   time, so a voice on the call is never credited to someone in the room.
+    /// - Returns: Whether any utterance was stored.
+    @discardableResult
+    func applyAttribution(
+        tracks: [(segments: [TimedTranscriptSegment], turns: [SpeakerTurn])],
+        vocabulary: [String],
+        replacements: [String: String],
+        in context: ModelContext
+    ) -> Bool {
+        // Without timings there is nothing to align against; the raw transcript on the
+        // meeting is the whole result.
+        guard tracks.contains(where: { !$0.segments.isEmpty }) else {
+            Log.meetings.notice("No timed segments — transcript kept without attribution")
+            return false
+        }
+
+        // The diarizer numbers each track's speakers from S1, so a second track's ids
+        // are marked to keep its people apart from the first's.
+        let aligned = tracks.enumerated().flatMap { index, track in
+            SpeakerAlignment.align(transcript: track.segments, turns: track.turns).map { utterance in
+                guard index > 0, utterance.speakerId != SpeakerAlignment.unknownSpeaker else { return utterance }
+                return AlignedUtterance(speakerId: "track\(index)-\(utterance.speakerId)", text: utterance.text,
+                                        start: utterance.start, end: utterance.end)
+            }
+        }.sorted { $0.start < $1.start }
+        let labels = SpeakerAlignment.generatedLabels(for: aligned)
+
+        for (speakerId, label) in labels {
+            let speaker = MeetingSpeaker(speakerId: speakerId, generatedLabel: label)
+            speaker.meeting = self
+            context.insert(speaker)
+        }
+
+        // The listed words spelled, then the pause marks and the replacements, as
+        // `rawTranscript` gets them. Every reader prefers the utterances once there is
+        // attribution, so without these passes the displayed and exported meeting would
+        // read "type script" where the raw transcript has "TypeScript", keep the
+        // recognizer's pause marks, and skip the user's word replacements. The
+        // utterances still hold the recognizer's first guess. Where `rawTranscript`
+        // took a second guess for a listed word (`Vocabulary.choose`), the two texts
+        // can differ.
+        for item in aligned {
+            let utterance = Utterance(
+                speakerId: item.speakerId,
+                text: TextProcessor.process(
+                    Vocabulary.spell(item.text, terms: vocabulary),
+                    replacements: replacements
+                ),
+                start: item.start,
+                end: item.end
+            )
+            utterance.meeting = self
+            context.insert(utterance)
+        }
+        return !aligned.isEmpty
     }
 }

@@ -1,6 +1,5 @@
 @preconcurrency import AVFoundation
 import Foundation
-import os
 
 class BufferConverter {
     enum Error: Swift.Error {
@@ -42,17 +41,17 @@ class BufferConverter {
         }
 
         var nsError: NSError?
-        let bufferProcessedLock = OSAllocatedUnfairLock(initialState: false)
+        // A plain flag is enough: convert calls the input block synchronously on this thread.
+        var consumed = false
 
-        let status = converter.convert(to: conversionBuffer, error: &nsError) {
-            packetCount, inputStatusPointer in
-            let wasProcessed = bufferProcessedLock.withLock { bufferProcessed in
-                let wasProcessed = bufferProcessed
-                bufferProcessed = true
-                return wasProcessed
+        let status = converter.convert(to: conversionBuffer, error: &nsError) { _, inputStatus in
+            if consumed {
+                inputStatus.pointee = .noDataNow
+                return nil
             }
-            inputStatusPointer.pointee = wasProcessed ? .noDataNow : .haveData
-            return wasProcessed ? nil : buffer
+            consumed = true
+            inputStatus.pointee = .haveData
+            return buffer
         }
 
         guard status != .error else {
@@ -60,5 +59,23 @@ class BufferConverter {
         }
 
         return conversionBuffer
+    }
+}
+
+extension AVAudioPCMBuffer {
+    /// One channel of a non-interleaved float buffer, as a mono buffer of its own.
+    ///
+    /// A meeting that records a call hands on the microphone and the call as two
+    /// channels, and each is transcribed and separated into speakers on its own.
+    func channel(_ index: Int) -> AVAudioPCMBuffer? {
+        guard format.commonFormat == .pcmFormatFloat32, !format.isInterleaved,
+              index < Int(format.channelCount), let source = floatChannelData,
+              let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate,
+                                       channels: 1, interleaved: false),
+              let output = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: frameLength),
+              let destination = output.floatChannelData else { return nil }
+        output.frameLength = frameLength
+        destination[0].update(from: source[index], count: Int(frameLength))
+        return output
     }
 }

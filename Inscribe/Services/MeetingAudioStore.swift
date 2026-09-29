@@ -6,15 +6,12 @@ import os
 ///
 /// Audio used to be discarded the moment a meeting ended, which left the speaker
 /// corrections unverifiable: told that Speaker 2 said something, you had no way to
-/// check. Keeping the recording also means a meeting can be re-diarized after a model
-/// update instead of being stuck with whatever the old one decided.
+/// check.
 ///
 /// Written as AAC, not the raw float the engine hands over. An hour of 48 kHz stereo
 /// float is about 1.4 GB; the same hour as AAC is around 30 MB, and speech survives
 /// the compression well enough for a human listening back.
 final class MeetingAudioStore {
-
-    private static let log = Logger(subsystem: "com.inscribe.app", category: "MeetingAudio")
 
     /// Where recordings live, alongside the meeting database.
     ///
@@ -39,24 +36,9 @@ final class MeetingAudioStore {
         return FileManager.default.fileExists(atPath: url(forFileNamed: name).path)
     }
 
-    /// Whether AVAudioPlayer can open the recording.
-    ///
-    /// A recording whose writer was never closed, because the app crashed or was force
-    /// quit mid-meeting, exists and holds audio but has no index, and nothing plays it.
-    static func isPlayable(fileNamed name: String?) -> Bool {
-        guard let name, fileExists(named: name) else { return false }
-        return (try? AVAudioPlayer(contentsOf: url(forFileNamed: name))) != nil
-    }
-
     static func delete(fileNamed name: String?) {
         guard let name else { return }
         try? FileManager.default.removeItem(at: url(forFileNamed: name))
-    }
-
-    static func size(ofFileNamed name: String?) -> Int64 {
-        guard let name else { return 0 }
-        let attributes = try? FileManager.default.attributesOfItem(atPath: url(forFileNamed: name).path)
-        return (attributes?[.size] as? Int64) ?? 0
     }
 
     /// Total disk used by every saved recording.
@@ -70,12 +52,6 @@ final class MeetingAudioStore {
             total + Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         }
     }
-
-    static func formatted(bytes: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
-    }
 }
 
 /// Appends live audio to one file for the length of a meeting.
@@ -88,7 +64,7 @@ final class MeetingAudioWriter: @unchecked Sendable {
     private static let log = Logger(subsystem: "com.inscribe.app", category: "MeetingAudio")
 
     private var file: AVAudioFile?
-    private var converter: AVAudioConverter?
+    private var converter = BufferConverter()
     private let lock = NSLock()
 
     private(set) var fileName: String?
@@ -100,6 +76,11 @@ final class MeetingAudioWriter: @unchecked Sendable {
     /// Kept for the recorder to report. Without it the meeting ended saying "No
     /// recording was kept", as though the user had switched recording off, and the
     /// reason reached only the log.
+    ///
+    /// Cleared by `finish()` and `discard()`, so the recorder reads it before either. A
+    /// meeting that does not keep its audio never calls `begin()`, and while only
+    /// `begin()` cleared it, such a meeting reported the previous meeting's failure as
+    /// its own.
     var failure: String? {
         lock.lock()
         defer { lock.unlock() }
@@ -150,52 +131,15 @@ final class MeetingAudioWriter: @unchecked Sendable {
         guard let file else { return }
 
         do {
-            try file.write(from: converted(buffer, to: file.processingFormat) ?? buffer)
+            // Downmixed to the format the file was opened with. The meeting aggregate's
+            // buffer has three channels, the microphone plus a stereo system tap, and
+            // AAC is opened for at most two. Written untouched, every call failed and
+            // left a file that reports itself playable and holds no audio.
+            try file.write(from: converter.convertBuffer(buffer, to: file.processingFormat))
         } catch {
             // One bad buffer should not end the meeting; the transcript is unaffected.
             Self.log.error("Dropped a buffer: \(error, privacy: .public)")
         }
-    }
-
-    /// Downmix to the format the file was opened with.
-    ///
-    /// The tap hands over the raw device buffer, which for the meeting aggregate is
-    /// three channels — the microphone plus a stereo system tap — while AAC is opened
-    /// for at most two. Writing the buffer untouched fails on every single call, and
-    /// the only trace is a log line, so the meeting ends with a file that exists,
-    /// reports itself playable, and contains no audio at all.
-    private func converted(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer? {
-        guard buffer.format != format else { return buffer }
-
-        if converter == nil || converter?.inputFormat != buffer.format {
-            converter = AVAudioConverter(from: buffer.format, to: format)
-            // Mixed rather than remapped. Remapping three channels to two keeps the
-            // first two and drops the third, so one side of the system audio never
-            // reached the recording.
-            converter?.downmix = true
-        }
-        guard let converter else { return nil }
-
-        let ratio = format.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
-        guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
-            return nil
-        }
-
-        var consumed = false
-        var conversionError: NSError?
-        converter.convert(to: output, error: &conversionError) { _, status in
-            if consumed {
-                status.pointee = .noDataNow
-                return nil
-            }
-            consumed = true
-            status.pointee = .haveData
-            return buffer
-        }
-
-        guard conversionError == nil, output.frameLength > 0 else { return nil }
-        return output
     }
 
     /// Close the file and report what was written.
@@ -207,13 +151,14 @@ final class MeetingAudioWriter: @unchecked Sendable {
         let name = fileName
         let framesWritten = file?.length ?? 0
         file = nil
-        converter = nil
+        converter = BufferConverter()
         fileName = nil
+        openFailure = nil
 
         guard let name, MeetingAudioStore.fileExists(named: name) else { return nil }
 
-        // A file that exists but holds no audio is worse than none: the meeting would
-        // show a playback bar that opens an empty recording.
+        // A file that exists but holds no audio is worse than none: every line of the
+        // meeting would offer to play, and clicking one would play nothing.
         guard framesWritten > 0 else {
             Self.log.error("Recording captured no audio; discarding the empty file")
             MeetingAudioStore.delete(fileNamed: name)
@@ -230,8 +175,9 @@ final class MeetingAudioWriter: @unchecked Sendable {
 
         let name = fileName
         file = nil
-        converter = nil
+        converter = BufferConverter()
         fileName = nil
+        openFailure = nil
         MeetingAudioStore.delete(fileNamed: name)
     }
 }

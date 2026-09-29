@@ -1,7 +1,6 @@
 import Foundation
 import os
 import FoundationModels
-import Observation
 
 // MARK: - Structured Output
 
@@ -16,25 +15,9 @@ struct TranscriptionResult {
 
 /// AI-powered text processor using Apple's on-device FoundationModels
 @MainActor
-@Observable
 final class AIProcessor {
 
-    // MARK: - Published State
-
-    /// How many AI requests are currently in flight.
-    ///
-    /// A meeting summary and a dictation both go through this processor, and each
-    /// builds its own `LanguageModelSession` — there is no shared state a second
-    /// request could corrupt, so unlike a true single-session design there is no
-    /// reason a summary running in the background should make a concurrent
-    /// dictation fail. Kept as a count rather than a flag so `isProcessing` below
-    /// still reads correctly for as long as anything at all is running.
-    private(set) var activeRequestCount = 0
-
-    /// Whether any AI request is currently running, for the UI.
-    var isProcessing: Bool { activeRequestCount > 0 }
-
-    private(set) var lastError: AIProcessorError?
+    // MARK: - State
 
     /// A session built and loaded while the user was still speaking.
     ///
@@ -72,12 +55,15 @@ final class AIProcessor {
     /// - Parameter surroundingText: What is already in the field being dictated into.
     ///   Given to the model as background so a reply matches the thread it belongs to.
     ///   It is explicitly marked as context to be read but not rewritten.
+    /// - Parameter usesWarmSession: True only for the dictation that called `prewarm`.
+    ///   Every other request builds its own session and leaves the warm one alone.
     /// - Parameter onPartial: Called with the rewrite so far, each time it grows, for
     ///   a caller that shows it while the model is still writing.
     func process(
         text: String,
         promptId: UUID? = nil,
         surroundingText: String? = nil,
+        usesWarmSession: Bool = false,
         onPartial: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         // Get the prompt
@@ -96,33 +82,9 @@ final class AIProcessor {
             text: text,
             prompt: prompt,
             surroundingText: surroundingText,
+            usesWarmSession: usesWarmSession,
             onPartial: onPartial
         )
-    }
-
-    /// Quick process with a built-in action
-    /// - Parameters:
-    ///   - text: The text to process
-    ///   - action: The action to perform
-    /// - Returns: Processed text
-    func quickProcess(text: String, action: QuickAction) async throws -> String {
-        let promptId: UUID
-        switch action {
-        case .cleanup:
-            promptId = PromptConfiguration.defaultPromptId
-        case .summarize:
-            promptId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-        case .makeFormal:
-            promptId = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
-        case .makeCasual:
-            promptId = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
-        case .fixPunctuation:
-            promptId = UUID(uuidString: "00000000-0000-0000-0000-000000000005")!
-        case .raw:
-            return text
-        }
-
-        return try await process(text: text, promptId: promptId)
     }
 
     /// Load the model for the prompt this dictation will use, while it is being spoken.
@@ -184,6 +146,7 @@ final class AIProcessor {
         text: String,
         prompt: Prompt,
         surroundingText: String? = nil,
+        usesWarmSession: Bool = false,
         onPartial: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         guard !text.isEmpty else {
@@ -202,25 +165,22 @@ final class AIProcessor {
             throw AIProcessorError.appleIntelligenceUnavailable(reason)
         }
 
-        activeRequestCount += 1
-        lastError = nil
-
-        defer {
-            activeRequestCount -= 1
-        }
-
         Log.ai.notice("Processing with prompt: \(prompt.name)")
 
         // The session warmed while this was being spoken, if it was warmed for this
         // prompt with its current instructions. Taken rather than borrowed: a
         // session carries its own transcript, so the next dictation gets a fresh one.
+        // Only the dictation that loaded it may take it. Any other request, such as a
+        // meeting summary running while the user dictates, builds its own session even
+        // when its prompt is the same one.
         let session: LanguageModelSession
-        if let warmSession, warmPromptId == prompt.id, warmInstructions == prompt.systemPrompt {
+        if usesWarmSession, let warmSession,
+           warmPromptId == prompt.id, warmInstructions == prompt.systemPrompt {
             session = warmSession
+            discardPrewarm()
         } else {
             session = FoundationModelsHelper.createSession(instructions: prompt.systemPrompt)
         }
-        discardPrewarm()
 
         let userPrompt = Self.userPrompt(for: prompt, text: text, surroundingText: surroundingText)
 
@@ -254,13 +214,13 @@ final class AIProcessor {
             }
             return keepingWords(of: text, in: try cleaned(result.text), for: prompt)
 
-        } catch FoundationModelsError.contextWindowExceeded {
-            lastError = .contextWindowExceeded
+        // macOS 27 throws the top-level LanguageModelError for these failures, not the
+        // deprecated LanguageModelSession.GenerationError.
+        } catch LanguageModelError.contextSizeExceeded {
             throw AIProcessorError.contextWindowExceeded
-        } catch FoundationModelsError.unsupportedLanguage {
-            lastError = .languageNotSupported
+        } catch LanguageModelError.unsupportedLanguageOrLocale {
             throw AIProcessorError.languageNotSupported
-        } catch FoundationModelsError.guardrailViolation {
+        } catch LanguageModelError.guardrailViolation {
             // Guided generation doesn't benefit from the permissive guardrail level
             // (see the comment on `permissiveModel`), so before giving up, ask once
             // more for plain text, which does.
@@ -274,22 +234,17 @@ final class AIProcessor {
                 Log.ai.notice("Recovered from a guardrail violation by asking for plain text")
                 return result
             } catch {
-                lastError = .guardrailViolation
                 throw AIProcessorError.guardrailViolation
             }
         } catch let error as AIProcessorError {
-            lastError = .processingFailed(error.localizedDescription)
+            // An empty result from `cleaned` reaches the caller as itself, not
+            // wrapped by the clause below as a generic processing failure.
             throw error
         } catch {
-            lastError = .processingFailed(error.localizedDescription)
             throw AIProcessorError.processingFailed(error.localizedDescription)
         }
     }
 
-    /// Strip tags the model sometimes echoes back, and fail loudly on an empty
-    /// result rather than handing the caller nothing to paste. The raw transcript
-    /// exists nowhere else once this returns, so silence here would lose the
-    /// dictation outright rather than merely skip the rewrite.
     /// The request the model receives: the template, the transcript, and any
     /// surrounding text.
     ///
@@ -327,6 +282,10 @@ final class AIProcessor {
         return outcome.text
     }
 
+    /// Strip tags the model sometimes echoes back, and fail loudly on an empty
+    /// result rather than handing the caller nothing to paste. The raw transcript
+    /// exists nowhere else once this returns, so silence here would lose the
+    /// dictation outright rather than merely skip the rewrite.
     private func cleaned(_ text: String) throws -> String {
         let cleaned = text
             .replacingOccurrences(of: "<transcription>", with: "")
@@ -350,49 +309,6 @@ final class AIProcessor {
     /// than discovering it as a mysterious failure the first time they dictate.
     static var unavailabilityReason: String? {
         FoundationModelsHelper.unavailabilityReason()
-    }
-
-    /// Get supported languages
-    static var supportedLanguages: [Locale.Language] {
-        FoundationModelsHelper.getSupportedLanguages()
-    }
-}
-
-// MARK: - Quick Actions
-
-extension AIProcessor {
-    /// Quick actions for common text processing tasks
-    enum QuickAction: String, CaseIterable, Identifiable {
-        case cleanup = "cleanup"
-        case summarize = "summarize"
-        case makeFormal = "formal"
-        case makeCasual = "casual"
-        case fixPunctuation = "punctuation"
-        case raw = "raw"
-
-        var id: String { rawValue }
-
-        var displayName: String {
-            switch self {
-            case .cleanup: return "Clean Up"
-            case .summarize: return "Summarize"
-            case .makeFormal: return "Make Formal"
-            case .makeCasual: return "Make Casual"
-            case .fixPunctuation: return "Fix Punctuation"
-            case .raw: return "Raw (No Processing)"
-            }
-        }
-
-        var icon: String {
-            switch self {
-            case .cleanup: return "sparkles"
-            case .summarize: return "list.bullet"
-            case .makeFormal: return "briefcase"
-            case .makeCasual: return "face.smiling"
-            case .fixPunctuation: return "textformat"
-            case .raw: return "doc.text"
-            }
-        }
     }
 }
 
@@ -423,7 +339,7 @@ enum AIProcessorError: Error, LocalizedError {
         case .contextWindowExceeded:
             return "The text is too long to process"
         case .guardrailViolation:
-            return "The on-device model refused to process this content due to Apple's safety restrictions. Your original transcription is preserved — try the Raw (No Processing) prompt instead."
+            return "Apple's on-device model declined to process this text."
         case .processingFailed(let reason):
             return "Processing failed: \(reason)"
         }

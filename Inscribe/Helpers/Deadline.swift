@@ -12,8 +12,9 @@ struct DeadlineExceeded: Error {}
 /// stop path's time limits were built that way and could never fire.
 ///
 /// Here the two sides race to resume one continuation, and whichever arrives second is
-/// ignored. Work that loses is not waited for: it runs to completion, or forever, on
-/// its own, holding whatever it captured.
+/// ignored. Work that loses is neither waited for nor cancelled: it runs to completion,
+/// or forever, on its own, holding whatever it captured. A caller that needs it stopped
+/// runs it in a task of its own and cancels that task when the deadline passes.
 func withDeadline<T: Sendable>(
     seconds: Double,
     _ operation: @escaping @Sendable () async throws -> T

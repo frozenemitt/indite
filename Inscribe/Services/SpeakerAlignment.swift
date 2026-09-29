@@ -26,20 +26,16 @@ enum SpeakerAlignment {
     ///
     /// The diarizer drops short stretches it takes for silence, and a word landing in
     /// one of those still belongs to whoever was talking around it. A word further than
-    /// this from every turn sits in a stretch the diarizer failed on, such as a chunk
-    /// that threw, and crediting it to the nearest turn put a minute of speech in the
-    /// mouth of whoever happened to speak next.
+    /// this from every turn sits in a stretch the diarizer failed on, and crediting it
+    /// to the nearest turn put a minute of speech in the mouth of whoever happened to
+    /// speak next.
     private static let nearestTurnReach: TimeInterval = 2
 
-    /// A silence long enough to start a new utterance even when the speaker has not
-    /// changed.
+    /// Attribute each transcript run, then merge neighbours by the same speaker.
     ///
-    /// Without it, one person's lines either side of a long pause became one utterance,
-    /// and its single timestamp said nothing about when the later sentences were spoken.
-    private static let utteranceBreak: TimeInterval = 3
-
-    /// Attribute each transcript run, then merge neighbours by the same speaker unless
-    /// a long silence separates them.
+    /// A pause no longer starts a new line. Splitting at three seconds of silence cut
+    /// one person's train of thought into several lines; a line's scrubber now reaches
+    /// the later sentences instead.
     static func align(
         transcript: [TimedTranscriptSegment],
         turns: [SpeakerTurn]
@@ -62,8 +58,7 @@ enum SpeakerAlignment {
 
             // Extend the previous utterance when the speaker has not changed, so the
             // result reads as speech rather than a list of fragments.
-            if var last = merged.last, last.speakerId == speaker,
-               run.start - last.end < utteranceBreak {
+            if var last = merged.last, last.speakerId == speaker {
                 last = AlignedUtterance(
                     speakerId: speaker,
                     text: joined(last.text, run.text),
@@ -98,7 +93,7 @@ enum SpeakerAlignment {
     /// Runs inside one result carry their own leading space, but the first run of the
     /// next result does not, so the last word of one result and the first of the next
     /// were fused into one. A run that starts with punctuation is left attached.
-    private static func joined(_ first: String, _ second: String) -> String {
+    static func joined(_ first: String, _ second: String) -> String {
         guard let end = first.last, let start = second.first,
               !end.isWhitespace, start.isLetter || start.isNumber else {
             return first + second

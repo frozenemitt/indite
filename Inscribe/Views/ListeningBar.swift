@@ -3,7 +3,8 @@ import SwiftUI
 #if os(macOS)
 import AppKit
 
-/// The ribbon's outline, as a shape, so Liquid Glass can be cut to it.
+/// The ribbon's outline as a Shape, so the path is built for whatever size the band
+/// is laid out at.
 struct RibbonShape: Shape {
     let amplitudes: [Double]
 
@@ -21,14 +22,12 @@ struct RibbonShape: Shape {
 /// Each bar is one slice of the frequency range, read off the microphone, so the band
 /// shows the shape of the voice rather than only its volume — and a silent room is a
 /// flat line. That is the question the panel exists to answer: is it hearing me.
-///
-/// The colours are the system's own blue, purple and pink, so they follow light and
-/// dark mode without being told to.
 struct ListeningBar: View {
     let spectrum: [Double]
     let isProcessing: Bool
 
-    private static let pointCount = 48
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private static let height: CGFloat = DictationOverlayController.bandHeight
 
     var body: some View {
@@ -38,8 +37,10 @@ struct ListeningBar: View {
         // newest reading the moment it exists. A timer could only draw the same picture
         // twice or draw the newest one late.
         //
-        // The AI pass has no audio to show, so its shape moves on a clock instead.
-        if isProcessing {
+        // The AI pass has no audio to show, so its shape moves on a clock instead. That
+        // movement is decoration, so Reduce Motion holds it still; the amber still says
+        // the pass is running.
+        if isProcessing && !reduceMotion {
             TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
                 ribbonView(at: context.date)
             }
@@ -50,34 +51,31 @@ struct ListeningBar: View {
         }
     }
 
+    @ViewBuilder
     private func ribbonView(at date: Date) -> some View {
-        Group {
-            let time = date.timeIntervalSinceReferenceDate
-            let amplitudes = (0..<Self.pointCount).map { amplitude(index: $0, time: time) }
-            let shape = RibbonShape(amplitudes: amplitudes)
-            let stops = isProcessing ? Self.processingStops : Self.voiceStops
-            let fill = LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
+        let time = date.timeIntervalSinceReferenceDate
+        let amplitudes = (0..<TranscriptionEngine.spectrumBandCount).map { amplitude(index: $0, time: time) }
+        let shape = RibbonShape(amplitudes: amplitudes)
+        let stops = isProcessing ? Self.processingStops : Self.voiceStops
+        let fill = LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
 
-            ZStack {
-                // Two halos rather than one: a wide dim wash for falloff and a tight
-                // bright one at the edge. A single broad blur reads as haze; the pair
-                // reads as something burning.
-                shape.fill(fill)
-                    .blur(radius: 11)
-                    .opacity(0.45)
-                    .blendMode(.plusLighter)
+        ZStack {
+            // Two halos rather than one: a wide dim wash for falloff and a tight
+            // bright one at the edge. A single broad blur reads as haze; the pair
+            // reads as something burning.
+            shape.fill(fill)
+                .blur(radius: 11)
+                .opacity(0.45)
+                .blendMode(.plusLighter)
 
-                shape.fill(fill)
-                    .blur(radius: 3)
-                    .opacity(0.9)
-                    .blendMode(.plusLighter)
+            shape.fill(fill)
+                .blur(radius: 3)
+                .opacity(0.9)
+                .blendMode(.plusLighter)
 
-                shape.fill(fill)
-            }
-            .compositingGroup()
-            .frame(height: Self.height)
+            shape.fill(fill)
         }
-        .frame(height: Self.height)
+        .compositingGroup()
     }
 
     /// One closed shape through every band, mirrored about the centre line.
@@ -145,7 +143,7 @@ struct ListeningBar: View {
     /// Nothing here invents movement. Every point is the loudness of its own slice of
     /// the spectrum, so vowels swell the left of the ribbon, an "s" lifts the right,
     /// and a silent room is a thin line. Only the AI pass, which has no audio to show,
-    /// still falls back to a moving shape.
+    /// still falls back to a made-up shape.
     private func amplitude(index: Int, time: TimeInterval) -> Double {
         if isProcessing {
             return 0.55 * (sin(time * 3.2 + Double(index) * 0.45) * 0.18 + 0.82)

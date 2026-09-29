@@ -1,5 +1,4 @@
 import AVFoundation
-import Combine
 import Foundation
 import Speech
 import Observation
@@ -69,6 +68,24 @@ final class TranscriptionEngine {
 
     private(set) var currentTranscript = ""
     private(set) var volatileText = ""  // Live, unconfirmed text
+
+    /// The user's listed words for the session running now.
+    private var vocabulary: [String] = []
+
+    /// Names read from the screen for this dictation. They count as listed words, but
+    /// never override one of the user's own; see `Vocabulary`.
+    private var screenTerms: [String] = []
+
+    /// This dictation's finished results, kept with their timed runs for the spotter.
+    private var vocabularySegments: [Vocabulary.Segment] = []
+    private var spotterSession: VocabularySpotter.Session?
+
+    /// Hand over the names on screen once they have been read, a moment into the dictation.
+    func useScreenTerms(_ terms: [String]) {
+        guard phase == .recording || phase == .starting else { return }
+        screenTerms = terms
+    }
+
     private(set) var error: TranscriptionEngineError?
 
     /// Finalized transcript runs with the audio time range each covers.
@@ -80,6 +97,14 @@ final class TranscriptionEngine {
 
     /// Collect `timedSegments` during this recording.
     var collectTimedSegments = false
+
+    /// The one channel to transcribe, or nil to transcribe a mix of them all.
+    ///
+    /// A meeting recording a call sets 0, the microphone, and transcribes the call's
+    /// channel separately. One recognizer on a mix of both followed whichever side
+    /// was louder: a voice over a video through headphones was 5 to 8 times quieter
+    /// than the video, and only the video was transcribed.
+    var transcribedChannel: Int?
 
     /// A second consumer for the raw microphone buffers, such as diarization.
     ///
@@ -117,7 +142,6 @@ final class TranscriptionEngine {
     /// drained stream from one still delivering.
     private var resultsEnded = false
 
-    private let bufferConverter = BufferConverter()
     private var analyzerFormat: AVAudioFormat?
 
     /// Rare, and worth keeping: a dictation that goes wrong in a launched app leaves
@@ -125,10 +149,6 @@ final class TranscriptionEngine {
     nonisolated static let log = Logger(subsystem: "com.inscribe.app", category: "Dictation")
 
     // MARK: - Configuration
-
-    static let defaultLocale = Locale(
-        components: .init(languageCode: .english, script: nil, languageRegion: .unitedStates)
-    )
 
     private static let fallbackLocales = [
         Locale(components: .init(languageCode: .english, script: nil, languageRegion: .unitedStates)),
@@ -179,14 +199,15 @@ final class TranscriptionEngine {
 
     /// Start recording and transcribing audio
     /// - Parameters:
-    ///   - contextualStrings: Terms to bias the recognizer toward — names, jargon.
+    ///   - vocabulary: Names and jargon the user listed. The transcriber ignores hints,
+    ///     so these choose among its second guesses and fix spelling; see `Vocabulary`.
     ///   - inputDeviceUID: CoreAudio UID of the microphone, or "default".
     /// - Parameter publishesSpectrum: whether anything is going to draw the band. The
     ///   Fourier transform behind it runs on every buffer, and running it for a panel
     ///   nobody has switched on is work spent on a picture that is never drawn.
     func startRecording(
         owner: SessionOwner = .dictation,
-        contextualStrings: [String] = [],
+        vocabulary: [String] = [],
         inputDeviceUID: String = "default",
         publishesSpectrum: Bool = false
     ) async throws {
@@ -222,17 +243,22 @@ final class TranscriptionEngine {
         currentTranscript = ""
         volatileText = ""
         timedSegments = []
+        vocabularySegments = []
+        screenTerms = []
         spectrum = []
 
-        // Check authorization
-        guard await checkAuthorization() else {
+        if let missing = await missingAuthorization() {
             release()
-            throw TranscriptionEngineError.notAuthorized
+            throw missing
         }
 
         // Setup speech recognition first
         do {
-            try await setupSpeechRecognition(contextualStrings: contextualStrings)
+            self.vocabulary = vocabulary.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            // Listens for listed words in dictations; a meeting's hour of audio is not
+            // read this way.
+            spotterSession = owner != .meeting && !self.vocabulary.isEmpty ? VocabularySpotter.shared.session() : nil
+            try await setupSpeechRecognition()
         } catch {
             // Never leave a started analyzer behind. Releasing one while its input
             // task is still reading traps inside SpeechAnalyzer.analyzeSequence.
@@ -263,8 +289,10 @@ final class TranscriptionEngine {
         let targetFormat = analyzerFormat!
 
         let tap = audioTap
+        let spotter = spotterSession
         spectrumWanted.withLock { $0 = publishesSpectrum }
         let spectrumWanted = self.spectrumWanted
+        let transcribedChannel = self.transcribedChannel
 
         audioProcessingTask = Task.detached(priority: .userInitiated) { [weak self] in
             let converter = BufferConverter()
@@ -290,7 +318,9 @@ final class TranscriptionEngine {
                 }
 
                 do {
-                    let converted = try converter.convertBuffer(audioData.buffer, to: targetFormat)
+                    let source = transcribedChannel.flatMap { audioData.buffer.channel($0) } ?? audioData.buffer
+                    let converted = try converter.convertBuffer(source, to: targetFormat)
+                    spotter?.append(converted)
                     let input = AnalyzerInput(buffer: converted)
                     analyzerContinuation?.yield(input)
                 } catch {
@@ -312,7 +342,7 @@ final class TranscriptionEngine {
 
     /// Stop recording and return the final transcript
     @discardableResult
-    func stopRecording(owner: SessionOwner = .dictation) async throws -> String {
+    func stopRecording(owner: SessionOwner = .dictation) async -> String {
         guard phase == .recording else {
             Log.dictation.notice("Not recording, ignoring stop request")
             return currentTranscript
@@ -352,11 +382,18 @@ final class TranscriptionEngine {
         }
         audioProcessingTask = nil
 
+        // All the audio is in, so the spotter's last read can run while the recognizer
+        // finishes.
+        let spotStarted = ContinuousClock.now
+        let spotting = spotterSession.map { session in
+            Task { [terms = vocabulary + screenTerms] in await session.finish(terms: terms) }
+        }
+        spotterSession = nil
+
         // Finalize transcription
 
         analyzerInputContinuation?.finish()
 
-        var finalized = true
         let analyzer = speechAnalyzer
         let finishedInTime = await Self.bounded(3) {
             do {
@@ -369,22 +406,9 @@ final class TranscriptionEngine {
         if !finishedInTime {
             // Seen on recordings of a few tens of milliseconds: finalization simply
             // never returns. Waiting forever costs the whole engine.
-            finalized = false
             Self.log.error("finalize did not return in 3s — giving up on the tail")
             self.error = .transcriptionFailed("The recogniser did not finish.")
         }
-        // Drained rather than cancelled, for the same reason the audio stream above is.
-        //
-        // The transcriber holds a whole dictation as unconfirmed text and only turns it
-        // into finalized runs when `finalizeAndFinishThroughEndOfInput` asks it to. That
-        // call also ends the results stream, so awaiting the task here consumes every
-        // one of those runs and returns when the stream does. Cancelling instead broke
-        // the loop on its next turn and threw the entire dictation away, leaving only
-        // whatever volatile snapshot happened to be held — a word or two of a long
-        // sentence, delivered without any error to say the rest was dropped.
-        //
-        // A finalize that threw leaves no promise that the stream will end, so that one
-        // case still cancels.
 
         // Give the results loop a moment of the main actor, then end it. Never wait on
         // it to finish on its own.
@@ -398,8 +422,8 @@ final class TranscriptionEngine {
         //
         // Finalization has already returned by this point, so whatever it produced is
         // queued and needs only a slice of the main actor to be taken up. That is the
-        // difference from the version that lost the ending: it cancelled before
-        // finalizing, not after.
+        // difference from an earlier version that lost the end of every dictation: it
+        // cancelled before finalizing, not after.
         //
         // The moment is at most 150 ms, and usually far less: the loop marks the stream
         // ended, and the wait stops there instead of sitting out the full length.
@@ -428,11 +452,33 @@ final class TranscriptionEngine {
             volatileText = ""
         }
 
-        release()
-
         spectrum = []
         let drainMs = Int(drainTime / .milliseconds(1))
+        if let spotting {
+            let waitStarted = ContinuousClock.now
+            let detections = await spotting.value
+            let waited = Int((ContinuousClock.now - waitStarted) / .milliseconds(1))
+            let took = Int((ContinuousClock.now - spotStarted) / .milliseconds(1))
+            let segmentsText = vocabularySegments.map(\.text).joined()
+            if currentTranscript.hasPrefix(segmentsText) {
+                let tail = currentTranscript.dropFirst(segmentsText.count)
+                let spotted = Vocabulary.applySpotted(detections, to: vocabularySegments, listed: vocabulary)
+                currentTranscript = spotted.text + tail
+                Self.log.notice("Spotter put in \(spotted.replaced, privacy: .public) listed words; its last read took \(took, privacy: .public) ms, \(waited, privacy: .public) ms of it after the recognizer finished")
+            }
+        }
+        let spelled = Vocabulary.spell(currentTranscript, terms: vocabulary + screenTerms)
+        if spelled != currentTranscript {
+            Self.log.notice("Spelled listed words as listed")
+            currentTranscript = spelled
+        }
         Self.log.notice("recording stopped, delivering \(self.currentTranscript.count, privacy: .public) chars; \(finalAtRelease, privacy: .public) of \(heardAtRelease, privacy: .public) were final at release; results \(drained ? "drained" : "cut off", privacy: .public) after \(drainMs, privacy: .public) ms")
+
+        // Released last. The wait on the spotter above gives up the main actor, and a
+        // start taken in that gap would clear this session's transcript, segments and
+        // screen names before they were put back together, so this stop would deliver
+        // nothing.
+        release()
         return currentTranscript
     }
 
@@ -522,14 +568,14 @@ final class TranscriptionEngine {
 
     // MARK: - Authorization
 
-    private func checkAuthorization() async -> Bool {
-        // Check microphone access
-        let micAuthorized = await checkMicrophoneAuthorization()
-        guard micAuthorized else { return false }
-
-        // Check speech recognition access
-        let speechAuthorized = await checkSpeechRecognitionAuthorization()
-        return speechAuthorized
+    /// The permission that is missing, or nil when both are granted.
+    ///
+    /// Returned as the error for that permission, so the message names the setting
+    /// the user has to change rather than blaming the microphone for both.
+    private func missingAuthorization() async -> TranscriptionEngineError? {
+        guard await checkMicrophoneAuthorization() else { return .microphoneNotAuthorized }
+        guard await checkSpeechRecognitionAuthorization() else { return .speechRecognitionNotAuthorized }
+        return nil
     }
 
     private func checkMicrophoneAuthorization() async -> Bool {
@@ -544,16 +590,11 @@ final class TranscriptionEngine {
             Log.dictation.notice("Requesting microphone access...")
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             Log.dictation.notice("Microphone access granted: \(granted, privacy: .public)")
-            if !granted {
-                error = .notAuthorized
-            }
             return granted
         case .denied, .restricted:
             Log.dictation.error("Microphone access denied or restricted")
-            error = .notAuthorized
             return false
         @unknown default:
-            error = .notAuthorized
             return false
         }
     }
@@ -571,22 +612,20 @@ final class TranscriptionEngine {
                 }
             }
         case .denied, .restricted:
-            error = .notAuthorized
             return false
         @unknown default:
-            error = .notAuthorized
             return false
         }
     }
 
     /// Request authorization proactively (call on app launch)
     func requestAuthorization() async -> Bool {
-        await checkAuthorization()
+        await missingAuthorization() == nil
     }
 
     // MARK: - Speech Recognition Setup
 
-    private func setupSpeechRecognition(contextualStrings: [String] = []) async throws {
+    private func setupSpeechRecognition() async throws {
         Log.dictation.notice("Setting up speech recognition...")
 
         // Resolved before the transcriber is built, not after: a transcriber is bound to
@@ -604,8 +643,13 @@ final class TranscriptionEngine {
             // `.fastResults` is what puts words on the overlay while you are still
             // speaking. Without it the transcriber holds its unconfirmed text back and
             // the preview trails several seconds behind the voice.
-            reportingOptions: [.volatileResults, .fastResults],
-            attributeOptions: [.audioTimeRange]
+            //
+            // Second guesses only when there is a vocabulary to choose them by.
+            reportingOptions: vocabulary.isEmpty
+                ? [.volatileResults, .fastResults]
+                : [.volatileResults, .fastResults, .alternativeTranscriptions],
+            // Confidence tells the spotter which words the recognizer was unsure of.
+            attributeOptions: vocabulary.isEmpty ? [.audioTimeRange] : [.audioTimeRange, .transcriptionConfidence]
         )
 
         guard let transcriber = speechTranscriber else {
@@ -622,22 +666,6 @@ final class TranscriptionEngine {
             modules: [transcriber],
             options: .init(priority: .userInitiated, modelRetention: .processLifetime)
         )
-
-        // Bias the recognizer toward the user's own vocabulary. Unlike a post-hoc
-        // replacement this changes what the model is listening for, which is what
-        // proper nouns need.
-        let hints = contextualStrings.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        if !hints.isEmpty {
-            let context = AnalysisContext()
-            context.contextualStrings[.general] = hints
-            do {
-                try await speechAnalyzer?.setContext(context)
-                Log.dictation.notice("Applied \(hints.count, privacy: .public) vocabulary hints")
-            } catch {
-                // Worth continuing without: hints improve accuracy, they are not required.
-                Log.dictation.error("Could not apply vocabulary hints: \(error, privacy: .public)")
-            }
-        }
 
         // Ensure model is available
         try await ensureModelAvailable(transcriber: transcriber, locale: locale)
@@ -673,7 +701,7 @@ final class TranscriptionEngine {
                         break
                     }
 
-                    let text = String(result.text.characters)
+                    let heard = String(result.text.characters)
                     resultCount += 1
 
                     // Update state on MainActor
@@ -681,9 +709,22 @@ final class TranscriptionEngine {
                     let runs: [TimedTranscriptSegment] = result.isFinal
                         ? Self.timedRuns(from: result.text)
                         : []
+                    let alternatives = result.isFinal ? result.alternatives.map { String($0.characters) } : []
+                    let vocabularyRuns = result.isFinal ? Self.vocabularyRuns(from: result.text) : []
 
                     await MainActor.run {
                         guard let self = self else { return }
+                        // A finished result may give way to the recognizer's second guess,
+                        // when that holds a listed word the first guess lacks.
+                        var text = heard
+                        if result.isFinal, !self.vocabulary.isEmpty {
+                            text = Vocabulary.choose(heard, alternatives: alternatives,
+                                                     terms: self.vocabulary + self.screenTerms, keeping: self.vocabulary)
+                            if text != heard {
+                                Self.log.notice("Took the recognizer's second guess for a listed word")
+                            }
+                            self.vocabularySegments.append(Vocabulary.Segment(text: text, tookSecondGuess: text != heard, runs: vocabularyRuns))
+                        }
                         if result.isFinal {
                             self.currentTranscript += text
                             self.volatileText = ""
@@ -713,12 +754,25 @@ final class TranscriptionEngine {
         Log.dictation.notice("Speech recognition setup complete")
     }
 
+    /// Every run of a finished result, with its time and the recognizer's confidence
+    /// where it has them. Untimed runs are kept too, so the text can be rebuilt whole.
+    private nonisolated static func vocabularyRuns(from text: AttributedString) -> [Vocabulary.Run] {
+        text.runs.map { run in
+            Vocabulary.Run(
+                text: String(text[run.range].characters),
+                start: run.audioTimeRange?.start.seconds,
+                end: run.audioTimeRange?.end.seconds,
+                confidence: run.transcriptionConfidence
+            )
+        }
+    }
+
     /// Split a finalized result into runs carrying an audio time range.
     ///
     /// `attributeOptions: [.audioTimeRange]` makes the transcriber stamp each run with
     /// when it was spoken. That timestamp is what lets speaker attribution be real
     /// rather than a proportional guess at how the text divides up.
-    private nonisolated static func timedRuns(from text: AttributedString) -> [TimedTranscriptSegment] {
+    nonisolated static func timedRuns(from text: AttributedString) -> [TimedTranscriptSegment] {
         var segments: [TimedTranscriptSegment] = []
 
         for run in text.runs {
@@ -743,7 +797,7 @@ final class TranscriptionEngine {
     /// opened, while the user waited to speak.
     private static var cachedLocale: Locale?
 
-    private func resolveSupportedLocale() async throws -> Locale {
+    func resolveSupportedLocale() async throws -> Locale {
         if let cached = Self.cachedLocale { return cached }
 
         let supported = await SpeechTranscriber.supportedLocales
@@ -821,32 +875,19 @@ final class TranscriptionEngine {
         recognitionTask?.cancel()
         recognitionTask = nil
 
+        spotterSession = nil
+
         speechTranscriber = nil
         speechAnalyzer = nil
         analyzerFormat = nil
-    }
-
-    deinit {
-        MainActor.assumeIsolated {
-            Log.dictation.notice("Deallocating...")
-            recognitionTask?.cancel()
-            audioProcessingTask?.cancel()
-            audioCaptureHelper?.stopCapture()
-            // Inline cleanup
-            audioCaptureHelper = nil
-            audioProcessingTask = nil
-            speechTranscriber = nil
-            speechAnalyzer = nil
-            analyzerInputContinuation = nil
-            analyzerFormat = nil
-        }
     }
 }
 
 // MARK: - Errors
 
 enum TranscriptionEngineError: Error, LocalizedError {
-    case notAuthorized
+    case microphoneNotAuthorized
+    case speechRecognitionNotAuthorized
     case setupFailed(String)
     case transcriptionFailed(String)
     case localeNotSupported
@@ -855,8 +896,10 @@ enum TranscriptionEngineError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAuthorized:
-            return "Microphone access not authorized"
+        case .microphoneNotAuthorized:
+            return "Microphone access not authorized. Allow Inscribe in System Settings → Privacy & Security → Microphone."
+        case .speechRecognitionNotAuthorized:
+            return "Speech Recognition access not authorized. Allow Inscribe in System Settings → Privacy & Security → Speech Recognition."
         case .setupFailed(let reason):
             return "Setup failed: \(reason)"
         case .transcriptionFailed(let reason):

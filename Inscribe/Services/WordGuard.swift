@@ -51,8 +51,11 @@ enum WordGuard {
                     // One-for-one swaps: the misheard words a correction exists to fix.
                     output += rewritten.map { rewriteWords[$0] }
                 } else if rewritten.isEmpty {
-                    // Dropped words come back, except an accidental repeat.
-                    let back = said.filter { !isRepeat(at: $0, in: saidWords) }
+                    // Dropped words come back, except an accidental repeat. Only a
+                    // later copy counts as the repeat, because the copy before it was
+                    // either kept by the model or is coming back here: "really really
+                    // good" returned as "good" gets one "really" back, not none.
+                    let back = said.filter { $0 == 0 || saidWords[$0 - 1].key != saidWords[$0].key }
                     output += restoring(back.map { saidWords[$0] }, after: output)
                     restored += back.count
                 } else if said.isEmpty {
@@ -107,16 +110,10 @@ enum WordGuard {
         return result
     }
 
-    private static func isRepeat(at index: Int, in words: [Word]) -> Bool {
-        (index > 0 && words[index - 1].key == words[index].key)
-            || (index + 1 < words.count && words[index + 1].key == words[index].key)
-    }
-
     /// Said words put back into the rewrite, fitted to where they land.
     ///
-    /// A pause ellipsis on a said word is dropped. Where the model had ended a
-    /// sentence at the gap, and the words coming back carry on that sentence, the
-    /// early full stop goes. At the very start, the first word takes a capital.
+    /// A pause ellipsis on a said word is dropped. At the very start, the first word
+    /// takes a capital.
     private static func restoring(_ said: [Word], after output: [Word]) -> [Word] {
         var back = said.map { word -> Word in
             var word = word

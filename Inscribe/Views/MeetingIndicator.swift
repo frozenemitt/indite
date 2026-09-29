@@ -21,6 +21,9 @@ final class MeetingIndicatorController {
     private let model = MeetingIndicatorModel()
     private let settings: AppSettings
     private var moveObserver: (any NSObjectProtocol)?
+    private var dragObserver: (any NSObjectProtocol)?
+    /// True from the start of a drag until the first move made with the mouse button up.
+    private var userIsDragging = false
     /// Held so the desktop-change notifications keep arriving for the life of the app.
     private var spaceObserver: (any NSObjectProtocol)?
 
@@ -53,13 +56,20 @@ final class MeetingIndicatorController {
         panel?.orderFrontRegardless()
     }
 
-    func update(spectrum: [Double], seconds: TimeInterval, isPaused: Bool, error: String?) {
+    func update(
+        spectrum: [Double],
+        seconds: TimeInterval,
+        isPaused: Bool,
+        canPauseOrResume: Bool,
+        microphoneHeldReason: String?,
+        error: String?
+    ) {
         model.spectrum = spectrum
         model.isPaused = isPaused
+        model.canPauseOrResume = canPauseOrResume
+        model.microphoneHeldReason = microphoneHeldReason
         model.seconds = seconds
-        if model.error != error {
-            model.error = error
-        }
+        model.error = error
         model.contentOpacity = settings.overlayContentOpacity
         applyTint()
     }
@@ -96,6 +106,13 @@ final class MeetingIndicatorController {
         panel.ignoresMouseEvents = false
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = Self.collectionBehavior
+        // The user is in the call, and this panel never activates Inscribe, so Inscribe
+        // is inactive whenever the panel is on screen. AppKit hides an inactive app's
+        // tooltips by default, which left the error mark with nothing to say.
+        panel.allowsToolTipsWhenApplicationIsInactive = true
+        // Stays up when Inscribe is hidden. The recorder shows the panel once per
+        // meeting, so a panel hidden with the app did not come back until the next one.
+        panel.canHide = false
 
         model.pauseOrResume = { [weak self] in self?.onPauseOrResume?() }
         model.stop = { [weak self] in self?.onStop?() }
@@ -125,15 +142,32 @@ final class MeetingIndicatorController {
         ])
         panel.contentView = container
 
+        // Remembered only when the user drags it. Every move used to be saved, so a
+        // spot `position` pulled out from under the menu bar or the Dock was written
+        // over the one the user chose. AppKit announces a move in advance only when the
+        // user starts dragging a window, never for `setFrameOrigin`.
+        dragObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willMoveNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.userIsDragging = true
+            }
+        }
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: panel,
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, let panel = self.panel else { return }
+                guard let self, self.userIsDragging, let panel = self.panel else { return }
                 self.settings.meetingIndicatorOriginX = panel.frame.origin.x
                 self.settings.meetingIndicatorOriginY = panel.frame.origin.y
+                // The drag ends when the button is released. A later move in the same
+                // meeting, such as macOS moving the panel off an unplugged display,
+                // is the system's and must not replace the user's spot.
+                if NSEvent.pressedMouseButtons & 1 == 0 { self.userIsDragging = false }
             }
         }
 
@@ -143,14 +177,18 @@ final class MeetingIndicatorController {
     /// Drop the current panel and build another in its place.
     ///
     /// The old one is ordered out first so it does not linger on whatever desktop it
-    /// was stranded on, and its move observer goes with it: `makePanel` registers a
-    /// new one, and the old token would otherwise keep firing for a window nobody can
+    /// was stranded on, and its move observers go with it: `makePanel` registers new
+    /// ones, and the old tokens would otherwise keep firing for a window nobody can
     /// see.
     private func replacePanel() {
         panel?.orderOut(nil)
         if let moveObserver {
             NotificationCenter.default.removeObserver(moveObserver)
             self.moveObserver = nil
+        }
+        if let dragObserver {
+            NotificationCenter.default.removeObserver(dragObserver)
+            self.dragObserver = nil
         }
         panel = makePanel()
     }
@@ -183,15 +221,42 @@ final class MeetingIndicatorController {
 
     /// Where the user left it, or the top right — out of the way of the thing the
     /// meeting is actually about.
+    ///
+    /// A spot lying wholly on a screen comes back where the user put it, beside the Dock
+    /// included, and is only pulled down from under the menu bar. That is how macOS
+    /// places windows. Keeping the panel out of the Dock's strip moved it up by the
+    /// Dock's height at every meeting, because the usable area leaves out the whole
+    /// strip and not only the icons. The cost, accepted: a spot saved during a
+    /// full-screen call, when the Dock was hidden, can reopen under the Dock's icons.
+    ///
+    /// A spot straddling an edge, left by displays being rearranged, is pulled inside
+    /// the usable area of the screen it mostly lies on. Any overlap used to be enough,
+    /// and such a spot opened the panel mostly off screen. Only a drag is saved, so
+    /// neither correction replaces the spot the user chose.
     private func position(_ panel: NSPanel?) {
         guard let panel else { return }
+        // A drag that has already finished must not claim the move made here.
+        userIsDragging = false
 
-        if let x = settings.meetingIndicatorOriginX, let y = settings.meetingIndicatorOriginY,
-           NSScreen.screens.contains(where: {
-               $0.frame.intersects(NSRect(x: x, y: y, width: Self.width, height: Self.height))
-           }) {
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
-            return
+        if let x = settings.meetingIndicatorOriginX, let y = settings.meetingIndicatorOriginY {
+            let saved = NSRect(x: x, y: y, width: Self.width, height: Self.height)
+            func overlap(_ screen: NSScreen) -> CGFloat {
+                let shared = screen.frame.intersection(saved)
+                return shared.width * shared.height
+            }
+            if let screen = NSScreen.screens.max(by: { overlap($0) < overlap($1) }),
+               overlap(screen) > 0 {
+                let visible = screen.visibleFrame
+                if screen.frame.contains(saved) {
+                    panel.setFrameOrigin(NSPoint(x: x, y: min(y, visible.maxY - Self.height)))
+                } else {
+                    panel.setFrameOrigin(NSPoint(
+                        x: min(max(x, visible.minX), visible.maxX - Self.width),
+                        y: min(max(y, visible.minY), visible.maxY - Self.height)
+                    ))
+                }
+                return
+            }
         }
 
         let mouse = NSEvent.mouseLocation
@@ -210,6 +275,12 @@ final class MeetingIndicatorController {
 final class MeetingIndicatorModel {
     var spectrum: [Double] = []
     var isPaused = false
+    /// False while a pause or resume could not act: a dictation or a shortcut recorded
+    /// during the pause holds the microphone, and a resume then fails.
+    var canPauseOrResume = true
+    /// Who holds the microphone while Resume is unavailable, when that is a dictation
+    /// or a shortcut. Nil during the meeting's own resume, so the button keeps its name.
+    var microphoneHeldReason: String?
     var seconds: TimeInterval = 0
     var contentOpacity: Double = 1.0
 
@@ -234,11 +305,11 @@ private struct MeetingIndicatorView: View {
                 .allowsHitTesting(false)
 
             HStack(spacing: 10) {
-                Image(systemName: model.isPaused ? "pause.fill" : "record.circle")
+                Image(systemName: model.isPaused ? "pause.circle.fill" : "record.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(model.isPaused ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.red))
+                    .foregroundStyle(model.isPaused ? Color.orange : Color.red)
 
-                Text(clock)
+                Text(MeetingExporter.durationLabel(model.seconds))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.primary)
 
@@ -253,13 +324,27 @@ private struct MeetingIndicatorView: View {
 
                 Spacer(minLength: 0)
 
+                // A caption-sized glyph is an 11pt target. These are the panel's only
+                // controls, reached for in the middle of a call, so each one takes the
+                // row's full height.
+                //
+                // Labels rather than bare images, so VoiceOver reads the action and not
+                // the symbol's name.
                 Button(action: model.pauseOrResume) {
-                    Image(systemName: model.isPaused ? "play.fill" : "pause.fill")
+                    Label(model.isPaused ? "Resume" : "Pause",
+                          systemImage: model.isPaused ? "play.fill" : "pause.fill")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 24, height: 20)
+                        .contentShape(Rectangle())
                 }
-                .help(model.isPaused ? "Resume" : "Pause")
+                .disabled(!model.canPauseOrResume)
+                .help(model.microphoneHeldReason ?? (model.isPaused ? "Resume" : "Pause"))
 
                 Button(action: model.stop) {
-                    Image(systemName: "stop.fill")
+                    Label("Stop", systemImage: "stop.fill")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 24, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .help("Stop and save")
             }
@@ -272,16 +357,6 @@ private struct MeetingIndicatorView: View {
         .padding(.vertical, 8)
         .frame(width: MeetingIndicatorController.width, height: MeetingIndicatorController.height)
         .environment(\.colorScheme, .dark)
-    }
-
-    private var clock: String {
-        let total = Int(model.seconds)
-        let minutes = total / 60
-        let seconds = total % 60
-        if minutes >= 60 {
-            return String(format: "%d:%02d:%02d", minutes / 60, minutes % 60, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 #endif

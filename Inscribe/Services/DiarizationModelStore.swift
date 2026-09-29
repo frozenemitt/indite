@@ -6,8 +6,6 @@ import CryptoKit
 
 /// What the HuggingFace repository currently holds.
 struct RemoteModelRevision: Sendable, Equatable {
-    /// Commit hash of the repository head.
-    let revision: String
     let lastModified: Date?
 
     /// Every file the repository publishes, keyed by its path.
@@ -31,19 +29,16 @@ struct VerificationReport: Sendable, Equatable {
     /// Files whose hash matched the published one.
     var verified: Int = 0
 
-    /// Files whose contents disagree with the published copy.
+    /// Files missing from disk, or whose contents disagree with the published copy.
     var mismatched: [String] = []
-
-    /// Files the repository does not list — FluidAudio writes some of its own.
-    var unlisted: Int = 0
 
     var isClean: Bool { mismatched.isEmpty && verified > 0 }
 }
 
 /// The verdict of comparing what is installed against what is published.
 enum ModelComparison: Sendable, Equatable {
-    case upToDate(revision: String, lastModified: Date?)
-    case updateAvailable(revision: String, lastModified: Date?, changedFiles: Int)
+    case upToDate(lastModified: Date?)
+    case updateAvailable(lastModified: Date?, changedFiles: Int)
 }
 
 /// Manages the CoreML speaker models on disk: what is installed, whether anything
@@ -52,20 +47,12 @@ enum ModelComparison: Sendable, Equatable {
 /// FluidAudio downloads these once and then keeps them forever — its only check is
 /// whether the file exists, with no checksum, revision, or update path. That means an
 /// install silently keeps whatever the repository held on the day it first ran. This
-/// adds the missing half: record the revision at install time, and compare it against
-/// the published head on request.
+/// adds the missing half: hash the installed files against the content hashes the
+/// repository publishes, on request.
 enum DiarizationModelStore {
 
     /// The HuggingFace repository FluidAudio pulls speaker models from.
     static let repositoryID = "FluidInference/speaker-diarization-coreml"
-
-    /// Where FluidAudio unpacks that repository.
-    private static let folderName = "speaker-diarization"
-
-    /// Files that must be present for the models to be usable.
-    private static let requiredFiles = ["pyannote_segmentation.mlmodelc", "wespeaker_v2.mlmodelc"]
-
-    private static let installedRevisionKey = "diarizationModelRevision"
 
     // MARK: - Locations
 
@@ -76,23 +63,27 @@ enum DiarizationModelStore {
     }
 
     static var modelsDirectory: URL {
-        modelsRoot.appendingPathComponent(folderName, isDirectory: true)
+        modelsRoot.appendingPathComponent(Repo.diarizer.folderName, isDirectory: true)
     }
 
     // MARK: - Local State
 
-    /// Whether both models are on disk whole, ready to load.
+    /// Whether every file FluidAudio loads is on disk whole, ready to load.
     ///
-    /// Checking that the two folders exist was not enough. An install interrupted part
-    /// way leaves them without their `coremldata.bin`, or with a weight file still named
-    /// `.partial`; Settings said Installed, and the next meeting start found the models
-    /// incomplete and went to HuggingFace for them. This is FluidAudio's own test for a
-    /// complete model.
+    /// Checking that the model folders exist was not enough. An install interrupted part
+    /// way can leave a bundle without its `coremldata.bin`, a weight file still named
+    /// `.partial`, or no `plda-parameters.json` at all. Settings then said Installed while
+    /// every meeting start failed to load the models. This repeats FluidAudio's own
+    /// completeness test, `ModelCache.incompleteFiles`, which is internal to the library
+    /// and cannot be called from here.
     static var isInstalled: Bool {
-        requiredFiles.allSatisfy { name in
-            let model = modelsDirectory.appendingPathComponent(name)
-            return FileManager.default.fileExists(atPath: model.appendingPathComponent("coremldata.bin").path)
-                && !containsPartialDownload(model)
+        ModelNames.OfflineDiarizer.requiredModels.allSatisfy { name in
+            let url = modelsDirectory.appendingPathComponent(name)
+            guard name.hasSuffix(".mlmodelc") else {
+                return FileManager.default.fileExists(atPath: url.path)
+            }
+            return FileManager.default.fileExists(atPath: url.appendingPathComponent("coremldata.bin").path)
+                && !containsPartialDownload(url)
         }
     }
 
@@ -126,21 +117,9 @@ enum DiarizationModelStore {
 
     static var sizeOnDisk: Int64 { directorySize(modelsDirectory) }
 
-    /// The repository revision recorded when these models were installed.
-    ///
-    /// Absent for models fetched before this tracking existed, which is why an
-    /// unknown revision is reported as "unknown" rather than "up to date".
-    static var installedRevision: String? {
-        UserDefaults.standard.string(forKey: installedRevisionKey)
-    }
-
-    static func recordInstalledRevision(_ revision: String) {
-        UserDefaults.standard.set(revision, forKey: installedRevisionKey)
-    }
-
     // MARK: - Install
 
-    /// Download the models, and record which revision they came from.
+    /// Download the models.
     ///
     /// Deliberately not called from the recording path: starting a meeting must not
     /// reach the network. Settings is the only caller, behind a button.
@@ -151,25 +130,19 @@ enum DiarizationModelStore {
         ModelHub.offlineMode = false
         defer { ModelHub.offlineMode = true }
 
-        _ = try await DiarizerModels.downloadIfNeeded()
-
-        // FluidAudio keeps no record of which revision it took, so "check for updates"
-        // would have nothing to compare against.
-        if let remote = try? await fetchLatestRevision() {
-            recordInstalledRevision(remote.revision)
-        }
+        _ = try await OfflineDiarizerModels.load(from: modelsRoot)
     }
 
     // MARK: - Remote
 
-    /// Ask HuggingFace what the repository head is now.
+    /// Ask HuggingFace what the repository head publishes now.
     ///
-    /// Reached only from Settings, when the user presses Install or Check for Updates.
-    /// Nothing on the recording path calls it. No audio, transcript, or user data goes
-    /// with it — it is a public metadata read.
+    /// Reached only from Settings, when the user presses Check for Updates. Nothing on
+    /// the recording path calls it. No audio, transcript, or user data goes with it —
+    /// it is a public metadata read.
     static func fetchLatestRevision() async throws -> RemoteModelRevision {
-        // blobs=true adds a published size per file, which is what makes comparing an
-        // untracked install possible without re-downloading it.
+        // blobs=true adds each file's size and content hashes, which is what lets the
+        // installed copies be checked without downloading them again.
         let url = URL(string: "https://huggingface.co/api/models/\(repositoryID)?blobs=true")!
 
         var request = URLRequest(url: url)
@@ -184,7 +157,7 @@ enum DiarizationModelStore {
         }
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sha = json["sha"] as? String else {
+              let siblings = json["siblings"] as? [[String: Any]] else {
             throw ModelStoreError.malformedResponse
         }
 
@@ -195,64 +168,54 @@ enum DiarizationModelStore {
         }
 
         var files: [String: RemoteFile] = [:]
-        if let siblings = json["siblings"] as? [[String: Any]] {
-            for entry in siblings {
-                guard let path = entry["rfilename"] as? String,
-                      let size = entry["size"] as? Int else { continue }
+        for entry in siblings {
+            guard let path = entry["rfilename"] as? String,
+                  let size = entry["size"] as? Int else { continue }
 
-                let lfs = entry["lfs"] as? [String: Any]
-                files[path] = RemoteFile(
-                    path: path,
-                    size: size,
-                    blobId: entry["blobId"] as? String,
-                    sha256: lfs?["sha256"] as? String
-                )
-            }
+            let lfs = entry["lfs"] as? [String: Any]
+            files[path] = RemoteFile(
+                path: path,
+                size: size,
+                blobId: entry["blobId"] as? String,
+                sha256: lfs?["sha256"] as? String
+            )
         }
 
-        return RemoteModelRevision(revision: sha, lastModified: lastModified, files: files)
+        return RemoteModelRevision(lastModified: lastModified, files: files)
     }
 
     /// Compare what is on disk against what the repository publishes.
     ///
-    /// When the recorded revision matches the head there is nothing to check. Otherwise
-    /// — including the common case of an install made before revisions were recorded —
-    /// every local file is checked against its published size.
-    ///
-    /// Size is not a checksum, and two different files can share one. Across a whole
-    /// model tree, though, every file matching is strong evidence the copies are the
-    /// published ones, and it beats deleting a working install to find out.
+    /// Every check hashes the installed files. A recorded revision used to stand in for
+    /// them once it matched the head, so a damaged weight file still checked out as
+    /// Verified.
     static func compareWithRemote() async throws -> ModelComparison {
         let remote = try await fetchLatestRevision()
 
-        if let installedRevision, installedRevision == remote.revision {
-            return .upToDate(revision: remote.revision, lastModified: remote.lastModified)
-        }
-
-        // Hashing 13 MB is quick but not instant, and this is called from the UI.
+        // Hashing 21 MB is quick but not instant, and this is called from the UI.
         let report = await Task.detached { verifyLocalFiles(against: remote.files) }.value
-        let changed = report.mismatched.count
 
         if report.isClean {
-            // The files are the published ones; adopt the revision so later checks
-            // take the fast path.
-            recordInstalledRevision(remote.revision)
-            return .upToDate(revision: remote.revision, lastModified: remote.lastModified)
+            return .upToDate(lastModified: remote.lastModified)
         }
 
         return .updateAvailable(
-            revision: remote.revision,
             lastModified: remote.lastModified,
-            changedFiles: changed
+            changedFiles: report.mismatched.count
         )
     }
 
-    /// Hash every installed file and compare it against what the repository publishes.
+    /// Check every published file FluidAudio loads against the repository's content hash;
+    /// a file missing from disk counts as a mismatch.
     ///
     /// File size was the first thing I reached for and it is not good enough: two
     /// different files can share a size, and a model can be retrained without changing
     /// its byte count at all. HuggingFace publishes real content hashes, so these are
     /// checked instead.
+    ///
+    /// The walk follows the published list rather than the folder on disk, so a file
+    /// the install lacks counts against it. The folder walk this replaced never met a
+    /// missing weight file, so it called that install clean.
     ///
     /// Two hash schemes, because the repository uses two. Model weights are stored in
     /// Git LFS and carry a plain SHA-256 of their contents. Everything else is an
@@ -260,33 +223,25 @@ enum DiarizationModelStore {
     /// — the size and null byte are part of what git hashes, not decoration.
     nonisolated static func verifyLocalFiles(against published: [String: RemoteFile]) -> VerificationReport {
         var report = VerificationReport()
-        guard !published.isEmpty else { return report }
 
-        let root = modelsDirectory
-        guard let enumerator = FileManager.default.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]
-        ) else { return report }
+        // The repository publishes more than FluidAudio downloads, so only the files
+        // it loads are checked.
+        let required = ModelNames.OfflineDiarizer.requiredModels
+        let loaded = published.values.filter { remote in
+            required.contains { remote.path == $0 || remote.path.hasPrefix($0 + "/") }
+        }
 
-        let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
-
-        for case let file as URL in enumerator {
+        for remote in loaded {
+            let file = modelsDirectory.appendingPathComponent(remote.path)
             let values = try? file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-            guard values?.isRegularFile == true, let localSize = values?.fileSize else { continue }
-
-            let relative = file.path.replacingOccurrences(of: prefix, with: "")
-
-            // FluidAudio writes files of its own alongside the downloaded ones; those
-            // are not the repository's to vouch for.
-            guard let remote = published[relative] else {
-                report.unlisted += 1
-                continue
-            }
 
             // Size is a free pre-filter. It cannot prove a match, but it does prove a
-            // mismatch, and it saves hashing a file that has already failed.
-            if remote.size != localSize {
-                report.mismatched.append(relative)
+            // mismatch, and it saves hashing a file that has already failed. A missing
+            // file fails here too.
+            guard values?.isRegularFile == true,
+                  let localSize = values?.fileSize,
+                  localSize == remote.size else {
+                report.mismatched.append(remote.path)
                 continue
             }
 
@@ -294,16 +249,14 @@ enum DiarizationModelStore {
                 if let expected = remote.sha256 {
                     let actual = try sha256Hex(of: file)
                     if actual == expected { report.verified += 1 }
-                    else { report.mismatched.append(relative) }
+                    else { report.mismatched.append(remote.path) }
                 } else if let expected = remote.blobId {
                     let actual = try gitBlobHex(of: file, size: localSize)
                     if actual == expected { report.verified += 1 }
-                    else { report.mismatched.append(relative) }
-                } else {
-                    report.unlisted += 1
+                    else { report.mismatched.append(remote.path) }
                 }
             } catch {
-                report.mismatched.append(relative)
+                report.mismatched.append(remote.path)
             }
         }
 
@@ -353,14 +306,12 @@ enum DiarizationModelStore {
     /// failed download puts them back instead of leaving no models at all.
     static func reinstall() async throws {
         let fileManager = FileManager.default
-        let previous = modelsRoot.appendingPathComponent("\(folderName).previous", isDirectory: true)
-        let previousRevision = installedRevision
+        let previous = modelsRoot.appendingPathComponent("\(Repo.diarizer.folderName).previous", isDirectory: true)
 
         try? fileManager.removeItem(at: previous)
         if fileManager.fileExists(atPath: modelsDirectory.path) {
             try fileManager.moveItem(at: modelsDirectory, to: previous)
         }
-        UserDefaults.standard.removeObject(forKey: installedRevisionKey)
 
         do {
             try await install()
@@ -369,37 +320,8 @@ enum DiarizationModelStore {
             try? fileManager.removeItem(at: modelsDirectory)
             if fileManager.fileExists(atPath: previous.path) {
                 try? fileManager.moveItem(at: previous, to: modelsDirectory)
-                if let previousRevision {
-                    recordInstalledRevision(previousRevision)
-                }
             }
             throw error
-        }
-    }
-
-    // MARK: - Unused Models
-
-    /// FluidAudio model folders Inscribe never loads.
-    ///
-    /// The library shares one cache across every model family it offers, so trying its
-    /// speech recognition once leaves hundreds of megabytes behind that nothing here
-    /// reads — Apple's SpeechTranscriber does the transcribing.
-    static func unusedModelFolders() -> [(name: String, size: Int64)] {
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: modelsRoot,
-            includingPropertiesForKeys: nil
-        )) ?? []
-
-        return contents
-            .filter { $0.hasDirectoryPath && $0.lastPathComponent != folderName }
-            .map { ($0.lastPathComponent, directorySize($0)) }
-            .filter { $0.1 > 0 }
-            .sorted { $0.1 > $1.1 }
-    }
-
-    static func removeUnusedModels() throws {
-        for folder in unusedModelFolders() {
-            try FileManager.default.removeItem(at: modelsRoot.appendingPathComponent(folder.name))
         }
     }
 
@@ -417,12 +339,6 @@ enum DiarizationModelStore {
             total += Int64(size)
         }
         return total
-    }
-
-    static func formatted(bytes: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
     }
 
     enum ModelStoreError: LocalizedError {

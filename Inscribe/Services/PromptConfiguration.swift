@@ -11,16 +11,6 @@ enum SamplingMode: Equatable, Hashable {
     case topP(Double)        // Sample from tokens within cumulative probability threshold
     case topK(Int)           // Sample from top K most likely tokens
 
-    /// Display name for the UI picker
-    var displayName: String {
-        switch self {
-        case .automatic: return "Automatic"
-        case .greedy: return "Greedy"
-        case .topP: return "Top-P"
-        case .topK: return "Top-K"
-        }
-    }
-
     /// Convert to a simple case tag for the picker (ignoring associated values)
     var caseTag: String {
         switch self {
@@ -90,11 +80,6 @@ struct Prompt: Identifiable, Codable, Equatable, Hashable {
     var temperature: Double
     var samplingMode: SamplingMode
 
-    /// No longer offered in Settings and never passed to the model — capping the
-    /// response length could cut a rewrite short mid-sentence. Kept only so a
-    /// prompt saved before this changed still decodes without error.
-    var maxResponseTokens: Int?
-
     /// Whether the prompt corrects the speaker's words rather than rewriting them.
     ///
     /// When set, `WordGuard` holds the model to it: any word the model drops comes
@@ -111,7 +96,6 @@ struct Prompt: Identifiable, Codable, Equatable, Hashable {
         isVisible: Bool = true,
         temperature: Double = 0.5,
         samplingMode: SamplingMode = .automatic,
-        maxResponseTokens: Int? = nil,
         keepsWords: Bool = false
     ) {
         self.id = id
@@ -122,7 +106,6 @@ struct Prompt: Identifiable, Codable, Equatable, Hashable {
         self.isVisible = isVisible
         self.temperature = temperature
         self.samplingMode = samplingMode
-        self.maxResponseTokens = maxResponseTokens
         self.keepsWords = keepsWords
     }
 
@@ -137,7 +120,6 @@ struct Prompt: Identifiable, Codable, Equatable, Hashable {
         isVisible = try container.decodeIfPresent(Bool.self, forKey: .isVisible) ?? true
         temperature = try container.decodeIfPresent(Double.self, forKey: .temperature) ?? 0.5
         samplingMode = try container.decodeIfPresent(SamplingMode.self, forKey: .samplingMode) ?? .automatic
-        maxResponseTokens = try container.decodeIfPresent(Int.self, forKey: .maxResponseTokens)
         keepsWords = try container.decodeIfPresent(Bool.self, forKey: .keepsWords) ?? false
     }
 
@@ -194,7 +176,7 @@ final class PromptConfiguration {
 
     static let builtInPrompts: [Prompt] = [
         Prompt(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            id: defaultPromptId,
             name: "Clean Up",
             systemPrompt: "You are an expert editor specializing in cleaning spoken transcriptions into polished written prose.",
             userTemplate: """
@@ -212,7 +194,7 @@ final class PromptConfiguration {
             isBuiltIn: true
         ),
         Prompt(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+            id: summarizePromptId,
             name: "Summarize",
             systemPrompt: "You are an expert summarizer specializing in distilling spoken transcriptions into concise, structured summaries.",
             userTemplate: """
@@ -282,7 +264,7 @@ final class PromptConfiguration {
             keepsWords: true
         ),
         Prompt(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+            id: rawPromptId,
             name: "Raw (No Processing)",
             systemPrompt: "",
             userTemplate: "",
@@ -295,6 +277,9 @@ final class PromptConfiguration {
 
     /// The default "Clean Up" prompt ID
     static let defaultPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
+    /// The built-in "Summarize" prompt ID
+    static let summarizePromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
 
     // MARK: - Initialization
 
@@ -339,20 +324,18 @@ final class PromptConfiguration {
     func updateGenerationSettings(
         promptId: UUID,
         temperature: Double,
-        samplingMode: SamplingMode,
-        maxResponseTokens: Int?
+        samplingMode: SamplingMode
     ) {
         guard let index = prompts.firstIndex(where: { $0.id == promptId }) else { return }
         prompts[index].temperature = temperature
         prompts[index].samplingMode = samplingMode
-        prompts[index].maxResponseTokens = maxResponseTokens
 
         if prompts[index].isBuiltIn {
             saveGenerationSettings()
         } else {
             savePrompts()
         }
-        Log.prompts.notice("Updated generation settings for: \(self.prompts[index].name)")
+        Log.prompts.debug("Updated generation settings for: \(self.prompts[index].name)")
     }
 
     /// Add a new custom prompt
@@ -366,7 +349,6 @@ final class PromptConfiguration {
             isVisible: prompt.isVisible,
             temperature: prompt.temperature,
             samplingMode: prompt.samplingMode,
-            maxResponseTokens: prompt.maxResponseTokens,
             keepsWords: prompt.keepsWords
         )
         prompts.append(newPrompt)
@@ -388,7 +370,7 @@ final class PromptConfiguration {
 
         prompts[index] = prompt
         savePrompts()
-        Log.prompts.notice("Updated prompt: \(prompt.name)")
+        Log.prompts.debug("Updated prompt: \(prompt.name)")
     }
 
     /// Delete a prompt (only custom prompts can be deleted)
@@ -434,7 +416,6 @@ final class PromptConfiguration {
             if let settings = savedGenSettings[prompt.id.uuidString] {
                 loadedPrompts[index].temperature = settings.temperature
                 loadedPrompts[index].samplingMode = settings.samplingMode
-                loadedPrompts[index].maxResponseTokens = settings.maxResponseTokens
             }
         }
 
@@ -488,7 +469,6 @@ final class PromptConfiguration {
     private struct StoredGenerationSettings: Codable {
         var temperature: Double
         var samplingMode: SamplingMode
-        var maxResponseTokens: Int?
     }
 
     private func saveGenerationSettings() {
@@ -496,8 +476,7 @@ final class PromptConfiguration {
         for prompt in prompts where prompt.isBuiltIn {
             settingsMap[prompt.id.uuidString] = StoredGenerationSettings(
                 temperature: prompt.temperature,
-                samplingMode: prompt.samplingMode,
-                maxResponseTokens: prompt.maxResponseTokens
+                samplingMode: prompt.samplingMode
             )
         }
         if let data = try? JSONEncoder().encode(settingsMap) {
@@ -519,7 +498,7 @@ final class PromptConfiguration {
 
             UserDefaults.standard.set(data, forKey: localKey)
 
-            Log.prompts.notice("Saved \(customPrompts.count, privacy: .public) custom prompts")
+            Log.prompts.debug("Saved \(customPrompts.count, privacy: .public) custom prompts")
         } catch {
             Log.prompts.error("Error encoding prompts: \(error, privacy: .public)")
         }

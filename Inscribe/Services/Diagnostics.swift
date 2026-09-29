@@ -33,10 +33,7 @@ enum Diagnostics {
     /// Settings window while it works.
     nonisolated static func recent(limit: Int = 200) throws -> [Entry] {
         let store = try OSLogStore(scope: .currentProcessIdentifier)
-        let start = store.position(date: Date().addingTimeInterval(-60 * 60))
-
         let entries = try store.getEntries(
-            at: start,
             matching: NSPredicate(format: "subsystem == %@", "com.inscribe.app")
         )
 

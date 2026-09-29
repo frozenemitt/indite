@@ -6,6 +6,7 @@ import SwiftData
 /// Recent dictations, so one that landed in the wrong window is recoverable.
 struct DictationHistoryView: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(RecordingCoordinator.self) private var coordinator
     @Environment(\.modelContext) private var modelContext
 
     @Query(sort: \Dictation.createdAt, order: .reverse) private var dictations: [Dictation]
@@ -21,15 +22,22 @@ struct DictationHistoryView: View {
         case original(PersistentIdentifier)
     }
 
+    /// Matches the original transcript as well as the delivered text: the user
+    /// remembers the words they said, which the AI may have rewritten.
     private var filtered: [Dictation] {
         let query = searchText.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return dictations }
-        return dictations.filter { $0.text.localizedCaseInsensitiveContains(query) }
+        return dictations.filter {
+            $0.text.localizedStandardContains(query)
+                || ($0.rawText?.localizedStandardContains(query) ?? false)
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if !settings.keepDictationHistory {
+            // The banner shows only while older entries are still listed. With none
+            // left, the empty state below already says that history is off.
+            if !settings.keepDictationHistory && !dictations.isEmpty {
                 Label("History is switched off in Settings, so nothing new is being kept.",
                       systemImage: "exclamationmark.circle")
                     .font(.caption)
@@ -40,15 +48,30 @@ struct DictationHistoryView: View {
             }
 
             if dictations.isEmpty {
-                ContentUnavailableView(
-                    "No Dictations Yet",
-                    systemImage: "text.quote",
-                    description: Text("Finished dictations appear here, so one that goes to the wrong window is not lost.")
-                )
+                if settings.keepDictationHistory {
+                    ContentUnavailableView(
+                        "No Dictations Yet",
+                        systemImage: "clock.arrow.circlepath",
+                        description: Text("Finished dictations appear here.")
+                    )
+                } else {
+                    ContentUnavailableView {
+                        Label("History Is Off", systemImage: "clock.arrow.circlepath")
+                    } description: {
+                        Text("Turn on \u{201C}Keep recent dictations\u{201D} in Settings.")
+                    } actions: {
+                        SettingsLink {
+                            Text("Open Settings\u{2026}")
+                        }
+                    }
+                }
+            } else if filtered.isEmpty {
+                ContentUnavailableView.search(text: searchText)
             } else {
                 list
             }
         }
+        .frame(minWidth: 480, minHeight: 320)
         .navigationTitle("Dictation History")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search dictations")
         .toolbar {
@@ -58,7 +81,7 @@ struct DictationHistoryView: View {
                 }
                 .disabled(dictations.isEmpty)
                 .confirmationDialog(
-                    "Delete all \(dictations.count) dictations?",
+                    dictations.count == 1 ? "Delete 1 dictation?" : "Delete all \(dictations.count) dictations?",
                     isPresented: $isConfirmingClearAll,
                     titleVisibility: .visible
                 ) {
@@ -76,6 +99,9 @@ struct DictationHistoryView: View {
     private var list: some View {
         List {
             ForEach(filtered) { dictation in
+                let countLabel = dictation.characterCount == 1
+                    ? "1 character" : "\(dictation.characterCount) characters"
+
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         timestamp(for: dictation)
@@ -103,6 +129,8 @@ struct DictationHistoryView: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .monospacedDigit()
+                            .help(countLabel)
+                            .accessibilityLabel(countLabel)
                     }
 
                     Text(dictation.text)
@@ -148,8 +176,10 @@ struct DictationHistoryView: View {
                             modelContext.delete(dictation)
                             modelContext.saveOrLog()
                         } label: {
-                            Image(systemName: "trash")
+                            Label("Delete", systemImage: "trash")
+                                .labelStyle(.iconOnly)
                         }
+                        .help("Delete this dictation")
                     }
                     .buttonStyle(.borderless)
                     .font(.caption)
@@ -182,32 +212,30 @@ struct DictationHistoryView: View {
         }
     }
 
-    /// Send it to whatever has focus now.
+    /// Send it to the app the user was in before coming to this window.
     ///
     /// Deliberately not the app it originally went to: the point is usually that the
-    /// first destination was wrong.
+    /// first destination was wrong. Not the frontmost app either, which is Inscribe
+    /// itself, whose focused field is this window's search box.
     private func insert(_ dictation: Dictation) {
         Task {
-            // Step out of the way first. While this window is frontmost the focused
-            // text field is Inscribe's own search box, which is where the text used
-            // to land.
-            NSApp.hide(nil)
-            try? await Task.sleep(for: .milliseconds(250))
-
+            // deliver brings the target in front of this window and waits until it is
+            // there. Hiding Inscribe first, as this used to, also hid the meeting
+            // indicator and guessed at how long the next app took to come forward.
             let outcome = await TextInsertionService.deliver(
                 dictation.text,
-                targetApp: NSWorkspace.shared.frontmostApplication,
+                targetApp: coordinator.appInFront,
                 restoreClipboard: settings.restoreClipboardAfterPaste,
                 autoSubmit: false
             )
 
-            // Reported as a notification rather than in-window text: hiding
-            // Inscribe above is what let the insert reach another app's text
-            // field in the first place, so a banner drawn in this window would
-            // report the outcome somewhere the user is no longer looking.
-            let destination: String? = switch outcome {
+            // Reported as a notification rather than in-window text: the target app
+            // is now in front of this window, so a banner drawn here would report the
+            // outcome somewhere the user is no longer looking. "Clipboard" makes the
+            // notification say the text was copied, so the user knows to paste it.
+            let destination = switch outcome {
             case .inserted(let appName): appName
-            case .copiedToClipboard: nil
+            case .copiedToClipboard: "Clipboard"
             }
             NotificationService.shared.showTranscriptionCompleteIfEnabled(
                 characterCount: dictation.text.count,

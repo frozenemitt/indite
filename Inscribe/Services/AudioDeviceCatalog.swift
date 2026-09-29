@@ -10,7 +10,6 @@ struct AudioInputDevice: Identifiable, Hashable, Sendable {
     /// device renames, unlike the numeric AudioDeviceID.
     let uid: String
     let name: String
-    let deviceID: AudioDeviceID
 
     var id: String { uid }
 
@@ -21,16 +20,16 @@ struct AudioInputDevice: Identifiable, Hashable, Sendable {
 /// Lists the microphones available to record from.
 enum AudioDeviceCatalog {
 
-    /// Every device that has at least one input channel.
+    /// Every device that has at least one input channel, except private ones.
     static func inputDevices() -> [AudioInputDevice] {
         allDeviceIDs()
-            .filter { hasInputChannels($0) }
+            .filter { hasInputChannels($0) && !isPrivateAggregate($0) }
             .compactMap { id in
                 guard let uid = stringProperty(kAudioDevicePropertyDeviceUID, for: id),
                       let name = stringProperty(kAudioObjectPropertyName, for: id) else {
                     return nil
                 }
-                return AudioInputDevice(uid: uid, name: name, deviceID: id)
+                return AudioInputDevice(uid: uid, name: name)
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
@@ -56,6 +55,61 @@ enum AudioDeviceCatalog {
         )
         guard status == noErr else { return "System Default" }
         return stringProperty(kAudioObjectPropertyName, for: deviceID) ?? "System Default"
+    }
+
+    /// Yields whenever a device is added or removed, or the default input changes.
+    ///
+    /// The listener is a C function with a context pointer, not a block. On this system
+    /// the block API does not remove a listener: a removed block keeps firing, even when
+    /// the same block constant goes to both calls. The removal still returns noErr. The
+    /// same function and context in both calls let the HAL match the removal.
+    static func changes() -> AsyncStream<Void> {
+        AsyncStream { continuation in
+            let sink = ChangeSink(continuation)
+            let context = Unmanaged.passUnretained(sink).toOpaque()
+            let system = AudioObjectID(kAudioObjectSystemObject)
+            let selectors = [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice]
+
+            for selector in selectors {
+                var address = AudioObjectPropertyAddress(
+                    mSelector: selector,
+                    mScope: kAudioObjectPropertyScopeGlobal,
+                    mElement: kAudioObjectPropertyElementMain
+                )
+                AudioObjectAddPropertyListener(system, &address, ChangeSink.proc, context)
+            }
+
+            // Capturing `sink` here keeps it alive until its listeners are gone.
+            continuation.onTermination = { _ in
+                for selector in selectors {
+                    var address = AudioObjectPropertyAddress(
+                        mSelector: selector,
+                        mScope: kAudioObjectPropertyScopeGlobal,
+                        mElement: kAudioObjectPropertyElementMain
+                    )
+                    AudioObjectRemovePropertyListener(
+                        system, &address, ChangeSink.proc, Unmanaged.passUnretained(sink).toOpaque()
+                    )
+                }
+            }
+        }
+    }
+
+    /// Carries a stream's continuation to the listener function through its context pointer.
+    ///
+    /// The HAL calls `proc` on its own notification thread. `yield` is thread-safe, and
+    /// the stream's consumer resumes on its own actor.
+    private final class ChangeSink: Sendable {
+        let continuation: AsyncStream<Void>.Continuation
+
+        init(_ continuation: AsyncStream<Void>.Continuation) {
+            self.continuation = continuation
+        }
+
+        static let proc: AudioObjectPropertyListenerProc = { _, _, _, context in
+            Unmanaged<ChangeSink>.fromOpaque(context!).takeUnretainedValue().continuation.yield()
+            return noErr
+        }
     }
 
     /// Resolve a UID straight to a device id.
@@ -111,6 +165,28 @@ enum AudioDeviceCatalog {
         ) == noErr else { return [] }
 
         return ids
+    }
+
+    /// Whether a device is an aggregate that exists only inside this app.
+    ///
+    /// Core Audio builds one as soon as the app records, named
+    /// "CADefaultDeviceAggregate-<pid>-0", pairing the default microphone with the
+    /// default speakers; the meeting input is another. Both were listed as
+    /// microphones. Picking the first saved a device that is gone by the next launch,
+    /// so recording quietly fell back to the system default.
+    private static func isPrivateAggregate(_ deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioAggregateDevicePropertyComposition,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var composition: Unmanaged<CFDictionary>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFDictionary>?>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &composition) == noErr,
+              let dictionary = composition?.takeRetainedValue() as? [String: Any] else {
+            return false
+        }
+        return (dictionary[kAudioAggregateDeviceIsPrivateKey] as? Int) == 1
     }
 
     /// A device is an input if its input scope reports any channels at all.

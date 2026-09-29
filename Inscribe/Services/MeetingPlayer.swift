@@ -20,15 +20,15 @@ final class MeetingPlayer {
     // timer, so the opt-out sits on the property rather than the whole class.
     nonisolated(unsafe) private var ticker: Timer?
 
-    /// File currently loaded, so switching meetings reloads rather than replaying.
+    /// The recording that opened, or nil. A repeated load of the same file does nothing,
+    /// and the transcript offers playback only while this is set.
     private(set) var loadedFileName: String?
 
     private(set) var isPlaying = false
     private(set) var currentTime: TimeInterval = 0
-    private(set) var duration: TimeInterval = 0
     private(set) var lastError: String?
 
-    /// The utterance being played, for highlighting it.
+    /// The utterance being played or paused in, for highlighting it.
     ///
     /// Worked out once per tick here and changed only when playback moves into another
     /// utterance. Each line used to compare itself against `currentTime`, so every line
@@ -45,8 +45,12 @@ final class MeetingPlayer {
     // MARK: - Loading
 
     /// Load a meeting's recording, doing nothing if it is already loaded.
+    ///
+    /// The file opens off the main thread, so a long recording does not stall the
+    /// window. A load whose task was cancelled, because the page went away, installs
+    /// no player and reports no error.
     @discardableResult
-    func load(fileName: String?) -> Bool {
+    func load(fileName: String?) async -> Bool {
         guard let fileName, MeetingAudioStore.fileExists(named: fileName) else {
             unload()
             return false
@@ -57,28 +61,36 @@ final class MeetingPlayer {
         stop()
 
         do {
-            let player = try AVAudioPlayer(contentsOf: MeetingAudioStore.url(forFileNamed: fileName))
-            player.prepareToPlay()
+            let player = try await Self.open(MeetingAudioStore.url(forFileNamed: fileName))
+            guard !Task.isCancelled else { return false }
 
             self.player = player
             loadedFileName = fileName
-            duration = player.duration
             currentTime = 0
             lastError = nil
             return true
         } catch {
-            lastError = error.localizedDescription
+            if !Task.isCancelled {
+                lastError = error.localizedDescription
+            }
             Self.log.error("Could not open the recording: \(error, privacy: .public)")
             unload()
             return false
         }
     }
 
+    /// Open a recording on the concurrent pool rather than the caller's actor.
+    @concurrent
+    nonisolated static func open(_ url: URL) async throws -> sending AVAudioPlayer {
+        let player = try AVAudioPlayer(contentsOf: url)
+        player.prepareToPlay()
+        return player
+    }
+
     func unload() {
         stop()
         player = nil
         loadedFileName = nil
-        duration = 0
         currentTime = 0
     }
 
@@ -86,10 +98,13 @@ final class MeetingPlayer {
 
     /// Take the utterances to highlight as playback reaches them.
     ///
-    /// Given at each press of play, so corrections made since, such as a split line,
-    /// are followed from then on.
+    /// Given at each press of play and again after each correction, because a join
+    /// deletes the line under the playhead and a split hands part of it to a new line.
+    /// The highlight is worked out again at once, since while paused no tick comes to
+    /// do it.
     func follow(_ utterances: [Utterance]) {
         cues = utterances.map { ($0.persistentModelID, $0.start, $0.end) }
+        updatePlayingUtterance()
     }
 
     func play() {
@@ -116,10 +131,6 @@ final class MeetingPlayer {
         stopTicking()
     }
 
-    func togglePlayPause() {
-        isPlaying ? pause() : play()
-    }
-
     /// Jump to a point in the recording, clamped to its length.
     ///
     /// Timestamps come from the transcript, which can run a fraction past the audio on
@@ -137,18 +148,15 @@ final class MeetingPlayer {
         play()
     }
 
-    /// Find the utterance playback is inside, and publish it only if it changed.
-    ///
-    /// Assigning an observed property notifies its readers even when the value is the
-    /// same, so the comparison is what keeps the transcript still between utterances.
+    /// Find the utterance playback is inside.
     private func updatePlayingUtterance() {
         let time = currentTime
-        let playing = isPlaying
+        // Kept through a pause, so the paused line stays marked and keeps its
+        // scrubber. Cleared only when playback is stopped back to the start.
+        let playing = isPlaying || time > 0
             ? cues.first { time >= $0.start && time < $0.end }?.id
             : nil
-        if playing != playingUtteranceID {
-            playingUtteranceID = playing
-        }
+        playingUtteranceID = playing
     }
 
     // MARK: - Progress
@@ -157,8 +165,8 @@ final class MeetingPlayer {
         stopTicking()
 
         // Four times a second: enough for the highlight to track speech, cheap enough
-        // to leave running while a long meeting plays. Only the playback bar reads the
-        // time; the transcript hears about a tick only when the utterance changes.
+        // to leave running while a long meeting plays. The transcript hears about a
+        // tick only when the utterance changes.
         ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -178,10 +186,5 @@ final class MeetingPlayer {
             stopTicking()
         }
         updatePlayingUtterance()
-    }
-
-    static func timeLabel(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds)
-        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }

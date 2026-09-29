@@ -10,15 +10,9 @@ import Carbon.HIToolbox
 enum TextInsertionOutcome: Sendable, Equatable {
     /// Typed into the text field that had focus, naming the app that received it.
     case inserted(appName: String)
-    /// No text field had focus, so the text went to the clipboard instead.
-    case copiedToClipboard(reason: ClipboardReason)
-
-    enum ClipboardReason: Sendable, Equatable {
-        case noFocusedTextField
-        case accessibilityNotTrusted
-        case insertionFailed
-        case userPreference
-    }
+    /// The text could not be typed into a focused field, so it went to the clipboard
+    /// instead. The log says why.
+    case copiedToClipboard
 }
 
 /// Writes transcribed text into whatever text field currently has focus, falling
@@ -146,12 +140,13 @@ enum TextInsertionService {
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)
     }
 
-    /// Deliver `text` to the frontmost app, or to the clipboard if no field is focused.
+    /// Deliver `text` into the focused field of `targetApp`, or to the clipboard when that is not possible.
     ///
     /// - Parameters:
     ///   - text: The transcribed text.
     ///   - targetApp: The app the text is for: the one in front when the text is
-    ///     ready, or the one before Inscribe when Inscribe is in front.
+    ///     ready, or the one before Inscribe when Inscribe is in front. Nil when no
+    ///     app outside Inscribe is known; the text then goes to the clipboard only.
     ///   - restoreClipboard: Put the previous clipboard contents back after pasting.
     ///   - autoSubmit: Press a Return key after inserting.
     ///   - submitUsesShift: Send Shift+Return instead of Return, so chat apps add a
@@ -160,7 +155,7 @@ enum TextInsertionService {
     @discardableResult
     static func deliver(
         _ text: String,
-        targetApp: NSRunningApplication? = nil,
+        targetApp: NSRunningApplication?,
         restoreClipboard: Bool = true,
         autoSubmit: Bool = false,
         submitUsesShift: Bool = false,
@@ -168,13 +163,22 @@ enum TextInsertionService {
     ) async -> TextInsertionOutcome {
 
         guard !text.isEmpty else {
-            return .copiedToClipboard(reason: .insertionFailed)
+            return .copiedToClipboard
         }
 
         guard AccessibilityPermission.isTrusted else {
             log.error("Not trusted for Accessibility — clipboard only")
             ClipboardService.copy(text)
-            return .copiedToClipboard(reason: .accessibilityNotTrusted)
+            return .copiedToClipboard
+        }
+
+        // With no app to aim at, the system-wide focused field is Inscribe's own, such
+        // as the History search box, and ⌘V pasted into Inscribe's window.
+        guard let targetApp else {
+            log.notice("No app to type into — clipboard only")
+            lastInsertion = nil
+            ClipboardService.copy(text)
+            return .copiedToClipboard
         }
 
         await restoreFocusIfNeeded(to: targetApp)
@@ -184,11 +188,11 @@ enum TextInsertionService {
 
         guard let field = await awaitFocusedTextElement(in: targetApp) else {
             log.notice("""
-                No focused text field in \(targetApp?.localizedName ?? "target", privacy: .public) \
+                No focused text field in \(targetApp.localizedName ?? "target", privacy: .public) \
                 — falling back to clipboard
                 """)
             ClipboardService.copy(text)
-            return .copiedToClipboard(reason: .noFocusedTextField)
+            return .copiedToClipboard
         }
 
         let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "the frontmost app"
@@ -201,14 +205,14 @@ enum TextInsertionService {
         // The field was found by asking the target app, but ⌘V goes to whatever app is
         // in front. macOS can refuse the activation above, and the text then landed in
         // the app the user had moved on to — a Mail draft instead of a Slack reply.
-        if let targetApp, NSWorkspace.shared.frontmostApplication?.processIdentifier != targetApp.processIdentifier {
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != targetApp.processIdentifier {
             log.error("""
                 \(targetApp.localizedName ?? "The target app", privacy: .public) is not in front \
                 — leaving the transcript on the clipboard instead of pasting into \
                 \(appName, privacy: .public)
                 """)
             ClipboardService.copy(text)
-            return .copiedToClipboard(reason: .insertionFailed)
+            return .copiedToClipboard
         }
 
         let previousClipboard = restoreClipboard ? ClipboardService.snapshot() : nil
@@ -222,9 +226,12 @@ enum TextInsertionService {
         // it straight after the write in 30 of 30 tries. So ⌘V goes at once.
         let pasteChange = ClipboardService.copy(addSpace ? text + " " : text, transient: restoreClipboard)
 
+        // Kept for the log only: the app that actually receives the ⌘V.
+        let frontAtPaste = NSWorkspace.shared.frontmostApplication
+
         guard postPasteKeystroke() else {
             log.error("Could not post ⌘V — text left on the clipboard")
-            return .copiedToClipboard(reason: .insertionFailed)
+            return .copiedToClipboard
         }
 
         guard await pasteLanded(in: field, changedFrom: fieldBeforePaste) else {
@@ -236,8 +243,21 @@ enum TextInsertionService {
             // Lengths and a yes-or-no, never the text itself. Whether the transcript is
             // now in the field is the whole question, and it decides whether a fix
             // belongs in the pasting or in the checking.
+            //
+            // The element that has focus now is described and read too. A paste into a
+            // different element than the one watched looks exactly like a paste that
+            // went nowhere. In 2 of 49 dictations into Claude, the watched field stayed
+            // empty with its caret at 0 for the whole wait.
             let after = state(of: field)
             let landed = after.text?.contains(text) ?? false
+            let focusedNow = frontAtPaste.flatMap {
+                copyFocusedElement(of: AXUIElementCreateApplication($0.processIdentifier))
+            }
+            let sameElement = focusedNow.map { CFEqual($0, field) } ?? false
+            let focusedNowText = focusedNow.flatMap { state(of: $0).text }
+            let landedInFocused = focusedNowText?.contains(text) ?? false
+            let watched = describe(field)
+            let focused = focusedNow.map { describe($0) } ?? "nothing"
             log.error("""
                 ⌘V did nothing in \(appName, privacy: .public) \
                 — leaving the transcript on the clipboard. \
@@ -245,9 +265,15 @@ enum TextInsertionService {
                 now \(after.text?.count ?? -1, privacy: .public); \
                 caret \(fieldBeforePaste.caret ?? -1, privacy: .public) → \
                 \(after.caret ?? -1, privacy: .public); \
-                transcript present: \(landed, privacy: .public)
+                transcript present: \(landed, privacy: .public). \
+                Watched \(watched, privacy: .public); \
+                in front at ⌘V: \(frontAtPaste?.localizedName ?? "nothing", privacy: .public); \
+                focused now \(focused, privacy: .public), \
+                same element: \(sameElement, privacy: .public), \
+                \(focusedNowText?.count ?? -1, privacy: .public) chars, \
+                transcript present: \(landedInFocused, privacy: .public)
                 """)
-            return .copiedToClipboard(reason: .insertionFailed)
+            return .copiedToClipboard
         }
 
         if autoSubmit {
@@ -267,7 +293,10 @@ enum TextInsertionService {
             }
         }
 
-        if let app = NSWorkspace.shared.frontmostApplication {
+        // Not undoable once Return has been pressed. A chat app has already sent the
+        // message, so its ⌘Z would undo some earlier edit instead; after Shift+Return
+        // it would take back the line break and leave the text.
+        if !autoSubmit, let app = NSWorkspace.shared.frontmostApplication {
             lastInsertion = LastInsertion(
                 text: text,
                 appName: appName,
@@ -463,6 +492,19 @@ enum TextInsertionService {
         return false
     }
 
+    /// Role, subrole and identifiers, which tell two elements apart in the log without
+    /// reading anything the user typed. A dash marks an attribute the element lacks.
+    private static func describe(_ element: AXUIElement) -> String {
+        [
+            kAXRoleAttribute as String,
+            kAXSubroleAttribute as String,
+            kAXIdentifierAttribute as String,
+            "AXDOMIdentifier"
+        ]
+        .map { (copyAttribute(element, $0) as? String) ?? "-" }
+        .joined(separator: " ")
+    }
+
     private static func copyAttribute(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
@@ -507,7 +549,9 @@ enum TextInsertionService {
             if NSEvent.modifierFlags.intersection(interesting).isEmpty { return }
             try? await Task.sleep(for: .milliseconds(20))
         }
-        log.debug("Modifiers still held after 500ms, pasting anyway")
+        // Notice rather than debug, which the log does not keep: a keystroke posted
+        // under held modifiers is one explanation for a paste that never lands.
+        log.notice("Modifiers still held after 500ms, pasting anyway")
     }
 
     @discardableResult

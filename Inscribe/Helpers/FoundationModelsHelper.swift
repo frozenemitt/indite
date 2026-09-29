@@ -30,40 +30,20 @@ class FoundationModelsHelper {
         return LanguageModelSession(model: permissiveModel, instructions: instructions)
     }
 
-    /// Creates a session with tools using permissive guardrails
-    /// - Parameters:
-    ///   - instructions: The system instructions for the session
-    ///   - tools: Array of tools to make available to the session
-    /// - Returns: A configured LanguageModelSession with tools
-    static func createSession<T: Tool>(instructions: String, tools: [T]) -> LanguageModelSession {
-        return LanguageModelSession(model: permissiveModel, tools: tools, instructions: instructions)
-    }
-
     // MARK: - Text Generation
 
-    /// Generate text response with automatic error handling
+    /// Generate a plain-text response
     /// - Parameters:
     ///   - session: The language model session
     ///   - prompt: The user prompt
-    ///   - options: Optional generation options for controlling sampling
+    ///   - options: Generation options for controlling sampling
     /// - Returns: Generated text content
-    /// - Throws: FoundationModelsError for handled errors
     static func generateText(
         session: LanguageModelSession,
         prompt: String,
-        options: GenerationOptions? = nil
+        options: GenerationOptions
     ) async throws -> String {
-        do {
-            let response: LanguageModelSession.Response<String>
-            if let options = options {
-                response = try await session.respond(to: prompt, options: options)
-            } else {
-                response = try await session.respond(to: prompt)
-            }
-            return response.content
-        } catch {
-            throw mapGenerationError(error)
-        }
+        try await session.respond(to: prompt, options: options).content
     }
 
     /// Generate structured output using Generable types
@@ -71,26 +51,15 @@ class FoundationModelsHelper {
     ///   - session: The language model session
     ///   - prompt: The user prompt
     ///   - type: The Generable type to generate
-    ///   - options: Optional generation options
+    ///   - options: Generation options for controlling sampling
     /// - Returns: An instance of the specified Generable type
-    /// - Throws: FoundationModelsError for handled errors
     static func generateStructured<T: Generable>(
         session: LanguageModelSession,
         prompt: String,
         generating type: T.Type,
-        options: GenerationOptions? = nil
+        options: GenerationOptions
     ) async throws -> T {
-        do {
-            let response: LanguageModelSession.Response<T>
-            if let options = options {
-                response = try await session.respond(to: prompt, generating: type, options: options)
-            } else {
-                response = try await session.respond(to: prompt, generating: type)
-            }
-            return response.content
-        } catch {
-            throw mapGenerationError(error)
-        }
+        try await session.respond(to: prompt, generating: type, options: options).content
     }
 
     /// Generate the rewritten transcript, handing each partial version to `onPartial`
@@ -105,40 +74,17 @@ class FoundationModelsHelper {
         options: GenerationOptions,
         onPartial: @MainActor (String) -> Void
     ) async throws -> TranscriptionResult {
-        do {
-            let stream = session.streamResponse(to: prompt, generating: TranscriptionResult.self, options: options)
-            for try await snapshot in stream {
-                if let partial = snapshot.content.text, !partial.isEmpty {
-                    onPartial(partial)
-                }
+        let stream = session.streamResponse(to: prompt, generating: TranscriptionResult.self, options: options)
+        for try await snapshot in stream {
+            // A pass the deadline cancelled stops here, even if the stream goes on
+            // yielding. Otherwise the old rewrite kept streaming into the next
+            // dictation's panel.
+            try Task.checkCancellation()
+            if let partial = snapshot.content.text, !partial.isEmpty {
+                onPartial(partial)
             }
-            return try await stream.collect().content
-        } catch {
-            throw mapGenerationError(error)
         }
-    }
-
-    /// Translate whatever the framework threw into our own error type.
-    ///
-    /// The minimum target is macOS 27, where guardrail, context-window and language
-    /// failures throw the top-level `LanguageModelError` rather than the older,
-    /// now-deprecated `LanguageModelSession.GenerationError` — so only the new type
-    /// needs mapping here.
-    private static func mapGenerationError(_ error: any Error) -> FoundationModelsError {
-        guard let error = error as? LanguageModelError else {
-            return .generationFailed(error)
-        }
-
-        switch error {
-        case .contextSizeExceeded:
-            return .contextWindowExceeded
-        case .unsupportedLanguageOrLocale:
-            return .unsupportedLanguage
-        case .guardrailViolation:
-            return .guardrailViolation
-        default:
-            return .generationFailed(error)
-        }
+        return try await stream.collect().content
     }
 
     // MARK: - Guardrail Recovery
@@ -151,27 +97,20 @@ class FoundationModelsHelper {
     /// once asked for free text instead. Builds a fresh session with the same
     /// instructions rather than reusing the failed one, since the refusal is now
     /// part of that session's transcript and would colour every turn after it.
-    /// - Returns: The model's text, with a leading commentary line (e.g. "Here is
-    ///   the rewritten text:") stripped if the model added one.
+    ///
+    /// The answer is returned as written. Measured on the macOS 27 model, 21
+    /// plain-text retries of seven guardrail-refused Clean Up and Summarize
+    /// requests, and 143 other plain-text answers, never opened with a preamble
+    /// such as "Here is the text:". A first line ending in a colon was always the
+    /// user's own content, like "Agenda for tomorrow:", so stripping one would
+    /// delete real text.
     static func generateTextAfterGuardrailViolation(
         instructions: String,
         prompt: String,
-        options: GenerationOptions? = nil
+        options: GenerationOptions
     ) async throws -> String {
         let session = createSession(instructions: instructions)
-        let text = try await generateText(session: session, prompt: prompt, options: options)
-        return strippingLeadingCommentaryLine(from: text)
-    }
-
-    /// Drop a first line like "Here is the text:" that a model sometimes adds
-    /// before the actual content when it is answering as free text rather than
-    /// through the schema that would otherwise forbid commentary.
-    private static func strippingLeadingCommentaryLine(from text: String) -> String {
-        guard let newlineIndex = text.firstIndex(of: "\n") else { return text }
-        let firstLine = text[text.startIndex..<newlineIndex].trimmingCharacters(in: .whitespaces)
-        guard firstLine.hasSuffix(":") else { return text }
-        return text[text.index(after: newlineIndex)...]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await generateText(session: session, prompt: prompt, options: options)
     }
 
     // MARK: - Language Support
@@ -185,12 +124,6 @@ class FoundationModelsHelper {
     /// - Returns: True if the current locale is supported
     static func isCurrentLocaleSupported() -> Bool {
         permissiveModel.supportsLocale()
-    }
-
-    /// Get all supported languages
-    /// - Returns: Array of supported languages
-    static func getSupportedLanguages() -> [Locale.Language] {
-        return Array(permissiveModel.supportedLanguages)
     }
 
     // MARK: - Model Availability
@@ -220,30 +153,4 @@ class FoundationModelsHelper {
         }
     }
 
-}
-
-// MARK: - Error Types
-
-/// Custom error types for Foundation Models operations
-enum FoundationModelsError: LocalizedError {
-    case contextWindowExceeded
-    case unsupportedLanguage
-    case noContent
-    case guardrailViolation
-    case generationFailed(any Error)
-
-    var errorDescription: String? {
-        switch self {
-        case .contextWindowExceeded:
-            return "The conversation has become too long. Please start a new session."
-        case .unsupportedLanguage:
-            return "The current language or locale is not supported by Foundation Models."
-        case .noContent:
-            return "No content available to enhance. Please record or add some text first."
-        case .guardrailViolation:
-            return "The on-device model refused to process this content due to Apple's built-in safety restrictions. Your original transcription is preserved — try the Raw (No Processing) prompt instead."
-        case .generationFailed(let error):
-            return "Failed to generate content: \(error.localizedDescription)"
-        }
-    }
 }

@@ -3,19 +3,10 @@ import SwiftData
 import UniformTypeIdentifiers
 import Combine
 
-// MARK: - Settings View (Cross-Platform)
+// MARK: - Settings View
 
 struct SettingsView: View {
     var body: some View {
-        #if os(macOS)
-        macOSSettings
-        #else
-        iOSSettings
-        #endif
-    }
-
-    #if os(macOS)
-    private var macOSSettings: some View {
         TabView {
             GeneralSettingsView()
                 .tabItem {
@@ -59,39 +50,7 @@ struct SettingsView: View {
         }
         .frame(minWidth: 520, idealWidth: 640, maxWidth: .infinity,
                minHeight: 420, idealHeight: 520, maxHeight: .infinity)
-        .onAppear {
-            // Bring Settings window to front — menu bar apps don't auto-activate
-            NSApp.activate()
-        }
     }
-    #endif
-
-    #if os(iOS)
-    private var iOSSettings: some View {
-        NavigationStack {
-            List {
-                NavigationLink {
-                    GeneralSettingsView()
-                } label: {
-                    Label("General", systemImage: "gear")
-                }
-
-                NavigationLink {
-                    PromptsSettingsView()
-                } label: {
-                    Label("Prompts", systemImage: "text.bubble")
-                }
-
-                NavigationLink {
-                    AboutSettingsView()
-                } label: {
-                    Label("About", systemImage: "info.circle")
-                }
-            }
-            .navigationTitle("Settings")
-        }
-    }
-    #endif
 }
 
 // MARK: - General Settings
@@ -100,9 +59,7 @@ struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(PromptConfiguration.self) private var promptConfig
     @Environment(\.modelContext) private var modelContext
-    #if os(macOS)
     @Environment(GlobalHotkeyMonitor.self) private var hotkeyMonitor
-    #endif
 
     @State private var isConfirmingReset = false
 
@@ -111,52 +68,59 @@ struct GeneralSettingsView: View {
 
         Form {
             Section("AI Processing") {
-                Toggle("Enable AI Processing", isOn: $settings.aiEnabled)
+                Toggle("Enable AI processing", isOn: $settings.aiEnabled)
 
                 if settings.aiEnabled {
                     if let reason = AIProcessor.unavailabilityReason {
-                        Label(reason, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                        Label {
+                            Text(reason)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.caption)
                     }
 
-                    Picker("Default Prompt", selection: $settings.selectedPromptId) {
-                        Text("Clean Up (Default)").tag(nil as UUID?)
-                        // The default prompt is already the "Clean Up (Default)" row
-                        // above; listing it again here under its own name duplicated
-                        // "Clean Up" in the picker.
-                        ForEach(promptConfig.prompts.filter { $0.id != PromptConfiguration.defaultPromptId }) { prompt in
-                            Text(prompt.name).tag(prompt.id as UUID?)
+                    // Nil and the default's own id both mean Clean Up. The menu bar
+                    // stores the id when Clean Up is picked there, which a separate row
+                    // for nil could not show, so the picker went blank.
+                    Picker("Default Prompt", selection: Binding(
+                        get: { settings.selectedPromptId ?? PromptConfiguration.defaultPromptId },
+                        set: { settings.selectedPromptId = $0 }
+                    )) {
+                        ForEach(promptConfig.prompts) { prompt in
+                            Text(prompt.name).tag(prompt.id)
                         }
                     }
 
                     Text("Uses Apple's on-device AI model. Your data never leaves your device.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-            }
 
-            Section("Behavior") {
-                #if os(iOS)
-                // macOS decides this on the Output tab, where the insert-or-copy
-                // choice lives; two controls for one behaviour is one too many.
-                Toggle("Copy to clipboard automatically", isOn: $settings.copyToClipboardAutomatically)
-                #endif
-                Toggle("Play feedback sounds", isOn: $settings.playFeedbackSounds)
-                Toggle("Play sound during AI processing", isOn: $settings.playProcessingIndicator)
+                    Toggle("Let the AI see what is already in the field", isOn: $settings.useSurroundingContext)
+
+                    Text("Reads the text around your cursor and gives it to the AI as background, so a dictated reply matches the thread it belongs to. It is marked as context to read, not text to rewrite. Uses the Accessibility access Inscribe already has.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Dictation History") {
                 Toggle("Keep recent dictations", isOn: $settings.keepDictationHistory)
 
                 if settings.keepDictationHistory {
-                    Stepper(value: $settings.dictationHistoryLimit, in: 10...500, step: 10) {
-                        Text("Keep the last \(settings.dictationHistoryLimit)")
-                            .monospacedDigit()
+                    Picker("Keep the last", selection: $settings.dictationHistoryLimit) {
+                        // The stored limit joins the list when it is not on it. The
+                        // stepper saved any multiple of 10, and a menu with no entry
+                        // for the value in force shows a blank title.
+                        ForEach(Set([25, 50, 100, 250, 500, settings.dictationHistoryLimit]).sorted(), id: \.self) { limit in
+                            Text("\(limit)").tag(limit)
+                        }
                     }
-                    // Otherwise a lower limit only takes effect the next time a
-                    // dictation is recorded, since pruning normally happens as a
-                    // side effect of saving a new entry — which could be a long
+                    // A menu rather than a stepper. A stepper applies every value it
+                    // passes on the way, so the pruning below deleted dictations for good
+                    // at each lower one. Pruned on the choice itself because pruning
+                    // otherwise waits for the next saved dictation, which could be a long
                     // wait for a setting the user just changed on purpose.
                     .onChange(of: settings.dictationHistoryLimit) { _, newLimit in
                         DictationHistory.prune(to: newLimit, in: modelContext)
@@ -183,34 +147,28 @@ struct GeneralSettingsView: View {
                     isConfirmingReset = true
                 }
                 .confirmationDialog(
-                    "Reset every setting to its default?",
+                    "Reset settings to their defaults?",
                     isPresented: $isConfirmingReset,
                     titleVisibility: .visible
                 ) {
-                    Button("Reset Everything", role: .destructive) { resetToDefaults() }
+                    Button("Reset", role: .destructive) { resetToDefaults() }
                     Button("Cancel", role: .cancel) { }
                 } message: {
-                    Text("This also clears your word replacements, vocabulary hints, per-app settings and recorded hotkey. It cannot be undone.")
+                    Text("This also clears your word replacements, vocabulary hints, per-app settings and recorded hotkey. Your prompts and their settings are kept. It cannot be undone.")
                 }
             }
         }
         .formStyle(.grouped)
-        #if os(iOS)
-        .navigationTitle("General")
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
     }
 
     private func resetToDefaults() {
         settings.resetToDefaults()
-        #if os(macOS)
         // The Hotkey tab re-arms on its own changes, but it is not on screen here —
         // without this the old combination keeps firing and the restored one does
         // nothing until the app is relaunched.
         hotkeyMonitor.trigger = settings.hotkeyTrigger
         hotkeyMonitor.activationMode = settings.hotkeyActivationMode
         hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
-        #endif
     }
 }
 
@@ -221,36 +179,17 @@ struct PromptsSettingsView: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var selectedPromptId: UUID?
-    @State private var isAddingPrompt = false
 
     var body: some View {
-        #if os(macOS)
-        macOSPromptsView
-            .onAppear {
-                if selectedPromptId == nil {
-                    selectedPromptId = promptConfig.prompts.first?.id
-                }
-            }
-        #else
-        iOSPromptsView
-        #endif
-    }
-
-    #if os(macOS)
-    private var macOSPromptsView: some View {
         HSplitView {
             // Prompt list
             VStack(alignment: .leading, spacing: 0) {
                 List(selection: $selectedPromptId) {
                     Section("Built-in Prompts") {
                         ForEach(promptConfig.builtInPromptsList) { prompt in
-                            PromptRow(
-                                prompt: prompt,
-                                isSelected: selectedPromptId == prompt.id,
-                                onToggleVisibility: {
-                                    promptConfig.toggleVisibility(promptId: prompt.id)
-                                }
-                            )
+                            PromptRow(prompt: prompt) {
+                                promptConfig.toggleVisibility(promptId: prompt.id)
+                            }
                             .tag(prompt.id)
                         }
                     }
@@ -258,13 +197,9 @@ struct PromptsSettingsView: View {
                     if !promptConfig.customPrompts.isEmpty {
                         Section("Custom Prompts") {
                             ForEach(promptConfig.customPrompts) { prompt in
-                                PromptRow(
-                                    prompt: prompt,
-                                    isSelected: selectedPromptId == prompt.id,
-                                    onToggleVisibility: {
-                                        promptConfig.toggleVisibility(promptId: prompt.id)
-                                    }
-                                )
+                                PromptRow(prompt: prompt) {
+                                    promptConfig.toggleVisibility(promptId: prompt.id)
+                                }
                                 .tag(prompt.id)
                             }
                             .onDelete { indexSet in
@@ -273,30 +208,35 @@ struct PromptsSettingsView: View {
                         }
                     }
                 }
-                .listStyle(.sidebar)
-
-                Divider()
+                .listStyle(.bordered)
 
                 HStack {
-                    Button {
-                        isAddingPrompt = true
-                    } label: {
-                        Image(systemName: "plus")
+                    Button("Add Prompt", systemImage: "plus") {
+                        // Created and selected at once, so the one editor fills it in.
+                        // A separate Add sheet copied that editor and lacked its Keep my
+                        // words switch.
+                        let newPrompt = Prompt(
+                            name: "New Prompt",
+                            systemPrompt: "You are a helpful text processing assistant.",
+                            userTemplate: ""
+                        )
+                        promptConfig.addPrompt(newPrompt)
+                        selectedPromptId = newPrompt.id
                     }
-                    .buttonStyle(.borderless)
+                    .help("Add Prompt")
 
-                    Button {
+                    Button("Delete Prompt", systemImage: "minus") {
                         if let id = selectedPromptId {
                             deletePrompt(id: id)
                         }
-                    } label: {
-                        Image(systemName: "minus")
                     }
-                    .buttonStyle(.borderless)
+                    .help("Delete Prompt")
                     .disabled(selectedPromptId == nil || isBuiltIn(selectedPromptId))
 
                     Spacer()
                 }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
                 .padding(8)
             }
             .frame(minWidth: 180, maxWidth: 220)
@@ -315,15 +255,17 @@ struct PromptsSettingsView: View {
                             promptConfig.addPrompt(newPrompt)
                             selectedPromptId = newPrompt.id
                         },
-                        onSaveGenerationSettings: { temp, sampling, maxTokens in
+                        onSaveGenerationSettings: { temp, sampling in
                             promptConfig.updateGenerationSettings(
                                 promptId: promptId,
                                 temperature: temp,
-                                samplingMode: sampling,
-                                maxResponseTokens: maxTokens
+                                samplingMode: sampling
                             )
                         }
                     )
+                    // One editor per prompt, so its fields start from that prompt
+                    // rather than keeping what the previous one left in them.
+                    .id(promptId)
                 } else {
                     ContentUnavailableView(
                         "Select a Prompt",
@@ -334,99 +276,12 @@ struct PromptsSettingsView: View {
             }
             .frame(minWidth: 280)
         }
-        .sheet(isPresented: $isAddingPrompt) {
-            AddPromptSheet { newPrompt in
-                promptConfig.addPrompt(newPrompt)
-                selectedPromptId = newPrompt.id
+        .onAppear {
+            if selectedPromptId == nil {
+                selectedPromptId = promptConfig.prompts.first?.id
             }
         }
     }
-    #endif
-
-    #if os(iOS)
-    private var iOSPromptsView: some View {
-        List {
-            Section("Built-in Prompts") {
-                ForEach(promptConfig.builtInPromptsList) { prompt in
-                    NavigationLink {
-                        PromptDetailView(
-                            prompt: prompt,
-                            canEdit: false,
-                            onSave: { _ in },
-                            onDuplicate: { newPrompt in
-                                promptConfig.addPrompt(newPrompt)
-                            },
-                            onToggleVisibility: {
-                                promptConfig.toggleVisibility(promptId: prompt.id)
-                            },
-                            onSaveGenerationSettings: { temp, sampling, maxTokens in
-                                promptConfig.updateGenerationSettings(
-                                    promptId: prompt.id,
-                                    temperature: temp,
-                                    samplingMode: sampling,
-                                    maxResponseTokens: maxTokens
-                                )
-                            }
-                        )
-                    } label: {
-                        PromptRow(prompt: prompt, isSelected: false)
-                    }
-                }
-            }
-
-            Section("Custom Prompts") {
-                ForEach(promptConfig.customPrompts) { prompt in
-                    NavigationLink {
-                        PromptDetailView(
-                            prompt: prompt,
-                            canEdit: true,
-                            onSave: { updatedPrompt in
-                                promptConfig.updatePrompt(updatedPrompt)
-                            },
-                            onDuplicate: { newPrompt in
-                                promptConfig.addPrompt(newPrompt)
-                            },
-                            onToggleVisibility: {
-                                promptConfig.toggleVisibility(promptId: prompt.id)
-                            },
-                            onSaveGenerationSettings: { temp, sampling, maxTokens in
-                                promptConfig.updateGenerationSettings(
-                                    promptId: prompt.id,
-                                    temperature: temp,
-                                    samplingMode: sampling,
-                                    maxResponseTokens: maxTokens
-                                )
-                            }
-                        )
-                    } label: {
-                        PromptRow(prompt: prompt, isSelected: false)
-                    }
-                }
-                .onDelete { indexSet in
-                    deletePrompts(at: indexSet)
-                }
-            }
-        }
-        .navigationTitle("Prompts")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    isAddingPrompt = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
-        }
-        .sheet(isPresented: $isAddingPrompt) {
-            NavigationStack {
-                AddPromptSheet { newPrompt in
-                    promptConfig.addPrompt(newPrompt)
-                }
-            }
-        }
-    }
-    #endif
 
     private func isBuiltIn(_ id: UUID?) -> Bool {
         guard let id = id else { return true }
@@ -470,33 +325,28 @@ struct PromptsSettingsView: View {
 
 struct PromptRow: View {
     let prompt: Prompt
-    let isSelected: Bool
-    var onToggleVisibility: (() -> Void)?
+    let onToggleVisibility: () -> Void
 
     var body: some View {
         HStack {
+            // Secondary even when selected. The selection turns light gray once the
+            // editor takes focus, and a white icon vanished against it.
             Image(systemName: prompt.isBuiltIn ? "sparkles" : "text.bubble")
-                .foregroundStyle(isSelected ? .white : .secondary)
+                .foregroundStyle(.secondary)
 
             Text(prompt.name)
                 .lineLimit(1)
 
             Spacer()
 
-            if let onToggleVisibility {
-                Toggle("", isOn: Binding(
-                    get: { prompt.isVisible },
-                    set: { _ in onToggleVisibility() }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .labelsHidden()
-                .help(prompt.isVisible ? "Visible in menu bar" : "Hidden from menu bar")
-            } else if !prompt.isVisible {
-                Image(systemName: "eye.slash")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
+            Toggle("Show in Menu Bar", isOn: Binding(
+                get: { prompt.isVisible },
+                set: { _ in onToggleVisibility() }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .labelsHidden()
+            .help(prompt.isVisible ? "Visible in menu bar" : "Hidden from menu bar")
         }
     }
 }
@@ -505,9 +355,8 @@ struct PromptDetailView: View {
     let prompt: Prompt
     let canEdit: Bool
     let onSave: (Prompt) -> Void
-    var onDuplicate: ((Prompt) -> Void)?
-    var onToggleVisibility: (() -> Void)?
-    var onSaveGenerationSettings: ((Double, SamplingMode, Int?) -> Void)?
+    let onDuplicate: (Prompt) -> Void
+    let onSaveGenerationSettings: (Double, SamplingMode) -> Void
 
     // Prompt text state
     @State private var name: String
@@ -525,15 +374,13 @@ struct PromptDetailView: View {
         prompt: Prompt,
         canEdit: Bool,
         onSave: @escaping (Prompt) -> Void,
-        onDuplicate: ((Prompt) -> Void)? = nil,
-        onToggleVisibility: (() -> Void)? = nil,
-        onSaveGenerationSettings: ((Double, SamplingMode, Int?) -> Void)? = nil
+        onDuplicate: @escaping (Prompt) -> Void,
+        onSaveGenerationSettings: @escaping (Double, SamplingMode) -> Void
     ) {
         self.prompt = prompt
         self.canEdit = canEdit
         self.onSave = onSave
         self.onDuplicate = onDuplicate
-        self.onToggleVisibility = onToggleVisibility
         self.onSaveGenerationSettings = onSaveGenerationSettings
         self._name = State(initialValue: prompt.name)
         self._systemPrompt = State(initialValue: prompt.systemPrompt)
@@ -557,163 +404,162 @@ struct PromptDetailView: View {
 
     var body: some View {
         Form {
-            #if os(iOS)
-            if onToggleVisibility != nil {
-                Section("Visibility") {
-                    Toggle(isOn: Binding(
-                        get: { prompt.isVisible },
-                        set: { _ in onToggleVisibility?() }
-                    )) {
-                        Label("Show in menu bar dropdown", systemImage: prompt.isVisible ? "eye" : "eye.slash")
-                    }
-                }
-            }
-            #endif
-
-            Section("Prompt Name") {
-                TextField("Name", text: $name)
-                    .disabled(!canEdit)
-            }
-
-            Section("System Prompt") {
-                TextEditor(text: $systemPrompt)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 80)
-                    .disabled(!canEdit)
-            }
-
-            Section("User Template") {
-                TextEditor(text: $userTemplate)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 80)
-                    .disabled(!canEdit)
-
-                Text("Your transcription is automatically appended after these instructions.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Your Words") {
-                Toggle("Keep my words", isOn: $keepsWords)
-                    .disabled(!canEdit)
-                Text("For prompts that correct rather than rewrite. Any word the model drops is put back, and only punctuation, capitals, repeated words and one-for-one word fixes get through.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            // Generation settings — always editable, even for built-in prompts
-            Section("Generation Settings") {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Temperature")
-                        Spacer()
-                        Text(String(format: "%.1f", temperature))
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    Slider(value: $temperature, in: 0.0...1.0, step: 0.1)
-                    Text(temperatureHint)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-
-                Picker("Sampling", selection: $samplingModeTag) {
-                    Text("Automatic").tag("automatic")
-                    Text("Greedy").tag("greedy")
-                    Text("Top-P").tag("topP")
-                    Text("Top-K").tag("topK")
-                }
-                .help("Automatic: default random sampling.\nGreedy: deterministic, always picks the most likely word.\nTop-P: samples from words within a cumulative probability threshold.\nTop-K: samples from the K most likely words.")
-
-                Text(samplingHint)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-
-                if samplingModeTag == "topP" {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Probability Threshold")
-                            Spacer()
-                            Text(String(format: "%.2f", topPThreshold))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Slider(value: $topPThreshold, in: 0.1...1.0, step: 0.05)
-                    }
-                }
-
-                if samplingModeTag == "topK" {
-                    Stepper("Top K: \(topKValue)", value: $topKValue, in: 1...100)
-                }
-            }
-
-            if hasUnsavedChanges {
-                Section {
-                    Button("Save Changes") {
-                        if canEdit && hasTextChanges {
-                            let updated = Prompt(
-                                id: prompt.id,
-                                name: name,
-                                systemPrompt: systemPrompt,
-                                userTemplate: userTemplate,
-                                isBuiltIn: false,
-                                // Carried over: `updatePrompt` replaces the stored
-                                // prompt wholesale, so anything left out is reset.
-                                isVisible: prompt.isVisible,
-                                temperature: temperature,
-                                samplingMode: currentSamplingMode,
-                                keepsWords: keepsWords
-                            )
-                            onSave(updated)
-                        }
-                        if hasGenerationChanges {
-                            onSaveGenerationSettings?(temperature, currentSamplingMode, nil)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
+            // A built-in prompt changes only through a copy, so the way to one comes
+            // first rather than below every field it cannot edit.
+            if !canEdit, !isRaw {
+                duplicateSection
             }
 
             Section {
-                if let onDuplicate {
-                    Button {
-                        let duplicate = Prompt(
-                            name: "\(name) Copy",
-                            systemPrompt: systemPrompt,
-                            userTemplate: userTemplate,
-                            isBuiltIn: false,
-                            temperature: temperature,
-                            samplingMode: currentSamplingMode,
-                            keepsWords: keepsWords
-                        )
-                        onDuplicate(duplicate)
-                    } label: {
-                        Label("Duplicate as Custom Prompt", systemImage: "doc.on.doc")
+                TextField("Name", text: $name)
+                    .disabled(!canEdit)
+
+                if isRaw {
+                    Text("Inserts the transcription as it was heard. The AI never runs for this prompt, so there is nothing here to tune.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if !isRaw {
+                Section("System Prompt") {
+                    TextEditor(text: $systemPrompt)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 80)
+                        .disabled(!canEdit)
+                }
+
+                Section("User Template") {
+                    TextEditor(text: $userTemplate)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 80)
+                        .disabled(!canEdit)
+
+                    Text("Your transcription is automatically appended after these instructions.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Your Words") {
+                    Toggle("Keep my words", isOn: $keepsWords)
+                        .disabled(!canEdit)
+                    Text("For prompts that correct rather than rewrite. Any word the model drops is put back, and only punctuation, capitals, repeated words and one-for-one word fixes get through.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                // Generation settings — always editable, even for built-in prompts
+                Section("Generation Settings") {
+                    // Greedy sampling always takes the likeliest word, so temperature
+                    // has nothing to act on.
+                    if samplingModeTag != "greedy" {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Temperature")
+                                Spacer()
+                                Text(String(format: "%.1f", temperature))
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                            Slider(value: $temperature, in: 0.0...1.0, step: 0.1)
+                            Text(temperatureHint)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
+
+                    Picker("Sampling", selection: $samplingModeTag) {
+                        Text("Automatic").tag("automatic")
+                        Text("Greedy").tag("greedy")
+                        Text("Top-P").tag("topP")
+                        Text("Top-K").tag("topK")
+                    }
+                    .help("Automatic: default random sampling.\nGreedy: deterministic, always picks the most likely word.\nTop-P: samples from words within a cumulative probability threshold.\nTop-K: samples from the K most likely words.")
+
+                    Text(samplingHint)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+
+                    if samplingModeTag == "topP" {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Probability Threshold")
+                                Spacer()
+                                Text(String(format: "%.2f", topPThreshold))
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                            Slider(value: $topPThreshold, in: 0.1...1.0, step: 0.05)
+                        }
+                    }
+
+                    if samplingModeTag == "topK" {
+                        Stepper("Top K: \(topKValue)", value: $topKValue, in: 1...100)
+                    }
+                }
+
+                if canEdit {
+                    duplicateSection
                 }
             }
         }
         .formStyle(.grouped)
-        #if os(iOS)
-        .navigationTitle(prompt.name)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        // Keyed on the prompt's identity, not its value. Keyed on the value, any edit
-        // to the stored prompt — toggling its visibility from its own row, say —
-        // reloaded the editor and threw away whatever the user had typed but not saved.
-        .onChange(of: prompt.id) { _, _ in
-            let newPrompt = prompt
-            name = newPrompt.name
-            systemPrompt = newPrompt.systemPrompt
-            userTemplate = newPrompt.userTemplate
-            keepsWords = newPrompt.keepsWords
-            temperature = newPrompt.temperature
-            samplingModeTag = newPrompt.samplingMode.caseTag
-            switch newPrompt.samplingMode {
-            case .topP(let t): topPThreshold = t
-            case .topK(let k): topKValue = k
-            default: break
+        .onChange(of: name) { persist() }
+        .onChange(of: systemPrompt) { persist() }
+        .onChange(of: userTemplate) { persist() }
+        .onChange(of: keepsWords) { persist() }
+        .onChange(of: temperature) { persist() }
+        .onChange(of: currentSamplingMode) { persist() }
+    }
+
+    /// The Raw prompt skips the AI entirely, so its instructions and generation
+    /// settings would change nothing, and a copy of it would send empty instructions
+    /// to the model.
+    private var isRaw: Bool {
+        prompt.id == PromptConfiguration.rawPromptId
+    }
+
+    private var duplicateSection: some View {
+        Section {
+            Button {
+                let duplicate = Prompt(
+                    name: "\(name) Copy",
+                    systemPrompt: systemPrompt,
+                    userTemplate: userTemplate,
+                    isBuiltIn: false,
+                    temperature: temperature,
+                    samplingMode: currentSamplingMode,
+                    keepsWords: keepsWords
+                )
+                onDuplicate(duplicate)
+            } label: {
+                Label("Duplicate as Custom Prompt", systemImage: "doc.on.doc")
             }
+        }
+    }
+
+    /// Write the editor's state to the store, on every change.
+    ///
+    /// The rest of Settings applies each control as it moves. This editor used to wait
+    /// for a Save button, and selecting another prompt or closing the window threw the
+    /// unsaved text away without a word.
+    private func persist() {
+        if canEdit {
+            onSave(Prompt(
+                id: prompt.id,
+                name: name,
+                systemPrompt: systemPrompt,
+                userTemplate: userTemplate,
+                isBuiltIn: false,
+                // Carried over: `updatePrompt` replaces the stored prompt wholesale,
+                // so anything left out is reset.
+                isVisible: prompt.isVisible,
+                temperature: temperature,
+                samplingMode: currentSamplingMode,
+                keepsWords: keepsWords
+            ))
+        } else {
+            onSaveGenerationSettings(temperature, currentSamplingMode)
         }
     }
 
@@ -741,175 +587,10 @@ struct PromptDetailView: View {
         default: return "Default random sampling with temperature-based variation."
         }
     }
-
-    private var hasUnsavedChanges: Bool {
-        (canEdit && hasTextChanges) || hasGenerationChanges
-    }
-
-    private var hasTextChanges: Bool {
-        name != prompt.name ||
-        systemPrompt != prompt.systemPrompt ||
-        userTemplate != prompt.userTemplate ||
-        keepsWords != prompt.keepsWords
-    }
-
-    private var hasGenerationChanges: Bool {
-        temperature != prompt.temperature ||
-        currentSamplingMode != prompt.samplingMode
-    }
 }
 
-struct AddPromptSheet: View {
-    @Environment(\.dismiss) private var dismiss
+// MARK: - Sounds Settings
 
-    @State private var name = ""
-    @State private var systemPrompt = "You are a helpful text processing assistant."
-    @State private var userTemplate = ""
-    @State private var temperature = 0.5
-    @State private var samplingModeTag = "automatic"
-    @State private var topPThreshold = 0.9
-    @State private var topKValue = 10
-
-    let onAdd: (Prompt) -> Void
-
-    private var currentSamplingMode: SamplingMode {
-        switch samplingModeTag {
-        case "greedy": return .greedy
-        case "topP": return .topP(topPThreshold)
-        case "topK": return .topK(topKValue)
-        default: return .automatic
-        }
-    }
-
-    private var samplingHint: String {
-        switch samplingModeTag {
-        case "greedy": return "Always picks the most likely word. Same input = same output."
-        case "topP": return "Samples from the smallest set of words whose probabilities add up to the threshold."
-        case "topK": return "Samples from the K most likely words. Lower K = more focused output."
-        default: return "Default random sampling with temperature-based variation."
-        }
-    }
-
-    var body: some View {
-        Form {
-            Section("Name") {
-                TextField("Prompt name", text: $name)
-            }
-
-            Section("System Prompt") {
-                TextEditor(text: $systemPrompt)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 80)
-            }
-
-            Section("User Template") {
-                TextEditor(text: $userTemplate)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 80)
-
-                Text("Your transcription is automatically appended after these instructions.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Generation Settings") {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Temperature")
-                        Spacer()
-                        Text(String(format: "%.1f", temperature))
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    Slider(value: $temperature, in: 0.0...1.0, step: 0.1)
-                }
-
-                Picker("Sampling", selection: $samplingModeTag) {
-                    Text("Automatic").tag("automatic")
-                    Text("Greedy").tag("greedy")
-                    Text("Top-P").tag("topP")
-                    Text("Top-K").tag("topK")
-                }
-                .help("Automatic: default random sampling.\nGreedy: deterministic, always picks the most likely word.\nTop-P: samples from words within a cumulative probability threshold.\nTop-K: samples from the K most likely words.")
-
-                Text(samplingHint)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-
-                if samplingModeTag == "topP" {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Probability Threshold")
-                            Spacer()
-                            Text(String(format: "%.2f", topPThreshold))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Slider(value: $topPThreshold, in: 0.1...1.0, step: 0.05)
-                    }
-                }
-
-                if samplingModeTag == "topK" {
-                    Stepper("Top K: \(topKValue)", value: $topKValue, in: 1...100)
-                }
-            }
-        }
-        .formStyle(.grouped)
-        #if os(macOS)
-        .frame(minWidth: 450, minHeight: 500)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
-                    dismiss()
-                }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Add") {
-                    let prompt = Prompt(
-                        name: name,
-                        systemPrompt: systemPrompt,
-                        userTemplate: userTemplate,
-                        temperature: temperature,
-                        samplingMode: currentSamplingMode
-                    )
-                    onAdd(prompt)
-                    dismiss()
-                }
-                .disabled(name.isEmpty)
-            }
-        }
-        #else
-        .navigationTitle("New Prompt")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
-                    dismiss()
-                }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Add") {
-                    let prompt = Prompt(
-                        name: name,
-                        systemPrompt: systemPrompt,
-                        userTemplate: userTemplate,
-                        temperature: temperature,
-                        samplingMode: currentSamplingMode,
-                        maxResponseTokens: limitResponseTokens ? maxResponseTokens : nil
-                    )
-                    onAdd(prompt)
-                    dismiss()
-                }
-                .disabled(name.isEmpty)
-            }
-        }
-        #endif
-    }
-}
-
-// MARK: - Sounds Settings (macOS only)
-
-#if os(macOS)
 struct SoundsSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(SoundCatalog.self) private var soundCatalog
@@ -921,28 +602,35 @@ struct SoundsSettingsView: View {
 
         Form {
             Section("Feedback Sounds") {
-                SoundPickerRow(
-                    label: "Recording Started",
-                    selection: $settings.startSoundName,
-                    sounds: soundCatalog.allSounds
-                )
-                SoundPickerRow(
-                    label: "Recording Stopped",
-                    selection: $settings.stopSoundName,
-                    sounds: soundCatalog.allSounds
-                )
-                SoundPickerRow(
-                    label: "Processing Complete",
-                    selection: $settings.completeSoundName,
-                    sounds: soundCatalog.allSounds
-                )
-                SoundPickerRow(
-                    label: "Error",
-                    selection: $settings.errorSoundName,
-                    sounds: soundCatalog.allSounds
-                )
+                Toggle("Play feedback sounds", isOn: $settings.playFeedbackSounds)
+
+                Group {
+                    SoundPickerRow(
+                        label: "Recording Started",
+                        selection: $settings.startSoundName,
+                        sounds: soundCatalog.allSounds
+                    )
+                    SoundPickerRow(
+                        label: "Recording Stopped",
+                        selection: $settings.stopSoundName,
+                        sounds: soundCatalog.allSounds
+                    )
+                    SoundPickerRow(
+                        label: "Processing Complete",
+                        selection: $settings.completeSoundName,
+                        sounds: soundCatalog.allSounds
+                    )
+                    SoundPickerRow(
+                        label: "Error",
+                        selection: $settings.errorSoundName,
+                        sounds: soundCatalog.allSounds
+                    )
+                }
+                .disabled(!settings.playFeedbackSounds)
             }
 
+            // None turns this off. The feedback switch above does not reach the loop,
+            // which plays only while the AI works.
             Section("Processing Indicator") {
                 SoundPickerRow(
                     label: "Processing Loop",
@@ -962,24 +650,22 @@ struct SoundsSettingsView: View {
 
                             Spacer()
 
-                            Button {
+                            Button("Preview Sound", systemImage: "speaker.wave.2") {
                                 SoundCatalog.shared.preview(sound.id)
-                            } label: {
-                                Image(systemName: "speaker.wave.2")
                             }
-                            .buttonStyle(.borderless)
+                            .help("Preview Sound")
 
-                            Button(role: .destructive) {
+                            Button("Delete Sound", systemImage: "trash", role: .destructive) {
                                 deleteSound(sound.id)
-                            } label: {
-                                Image(systemName: "trash")
                             }
-                            .buttonStyle(.borderless)
+                            .help("Delete Sound")
                         }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
                     }
                 }
 
-                Button("Import Sound File...") {
+                Button("Import Sound File…") {
                     importSoundFile()
                 }
 
@@ -988,29 +674,32 @@ struct SoundsSettingsView: View {
                         .foregroundStyle(.red)
                         .font(.caption)
                 }
-
-                Text("Supported formats: AIFF, WAV, MP3, CAF, M4A")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
     }
 
     private func importSoundFile() {
+        guard let window = NSApp.keyWindow else { return }
+
         let panel = NSOpenPanel()
         panel.title = "Import Sound File"
-        panel.allowedContentTypes = [.aiff, .wav, .mp3, .audio]
+        // Any audio type, the same test the catalog lists custom sounds by.
+        panel.allowedContentTypes = [.audio]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // A sheet on the Settings window. Run modally, the panel floated free of the
+        // window and blocked every other one in the app.
+        Task {
+            guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else { return }
 
-        do {
-            try soundCatalog.importSound(from: url)
-            importError = nil
-        } catch {
-            importError = "Failed to import: \(error.localizedDescription)"
+            do {
+                try soundCatalog.importSound(from: url)
+                importError = nil
+            } catch {
+                importError = "Failed to import: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -1046,21 +735,19 @@ struct SoundPickerRow: View {
                 }
             }
 
-            Button {
+            Button("Preview Sound", systemImage: "speaker.wave.2") {
                 SoundCatalog.shared.preview(selection)
-            } label: {
-                Image(systemName: "speaker.wave.2")
             }
+            .labelStyle(.iconOnly)
+            .help("Preview Sound")
             .buttonStyle(.borderless)
             .disabled(selection == SoundCatalog.noneID)
         }
     }
 }
-#endif
 
-// MARK: - Hotkey Settings (macOS only)
+// MARK: - Hotkey Settings
 
-#if os(macOS)
 struct HotkeySettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(GlobalHotkeyMonitor.self) private var hotkeyMonitor
@@ -1116,7 +803,19 @@ struct HotkeySettingsView: View {
                             .font(.system(.body, design: .monospaced))
                     }
 
-                    Text("Takes back the last text Inscribe typed, and puts it on your clipboard. Sends the receiving app its own Undo, and only within two minutes — after that it would throw away unrelated work.")
+                    // Dictation wins when both use one shortcut. This caption is the
+                    // only sign that undo has stepped aside.
+                    if settings.undoHotkeyTrigger == nil {
+                        Label {
+                            Text("Off while dictation uses the same shortcut.")
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.caption)
+                    }
+
+                    Text("Takes back the last text Inscribe typed, and puts it on your clipboard. Sends the receiving app its own Undo, and only within two minutes — after that it would throw away unrelated work. Not available when After typing is set to Press Return.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1124,8 +823,12 @@ struct HotkeySettingsView: View {
 
             Section("Status") {
                 if hotkeyMonitor.isRunning {
-                    Label("Listening for \(triggerDescription)", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    Label {
+                        Text("Listening for \(triggerDescription)")
+                    } icon: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
                 } else if let error = hotkeyMonitor.lastError {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
@@ -1161,7 +864,13 @@ struct HotkeySettingsView: View {
         .onChange(of: isRecordingHotkey) { _, recording in
             if recording { startCapturing() } else { hotkeyMonitor.endCapture() }
         }
-        .onChange(of: settings.useGlobeKey) { _, _ in rearm() }
+        .onChange(of: settings.useGlobeKey) { _, _ in
+            // The recorder lives in the custom-shortcut row, which the Globe key hides.
+            // Left armed, capture would go on swallowing every keystroke on the Mac
+            // with nothing on screen to say why.
+            isRecordingHotkey = false
+            rearm()
+        }
         .onChange(of: settings.hotkeyString) { _, _ in rearm() }
         .onChange(of: settings.hotkeyActivationModeRaw) { _, _ in rearm() }
         .onChange(of: settings.undoHotkeyEnabled) { _, _ in rearm() }
@@ -1179,64 +888,54 @@ struct HotkeySettingsView: View {
     private var accessibilitySection: some View {
         if !isTrusted {
             Section {
-                Label("Inscribe needs Accessibility access", systemImage: "lock.fill")
-                    .foregroundStyle(.orange)
+                Label {
+                    Text("Inscribe needs Accessibility access")
+                } icon: {
+                    Image(systemName: "lock.fill")
+                        .foregroundStyle(.orange)
+                }
 
                 Text("The hotkey and typing into other apps both go through macOS Accessibility. Nothing works until you grant it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                HStack {
-                    Button("Grant Access") {
-                        AccessibilityPermission.requestTrust()
-                    }
-                    Button("Open System Settings") {
-                        AccessibilityPermission.openSystemSettings()
-                    }
-                    .buttonStyle(.link)
+                // macOS shows its own prompt at most once per app version. Launch has
+                // spent it by the time anyone opens this tab, so System Settings is
+                // the only way in from here.
+                Button("Open System Settings") {
+                    AccessibilityPermission.openSystemSettings()
                 }
             }
         }
     }
 
+    /// The shortcut is its own button, as in System Settings: click it, then type the
+    /// combination.
+    @ViewBuilder
     private var customHotkeyRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Shortcut")
-                Spacer()
-                if isRecordingHotkey {
-                    Text("Press new hotkey...")
-                        .foregroundStyle(.orange)
-                } else {
-                    Text(settings.hotkeyString)
-                        .font(.system(.body, design: .monospaced))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.secondary.opacity(0.2))
-                        )
-                }
-            }
-
-            Button(isRecordingHotkey ? "Cancel" : "Record New Hotkey") {
+        LabeledContent("Shortcut") {
+            Button(isRecordingHotkey ? "Type Shortcut…" : settings.hotkeyDisplay) {
                 isRecordingHotkey.toggle()
             }
+            .monospaced(!isRecordingHotkey)
+            // Recording listens through the tap. Without one nothing hears the
+            // keystroke, and "Type Shortcut…" waited for ever.
+            .disabled(!isRecordingHotkey && !hotkeyMonitor.isRunning)
+        }
 
-            if let captureError {
-                Text(captureError)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            } else {
-                Text("Use at least two of ⌃, ⌥ and ⌘, so the shortcut cannot swallow an everyday one like ⌘W. Escape cancels.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        if let captureError {
+            Text(captureError)
+                .font(.caption)
+                .foregroundStyle(.orange)
+        } else {
+            Text("Use at least two of ⌃, ⌥ and ⌘, so the shortcut cannot swallow an everyday one like ⌘W. Escape cancels.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     private var triggerDescription: String {
-        settings.useGlobeKey ? "the Globe key" : settings.hotkeyString
+        settings.useGlobeKey ? "the Globe key" : settings.hotkeyDisplay
     }
 
     // MARK: - Hotkey Recording
@@ -1266,15 +965,6 @@ struct HotkeySettingsView: View {
                 return
             }
 
-            // The undo shortcut is checked first, so a dictation binding equal to
-            // it would never fire — the Globe key's own default, ⌃⌥⌘Z, is also
-            // undo's default, and recording it here would silently disable
-            // dictation rather than bind it.
-            if settings.undoHotkeyEnabled, combination == settings.undoHotkeyString {
-                captureError = "\(combination) is already the undo shortcut. Choose a different combination, or turn undo off first."
-                return
-            }
-
             settings.hotkeyString = combination
             isRecordingHotkey = false
         }
@@ -1291,11 +981,9 @@ struct HotkeySettingsView: View {
     }
 
 }
-#endif
 
-// MARK: - Output Settings (macOS only)
+// MARK: - Output Settings
 
-#if os(macOS)
 /// What happens once the text is in the field. Stored as the two switches that came
 /// before it, so an existing choice of Return carries over.
 private enum AfterTyping: Hashable {
@@ -1323,7 +1011,7 @@ struct OutputSettingsView: View {
         @Bindable var settings = settings
 
         Form {
-            Section("Where text goes") {
+            Section("Where Text Goes") {
                 Picker("After transcribing", selection: $settings.outputModeRaw) {
                     ForEach(OutputMode.allCases) { mode in
                         Text(mode.displayName).tag(mode.rawValue)
@@ -1338,7 +1026,7 @@ struct OutputSettingsView: View {
                 }
             }
 
-            if settings.outputMode == .smartInsert {
+            if typesText {
                 Section("Typing") {
                     Toggle("Restore my previous clipboard afterwards", isOn: $settings.restoreClipboardAfterPaste)
 
@@ -1378,14 +1066,7 @@ struct OutputSettingsView: View {
                     .foregroundStyle(.secondary)
 
                 if settings.showDictationOverlay {
-                    solidityRow("Background", value: $settings.overlayOpacity)
-                    solidityRow("Text and band", value: $settings.overlayContentOpacity)
-
-                    Text("Two separate dials. The background is glass — turn it down to read the window underneath through it. The text and band sit on top and keep their own setting, so a pane you can see straight through can still carry words you can read.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Button("Move it back to the bottom") {
+                    Button("Reset Panel Position") {
                         coordinator.resetOverlayPosition()
                     }
                 }
@@ -1395,46 +1076,32 @@ struct OutputSettingsView: View {
                 Text("A small panel with the same band, so an hour-long meeting shows it is still hearing the room rather than only that it is open. Drag it anywhere.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
 
-            Section("Context") {
-                Toggle("Let the AI see what is already in the field", isOn: $settings.useSurroundingContext)
+                // Both panels read these, so they stay while either one is on.
+                if settings.showDictationOverlay || settings.showMeetingIndicator {
+                    solidityRow("Background", value: $settings.overlayOpacity)
+                    solidityRow("Text and band", value: $settings.overlayContentOpacity)
 
-                Text("Reads the text around your cursor and gives it to the AI as background, so a dictated reply matches the thread it belongs to. It is marked as context to read, not text to rewrite. Uses the Accessibility access Inscribe already has, and never leaves your Mac.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Recording") {
-                LabeledContent("Maximum length") {
-                    HStack {
-                        Stepper(
-                            value: $settings.maxRecordingSeconds,
-                            in: 30...3600,
-                            step: 30
-                        ) {
-                            Text(durationLabel)
-                                .monospacedDigit()
-                        }
-                    }
+                    Text("Two separate dials, shared by both panels. The background is glass — turn it down to read the window underneath through it. The text and band sit on top and keep their own setting, so a pane you can see straight through can still carry words you can read.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text("Recording stops on its own at this point, so a stuck hotkey cannot record forever.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
     }
 
-    private var durationLabel: String {
-        let seconds = settings.maxRecordingSeconds
-        let minutes = seconds / 60
-        let remainder = seconds % 60
-        if remainder == 0 { return "\(minutes) min" }
-        return "\(minutes) min \(remainder) s"
+    /// Whether anything types text: the global choice, or an app profile.
+    ///
+    /// The typing options apply to both. Tied to the global choice alone, they
+    /// disappeared whenever it copied, while a profile that types still followed them.
+    private var typesText: Bool {
+        settings.outputMode == .smartInsert
+            || settings.appProfiles.values.contains {
+                $0.isEnabled && $0.outputModeRaw == OutputMode.smartInsert.rawValue
+            }
     }
 }
-#endif
 
 // MARK: - About Settings
 
@@ -1444,34 +1111,46 @@ struct AboutSettingsView: View {
     @ViewBuilder
     private var diagnostics: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if entries.isEmpty {
-                Text("Nothing recorded yet this run. Dictate once and come back.")
+            switch lastRead {
+            case nil:
+                ProgressView()
+                    .controlSize(.small)
+
+            case .failure(let error)?:
+                Text("Could not read the log: \(error.localizedDescription)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(entries.reversed()) { entry in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(entry.date, format: .dateTime.hour().minute().second())
-                                    .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.orange)
 
-                                Text(entry.category)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 72, alignment: .leading)
+            case .success(let entries)?:
+                if entries.isEmpty {
+                    Text("Nothing recorded yet this run. Dictate once and come back.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(entries.reversed()) { entry in
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text(entry.date, format: .dateTime.hour().minute().second())
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.tertiary)
 
-                                Text(entry.message)
-                                    .font(.caption2)
-                                    .foregroundStyle(entry.isProblem ? Color.orange : .primary)
-                                    .textSelection(.enabled)
+                                    Text(entry.category)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 72, alignment: .leading)
+
+                                    Text(entry.message)
+                                        .font(.caption2)
+                                        .foregroundStyle(entry.isProblem ? Color.orange : .primary)
+                                        .textSelection(.enabled)
+                                }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 220)
                 }
-                .frame(height: 220)
             }
 
             HStack {
@@ -1494,10 +1173,9 @@ struct AboutSettingsView: View {
         // a busy run — off the main actor so opening this disclosure group does
         // not stall the rest of the Settings window while it works.
         Task {
-            let fetched = await Task.detached(priority: .utility) {
-                (try? Diagnostics.recent()) ?? []
+            lastRead = await Task.detached(priority: .utility) {
+                Result { try Diagnostics.recent() }
             }.value
-            entries = fetched
         }
     }
 
@@ -1509,79 +1187,70 @@ struct AboutSettingsView: View {
         return "Version \(shortVersion) (\(build))"
     }
 
-    @State private var entries: [Diagnostics.Entry] = []
+    /// The last read of the log, kept whole so a failed read shows as one rather
+    /// than as an empty log. Nil until the first read returns.
+    @State private var lastRead: Result<[Diagnostics.Entry], any Error>?
     @State private var showingDiagnostics = false
 
+    private var entries: [Diagnostics.Entry] {
+        (try? lastRead?.get()) ?? []
+    }
+
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
+        // Scrolls because the log can outgrow the window; the anchor keeps the page
+        // centered while it fits.
+        ScrollView {
+            VStack(spacing: 20) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 64, height: 64)
 
-            Image(systemName: "mic.fill")
-                .font(.system(size: 60))
-                .foregroundStyle(.blue)
+                Text("Inscribe")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
 
-            Text("Inscribe")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+                Text("Background Voice Transcription")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
 
-            Text("Background Voice Transcription")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-
-            Text(appVersionText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Divider()
-                .frame(width: 200)
-
-            DisclosureGroup(isExpanded: $showingDiagnostics) {
-                diagnostics
-            } label: {
-                Label("What Inscribe has been doing", systemImage: "stethoscope")
+                Text(appVersionText)
                     .font(.subheadline)
-            }
-            .frame(maxWidth: 520)
-            .onChange(of: showingDiagnostics) { _, shown in
-                if shown { reload() }
-            }
+                    .foregroundStyle(.secondary)
 
-            Divider()
-                .frame(width: 200)
+                Divider()
+                    .frame(width: 200)
 
-            VStack(spacing: 8) {
-                Text("Uses on-device AI for transcription and text processing.")
-                Text("Your voice data never leaves your device.")
+                DisclosureGroup(isExpanded: $showingDiagnostics) {
+                    diagnostics
+                } label: {
+                    Label("What Inscribe has been doing", systemImage: "stethoscope")
+                        .font(.subheadline)
+                }
+                .frame(maxWidth: 520)
+                .onChange(of: showingDiagnostics) { _, shown in
+                    if shown { reload() }
+                }
+
+                Divider()
+                    .frame(width: 200)
+
+                VStack(spacing: 8) {
+                    Text("Uses on-device AI for transcription and text processing.")
+                    Text("Your voice data never leaves your device.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-
-            Spacer()
+            .padding(40)
+            .frame(maxWidth: .infinity)
         }
-        .padding(40)
-        #if os(iOS)
-        .navigationTitle("About")
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .defaultScrollAnchor(.center, for: .alignment)
     }
 }
 
-// MARK: - Preview
+// MARK: - Dictation Settings
 
-#Preview {
-    SettingsView()
-        .environment(AppSettings())
-        .environment(PromptConfiguration())
-        #if os(macOS)
-        .environment(GlobalHotkeyMonitor())
-        .environment(SoundCatalog.shared)
-        #endif
-}
-
-// MARK: - Dictation Settings (macOS only)
-
-#if os(macOS)
 struct DictationSettingsView: View {
     @Environment(AppSettings.self) private var settings
 
@@ -1613,19 +1282,37 @@ struct DictationSettingsView: View {
 
                 if settings.inputDeviceUID != AudioInputDevice.systemDefaultUID,
                    !devices.contains(where: { $0.uid == settings.inputDeviceUID }) {
-                    Label("That device is not connected — recording falls back to the system default.",
-                          systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                    Label {
+                        Text("That device is not connected — recording falls back to the system default.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    }
+                    .font(.caption)
                 }
             }
 
-            Section("Meetings") {
-                MeetingAudioSection()
+            Section("Recording") {
+                // A menu of lengths: the 30-second stepper this replaced took up to
+                // 119 clicks to cross its range. A length it saved that is not listed
+                // joins the menu, which otherwise shows a blank title, and seconds are
+                // allowed so 90 reads as 1 min, 30 sec rather than 2 min.
+                Picker("Maximum length", selection: $settings.maxRecordingSeconds) {
+                    ForEach(Set([60, 120, 300, 600, 900, 1800, 3600, settings.maxRecordingSeconds]).sorted(), id: \.self) { seconds in
+                        Text(Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes, .seconds])))
+                            .tag(seconds)
+                    }
+                }
+
+                Text("Recording stops on its own at this point, so a stuck hotkey cannot record forever.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
+            MeetingAudioSection()
+
             Section("Vocabulary") {
-                Text("Names and jargon the recognizer should expect, one per line. This steers what it listens for, so it beats correcting the same word every time.")
+                Text("Names and jargon you use, one per line. When the recognizer is torn between words, it takes the one on this list, and it spells these the way you write them here: \"type script\" comes out as TypeScript.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -1640,9 +1327,7 @@ struct DictationSettingsView: View {
                     }
             }
 
-            Section("Speaker Models") {
-                DiarizationModelsSection()
-            }
+            DiarizationModelsSection()
 
             Section("Word Replacements") {
                 Text("Applied after transcription, whole words only and ignoring case — so a rule for \"vox\" leaves \"voxel\" alone. Leave the written word blank to delete the heard word instead of replacing it.")
@@ -1650,26 +1335,32 @@ struct DictationSettingsView: View {
                     .foregroundStyle(.secondary)
 
                 if hasDuplicateReplacements {
-                    Label("Two rows have the same heard word — only one of them will be applied.", systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                    Label {
+                        Text("Two rows have the same heard word — only one of them will be applied.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    }
+                    .font(.caption)
                 }
 
                 ForEach($replacements) { $row in
                     HStack {
-                        TextField("heard", text: $row.spoken)
+                        TextField("Heard", text: $row.spoken, prompt: Text("heard"))
                         Image(systemName: "arrow.right")
                             .foregroundStyle(.secondary)
-                        TextField("written (blank deletes)", text: $row.written)
-                        Button {
+                        TextField("Written", text: $row.written, prompt: Text("written"))
+                        Button("Remove Replacement", systemImage: "minus.circle") {
                             replacements.removeAll { $0.id == row.id }
                             commitReplacements()
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundStyle(.red)
                         }
+                        .labelStyle(.iconOnly)
+                        .help("Remove Replacement")
                         .buttonStyle(.borderless)
                     }
+                    // A grouped form shows a field's title as a label beside it; the
+                    // arrow already says which side is which.
+                    .labelsHidden()
                     .onChange(of: row) { _, _ in commitReplacements() }
                 }
 
@@ -1683,6 +1374,15 @@ struct DictationSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear(perform: load)
+        .task {
+            // Picks up a microphone plugged in, or a default switched, while this tab
+            // is open. Only these two reload, because `load` also resets the vocabulary
+            // and replacements and would throw away edits in progress.
+            for await _ in AudioDeviceCatalog.changes() {
+                devices = AudioDeviceCatalog.inputDevices()
+                systemDefaultName = AudioDeviceCatalog.systemDefaultName()
+            }
+        }
     }
 
     private func load() {
@@ -1720,33 +1420,17 @@ struct DictationSettingsView: View {
         settings.wordReplacements = result
     }
 }
-#endif
 
-// MARK: - Per-App Profiles (macOS only)
+// MARK: - Per-App Profiles
 
-#if os(macOS)
 struct AppProfilesSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(PromptConfiguration.self) private var promptConfig
 
     @State private var profiles: [AppProfile] = []
-    @State private var isPickingApp = false
 
     var body: some View {
         Form {
-            Section {
-                Text("Override the prompt or output for particular apps. The app that was frontmost when you started talking decides which profile runs.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if profiles.isEmpty {
-                Section {
-                    Text("No profiles yet.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
             ForEach($profiles) { $profile in
                 Section {
                     Toggle(profile.appName, isOn: $profile.isEnabled)
@@ -1797,24 +1481,16 @@ struct AppProfilesSettingsView: View {
             }
 
             Section {
-                Button {
-                    isPickingApp = true
-                } label: {
-                    Label("Add App", systemImage: "plus")
+                Button("Add App…", systemImage: "plus") {
+                    addApp()
                 }
                 .buttonStyle(.borderless)
+            } footer: {
+                Text("A profile overrides the prompt or output for one app. The app you start talking in picks the prompt. The app in front when the text is ready decides how it arrives.")
             }
         }
         .formStyle(.grouped)
         .onAppear(perform: load)
-        .sheet(isPresented: $isPickingApp) {
-            RunningAppPicker { app in
-                add(app)
-                isPickingApp = false
-            } onCancel: {
-                isPickingApp = false
-            }
-        }
     }
 
     private func load() {
@@ -1828,96 +1504,90 @@ struct AppProfilesSettingsView: View {
         )
     }
 
-    private func add(_ app: NSRunningApplication) {
-        guard let bundleID = app.bundleIdentifier else { return }
-        guard !profiles.contains(where: { $0.bundleIdentifier == bundleID }) else { return }
+    /// Choose an app from the Applications folder, as System Settings does for login
+    /// items, so it need not be running and the user never types a bundle identifier.
+    private func addApp() {
+        guard let window = NSApp.keyWindow else { return }
 
-        profiles.append(AppProfile(
-            bundleIdentifier: bundleID,
-            appName: app.localizedName ?? bundleID,
-            promptId: nil,
-            outputModeRaw: nil,
-            autoSubmit: nil
-        ))
-        profiles.sort { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
-        commit()
-    }
-}
+        let panel = NSOpenPanel()
+        panel.directoryURL = URL(filePath: "/Applications")
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = false
 
-/// Pick from the apps currently running, so the user never types a bundle identifier.
-struct RunningAppPicker: View {
-    let onPick: (NSRunningApplication) -> Void
-    let onCancel: () -> Void
+        // Apps that already have a profile are greyed out. Chosen, they closed the
+        // panel and changed nothing, which looked like a failed add.
+        let filter = ExistingProfileFilter(taken: Set(profiles.map(\.bundleIdentifier)))
+        panel.delegate = filter
 
-    private var apps: [NSRunningApplication] {
-        NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil }
-            .sorted {
-                ($0.localizedName ?? "").localizedCaseInsensitiveCompare($1.localizedName ?? "") == .orderedAscending
-            }
-    }
+        // A sheet on the Settings window. Run modally, the panel floated free of the
+        // window and blocked every other one in the app, the menu bar's Stop Meeting
+        // included.
+        Task {
+            let response = await panel.beginSheetModal(for: window)
+            // The panel holds its delegate weakly, so the filter is kept alive here
+            // until the sheet has closed.
+            withExtendedLifetime(filter) {}
 
-    var body: some View {
-        VStack(spacing: 0) {
-            Text("Choose an App")
-                .font(.headline)
-                .padding()
+            guard response == .OK,
+                  let url = panel.url,
+                  let bundle = Bundle(url: url),
+                  let bundleID = bundle.bundleIdentifier else { return }
+            // The filter cannot see through a Finder alias, which the panel resolves
+            // to the app it points at. commit() cannot hold two profiles for one app.
+            guard !profiles.contains(where: { $0.bundleIdentifier == bundleID }) else { return }
 
-            List(apps, id: \.processIdentifier) { app in
-                Button {
-                    onPick(app)
-                } label: {
-                    HStack {
-                        if let icon = app.icon {
-                            Image(nsImage: icon)
-                                .resizable()
-                                .frame(width: 20, height: 20)
-                        }
-                        Text(app.localizedName ?? app.bundleIdentifier ?? "Unknown")
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
+            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+                ?? url.deletingPathExtension().lastPathComponent
 
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Cancel", action: onCancel)
-                    .keyboardShortcut(.cancelAction)
-            }
-            .padding()
+            profiles.append(AppProfile(
+                bundleIdentifier: bundleID,
+                appName: name,
+                promptId: nil,
+                outputModeRaw: nil,
+                autoSubmit: nil
+            ))
+            profiles.sort { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
+            commit()
         }
-        .frame(width: 360, height: 420)
     }
 }
-#endif
 
-// MARK: - Diarization Model Management (macOS only)
+/// Greys out apps that already have a profile in the Add App panel.
+@MainActor
+private final class ExistingProfileFilter: NSObject, NSOpenSavePanelDelegate {
+    private let taken: Set<String>
 
-#if os(macOS)
+    init(taken: Set<String>) {
+        self.taken = taken
+    }
+
+    func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
+        // Folders stay enabled so the user can still open them.
+        guard url.pathExtension == "app" else { return true }
+        return !taken.contains(Bundle(url: url)?.bundleIdentifier ?? "")
+    }
+}
+
+// MARK: - Diarization Model Management
+
 /// Status and updates for the CoreML speaker models.
 ///
 /// FluidAudio downloads these once and never looks again — its only test is whether
 /// the file exists, so an install keeps whatever the repository held that day forever.
-/// This is the missing half: compare the recorded revision against the published head,
-/// and replace on request.
+/// This is the missing half: check the installed files against the hashes the
+/// repository publishes, and replace them on request.
 struct DiarizationModelsSection: View {
 
     @State private var isInstalled = false
     @State private var sizeLabel = ""
     @State private var installedAt: Date?
-    @State private var installedRevision: String?
 
     @State private var isChecking = false
     @State private var isUpdating = false
     @State private var isInstalling = false
     @State private var installError: String?
     @State private var checkResult: CheckResult?
-
-    @State private var unusedFolders: [(name: String, size: Int64)] = []
 
     enum CheckResult: Equatable {
         case upToDate(Date?)
@@ -1926,8 +1596,9 @@ struct DiarizationModelsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        Section("Speaker Models") {
             status
+                .onAppear(perform: refresh)
 
             if isInstalled {
                 HStack(spacing: 12) {
@@ -1937,7 +1608,7 @@ struct DiarizationModelsSection: View {
                         if isChecking {
                             HStack(spacing: 6) {
                                 ProgressView().controlSize(.small)
-                                Text("Checking...")
+                                Text("Checking…")
                             }
                         } else {
                             Text("Check for Updates")
@@ -1946,12 +1617,12 @@ struct DiarizationModelsSection: View {
                     .disabled(isChecking || isUpdating)
 
                     if case .updateAvailable = checkResult {
-                        Button(isUpdating ? "Updating..." : "Update Now") { update() }
+                        Button(isUpdating ? "Updating…" : "Update Now") { update() }
                             .disabled(isUpdating)
                     } else {
                         // Always reachable: a check that reports a problem must leave
                         // the user something to press.
-                        Button(isUpdating ? "Downloading..." : "Re-download Models") { update() }
+                        Button(isUpdating ? "Downloading…" : "Re-download Models") { update() }
                             .disabled(isChecking || isUpdating)
                     }
                 }
@@ -1963,10 +1634,8 @@ struct DiarizationModelsSection: View {
                 Text("Checking verifies every installed file against the content hash HuggingFace publishes — SHA-256 for model weights, git blob hashes for the rest. No audio or transcript leaves your Mac; it reads public metadata only. Re-downloading fetches fresh copies now and replaces the local ones; if the download fails, the current copies stay.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            if !isInstalled {
-                Button(isInstalling ? "Installing..." : "Install Models") { install() }
+            } else {
+                Button(isInstalling ? "Installing…" : "Install Models") { install() }
                     .disabled(isInstalling)
 
                 if let installError {
@@ -1975,13 +1644,7 @@ struct DiarizationModelsSection: View {
                         .foregroundStyle(.red)
                 }
             }
-
-            if !unusedFolders.isEmpty {
-                Divider()
-                unusedModels
-            }
         }
-        .onAppear(perform: refresh)
     }
 
     // MARK: Sections
@@ -1997,15 +1660,10 @@ struct DiarizationModelsSection: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    if let installedRevision {
-                        Text(installedRevision.prefix(7))
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
                 }
             }
         } else {
-            Label("Not installed. Meetings record and transcribe without them; installing adds speaker labels, and downloads about 13 MB from HuggingFace.",
+            Label("Not installed. Meetings record and transcribe without them; installing adds speaker labels, and downloads about 21 MB from HuggingFace.",
                   systemImage: "arrow.down.circle")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -2016,22 +1674,24 @@ struct DiarizationModelsSection: View {
     private func resultLabel(_ result: CheckResult) -> some View {
         switch result {
         case .upToDate(let date):
-            Label(
-                date.map { "Verified — contents match the models published \($0.formatted(date: .abbreviated, time: .omitted))" }
-                    ?? "Verified — contents match the published models",
-                systemImage: "checkmark.seal.fill"
-            )
+            Label {
+                Text(date.map { "Verified — contents match the models published \($0.formatted(date: .abbreviated, time: .omitted))" }
+                    ?? "Verified — contents match the published models")
+            } icon: {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+            }
             .font(.caption)
-            .foregroundStyle(.green)
 
         case .updateAvailable(let date, let changed):
-            Label(
-                date.map { "\(changed) file\(changed == 1 ? "" : "s") no longer match — published \($0.formatted(date: .abbreviated, time: .omitted))" }
-                    ?? "\(changed) file\(changed == 1 ? "" : "s") do not match the published models",
-                systemImage: "arrow.down.circle.fill"
-            )
+            Label {
+                Text(date.map { "\(changed) file\(changed == 1 ? "" : "s") no longer match — published \($0.formatted(date: .abbreviated, time: .omitted))" }
+                    ?? "\(changed) file\(changed == 1 ? "" : "s") do not match the published models")
+            } icon: {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(.orange)
+            }
             .font(.caption)
-            .foregroundStyle(.orange)
 
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle")
@@ -2040,43 +1700,12 @@ struct DiarizationModelsSection: View {
         }
     }
 
-    private var unusedModels: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Other FluidAudio Models")
-                .font(.caption.bold())
-
-            Text("FluidAudio shares one cache across every model it offers. Inscribe uses only the speaker models — Apple's SpeechTranscriber does the transcribing — so these are taking space nothing reads.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(unusedFolders, id: \.name) { folder in
-                HStack {
-                    Text(folder.name)
-                        .font(.caption)
-                    Spacer()
-                    Text(DiarizationModelStore.formatted(bytes: folder.size))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Button("Remove Unused Models (\(DiarizationModelStore.formatted(bytes: unusedFolders.reduce(0) { $0 + $1.size })))") {
-                try? DiarizationModelStore.removeUnusedModels()
-                refresh()
-            }
-            .buttonStyle(.borderless)
-            .font(.caption)
-        }
-    }
-
     // MARK: Actions
 
     private func refresh() {
         isInstalled = DiarizationModelStore.isInstalled
-        sizeLabel = DiarizationModelStore.formatted(bytes: DiarizationModelStore.sizeOnDisk)
+        sizeLabel = DiarizationModelStore.sizeOnDisk.formatted(.byteCount(style: .file))
         installedAt = DiarizationModelStore.installedAt
-        installedRevision = DiarizationModelStore.installedRevision
-        unusedFolders = DiarizationModelStore.unusedModelFolders()
     }
 
     /// Download the models, which is the only moment Inscribe fetches them.
@@ -2105,9 +1734,9 @@ struct DiarizationModelsSection: View {
         Task {
             do {
                 switch try await DiarizationModelStore.compareWithRemote() {
-                case .upToDate(_, let date):
+                case .upToDate(let date):
                     checkResult = .upToDate(date)
-                case .updateAvailable(_, let date, let changed):
+                case .updateAvailable(let date, let changed):
                     checkResult = .updateAvailable(date, changedFiles: changed)
                 }
                 refresh()
@@ -2137,17 +1766,13 @@ struct DiarizationModelsSection: View {
         }
     }
 }
-#endif
 
-// MARK: - Meeting Audio (macOS only)
+// MARK: - Meeting Audio
 
-#if os(macOS)
-/// Whether meetings capture system playback as well as the microphone.
+/// Whether meetings keep their recording, and capture system playback as well as the
+/// microphone.
 struct MeetingAudioSection: View {
     @Environment(AppSettings.self) private var settings
-
-    @State private var permissionChecked = false
-    @State private var hasPermission = false
 
     /// Disk used by saved recordings, measured once when the section appears. Read in
     /// the body, it listed the recordings folder twice on every redraw.
@@ -2156,20 +1781,19 @@ struct MeetingAudioSection: View {
     var body: some View {
         @Bindable var settings = settings
 
-        VStack(alignment: .leading, spacing: 10) {
+        Section("Meetings") {
             Toggle("Keep the recording after a meeting ends", isOn: $settings.keepMeetingAudio)
+                .onAppear { recordingsSize = MeetingAudioStore.totalSize() }
 
-            Text("Lets you play back a line to check whether a speaker was attributed correctly, and re-run separation later. Roughly 30 MB an hour.")
+            Text("Lets you play back a line to check whether a speaker was attributed correctly. Roughly 30 MB an hour.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             if recordingsSize > 0 {
-                Text("Recordings currently use \(MeetingAudioStore.formatted(bytes: recordingsSize)).")
+                Text("Recordings currently use \(recordingsSize.formatted(.byteCount(style: .file))).")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
-
-            Divider()
 
             Toggle("Record system audio during meetings", isOn: $settings.captureSystemAudioInMeetings)
 
@@ -2178,36 +1802,21 @@ struct MeetingAudioSection: View {
                 .foregroundStyle(.secondary)
 
             if settings.captureSystemAudioInMeetings {
-                if permissionChecked && !hasPermission {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label("macOS has not granted system audio recording.", systemImage: "lock.fill")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-
-                        Button("Open System Settings") {
-                            SystemAudioCapture.openSystemSettings()
-                        }
-                        .buttonStyle(.link)
-                        .font(.caption)
-                    }
-                } else if permissionChecked {
-                    Label("System audio recording is available.", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
+                // Nothing here tests the permission. The only test creates a tap, and
+                // a refused permission may not refuse one, so the test could report
+                // access macOS never gave. It also held the main thread while the audio
+                // server answered. A meeting reports system audio that stays silent, so
+                // the link names the permission to check rather than saying whether it
+                // was given.
+                Button("Allow Inscribe in Screen & System Audio Recording…") {
+                    SystemAudioCapture.openSystemSettings()
                 }
-
-                Button(permissionChecked ? "Check Again" : "Check Permission") {
-                    hasPermission = SystemAudioCapture.checkAvailability()
-                    permissionChecked = true
-                }
-                .font(.caption)
+                .buttonStyle(.link)
 
                 Text("This records everyone audible on the call, not only you. Check that the people you are meeting with are content to be recorded.")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
         }
-        .onAppear { recordingsSize = MeetingAudioStore.totalSize() }
     }
 }
-#endif

@@ -55,14 +55,16 @@ enum MeetingExporter {
         dateFormatter.timeStyle = .short
 
         out += "**Recorded:** \(dateFormatter.string(from: meeting.startedAt))  \n"
-        out += "**Duration:** \(durationLabel(meeting.duration))  \n"
+        // A paused meeting's wall-clock length overstates what was captured, so the
+        // recorded length follows it, as the meeting header shows it.
+        var duration = durationLabel(meeting.duration)
+        if meeting.wasPaused {
+            duration += " (\(durationLabel(meeting.recordedDuration)) recorded)"
+        }
+        out += "**Duration:** \(duration)  \n"
 
         if meeting.hasSpeakerAttribution {
-            // Compared as Finder compares names, numbers by value. Plain string order
-            // put "Speaker 10" before "Speaker 2".
-            let names = meeting.speakers
-                .sorted { $0.generatedLabel.localizedStandardCompare($1.generatedLabel) == .orderedAscending }
-                .map(\.resolvedName)
+            let names = meeting.sortedSpeakers.map(\.resolvedName)
             out += "**Speakers:** \(names.joined(separator: ", "))  \n"
         }
 

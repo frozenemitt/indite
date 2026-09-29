@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 import SwiftData
 
 /// Hand corrections to what the diarizer decided.
@@ -21,10 +22,10 @@ extension Meeting {
 
     /// Add a speaker the diarizer never separated out.
     ///
-    /// Needed when two people were collapsed into one: create the missing speaker,
-    /// then reassign their utterances across.
-    @discardableResult
-    func addSpeaker(in context: ModelContext, named name: String = "") -> MeetingSpeaker {
+    /// Needed when two people were collapsed into one. Callers give the new speaker a
+    /// line in the same correction, because `pruneEmptySpeakers` runs after every
+    /// correction and would delete a speaker with nothing attributed to them.
+    func addSpeaker(in context: ModelContext) -> MeetingSpeaker {
         let existing = Set(speakers.map(\.speakerId))
         var index = speakers.count + 1
         var identifier = "manual-\(index)"
@@ -34,7 +35,7 @@ extension Meeting {
         }
 
         let label = nextGeneratedLabel()
-        let speaker = MeetingSpeaker(speakerId: identifier, generatedLabel: label, name: name)
+        let speaker = MeetingSpeaker(speakerId: identifier, generatedLabel: label)
         speaker.meeting = self
         context.insert(speaker)
         return speaker
@@ -119,6 +120,27 @@ extension Meeting {
         return tailUtterance
     }
 
+    // MARK: - Join
+
+    /// Join neighbouring lines by the same speaker into one.
+    ///
+    /// Run after every correction. Reassigning a stray word back to the person who
+    /// was talking left it as its own line between two of theirs, so the sentence
+    /// still read as interrupted after it had been fixed.
+    func joinNeighbours(in context: ModelContext) {
+        var previous: Utterance?
+        for utterance in orderedUtterances {
+            guard let last = previous, last.speakerId == utterance.speakerId else {
+                previous = utterance
+                continue
+            }
+            last.text = SpeakerAlignment.joined(last.text, utterance.text)
+            last.end = max(last.end, utterance.end)
+            utterances.removeAll { $0.persistentModelID == utterance.persistentModelID }
+            context.delete(utterance)
+        }
+    }
+
     // MARK: - Cleanup
 
     /// Drop speakers that no longer have anything attributed to them.
@@ -141,26 +163,22 @@ extension Meeting {
 /// Where an utterance could reasonably be cut.
 enum UtteranceSplitPoint {
 
-    /// Sentence ends, offered as candidate cut points.
+    /// The start of every sentence after the first, offered as candidate cut points.
     ///
     /// A missed handover almost always falls on a sentence boundary, so these are
     /// enough without asking the user to place a cursor mid-word.
     static func candidates(in text: String) -> [(offset: Int, preview: String)] {
-        var points: [(Int, String)] = []
-        var offset = 0
+        // Treating every ".", "?" and "!" as a sentence end offered cuts inside "3.5",
+        // after "Mr.", and inside "...", which left dots at the start of the next
+        // speaker's line. The sentence tokenizer knows none of those end a sentence.
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = text
 
-        let sentences = text.split(omittingEmptySubsequences: false) { $0 == "." || $0 == "?" || $0 == "!" }
-
-        for (index, sentence) in sentences.enumerated() where index < sentences.count - 1 {
-            // +1 for the punctuation the split consumed.
-            offset += sentence.count + 1
-
-            let after = String(text.dropFirst(offset)).trimmingCharacters(in: .whitespaces)
-            guard !after.isEmpty, offset < text.count else { continue }
-
-            points.append((offset, String(after.prefix(60))))
+        return tokenizer.tokens(for: text.startIndex..<text.endIndex).dropFirst().compactMap { sentence in
+            let preview = text[sentence.lowerBound...].trimmingCharacters(in: .whitespaces)
+            guard !preview.isEmpty else { return nil }
+            // Counted in Characters, which is what `Meeting.split` cuts at.
+            return (text.distance(from: text.startIndex, to: sentence.lowerBound), String(preview.prefix(60)))
         }
-
-        return points
     }
 }

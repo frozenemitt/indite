@@ -48,14 +48,4 @@ final class Dictation {
         guard let rawText else { return false }
         return rawText != text
     }
-
-    /// First line, trimmed, for a list row.
-    var preview: String {
-        let firstLine = text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: "\n", maxSplits: 1)
-            .first
-            .map(String.init) ?? ""
-        return firstLine.count > 120 ? String(firstLine.prefix(120)) + "…" : firstLine
-    }
 }

@@ -56,7 +56,6 @@ private struct TapState: Sendable {
     var trigger: HotkeyTrigger = .globe
     var undoTrigger: HotkeyTrigger?
     var activationMode: HotkeyActivationMode = .pushToTalk
-    var suppressTriggerKey = true
     var isRecording = false
     var isKeyDown = false
     var isCapturing = false
@@ -75,13 +74,12 @@ private struct TapState: Sendable {
 /// raw `.flagsChanged` stream, which carries both.
 ///
 /// Requires Accessibility trust — `CGEvent.tapCreate` returns nil without it.
+///
+/// `Log.hotkey` says whether the tap exists, whether it is enabled, and whether macOS
+/// switched it off. No keystroke is ever written there.
 @MainActor
 @Observable
 final class GlobalHotkeyMonitor {
-
-    /// Says whether the tap exists, whether it is enabled, and whether macOS switched
-    /// it off. No keystroke is ever written here.
-    nonisolated static let log = Logger(subsystem: "com.inscribe.app", category: "Hotkey")
 
     // MARK: - Observable State
 
@@ -111,18 +109,6 @@ final class GlobalHotkeyMonitor {
         didSet {
             let value = undoTrigger
             tapState.withLock { $0.undoTrigger = value }
-        }
-    }
-
-    /// Swallow the trigger keystroke so it does not reach the focused app.
-    ///
-    /// Reliable for ordinary key combinations. For the Globe key the system's
-    /// "Press 🌐 to" behaviour is handled below the event tap, so setting that to
-    /// "Do Nothing" in System Settings is the dependable fix.
-    var suppressTriggerKey = true {
-        didSet {
-            let value = suppressTriggerKey
-            tapState.withLock { $0.suppressTriggerKey = value }
         }
     }
 
@@ -157,7 +143,13 @@ final class GlobalHotkeyMonitor {
 
     // MARK: - Tap Internals
 
-    /// Read and written on the tap's thread, seeded from the main actor.
+    /// Read and written on the tap's thread.
+    ///
+    /// Each setting above writes itself in as it changes, so `start()` has nothing to
+    /// seed. It used to replace the whole state anyway. When Accessibility arrived
+    /// during a capture and the tap was rebuilt, that ended the capture: the
+    /// combination the user pressed next went to the app in front instead of into the
+    /// settings screen.
     private let tapState = OSAllocatedUnfairLock(initialState: TapState())
 
     /// Carries decisions from the tap thread to the main actor in order.
@@ -227,20 +219,9 @@ final class GlobalHotkeyMonitor {
         guard AccessibilityPermission.isTrusted else {
             lastError = "Accessibility access is required to detect the hotkey."
             isRunning = false
-            Self.log.error("not trusted, no tap")
+            Log.hotkey.error("not trusted, no tap")
             return false
         }
-
-        // Seeded before the tap exists, so the first keystroke cannot beat the config.
-        let seed = TapState(
-            trigger: trigger,
-            undoTrigger: undoTrigger,
-            activationMode: activationMode,
-            suppressTriggerKey: suppressTriggerKey,
-            isRecording: isRecording,
-            isKeyDown: false
-        )
-        tapState.withLock { $0 = seed }
 
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
@@ -257,7 +238,7 @@ final class GlobalHotkeyMonitor {
         ) else {
             lastError = "Could not create the event tap. Grant Accessibility access and try again."
             isRunning = false
-            Self.log.error("tapCreate returned nil")
+            Log.hotkey.error("tapCreate returned nil")
             return false
         }
 
@@ -272,7 +253,7 @@ final class GlobalHotkeyMonitor {
         // This used to report "Listening" regardless, and since every retry only runs
         // when the monitor says it is not running, nothing ever rebuilt it.
         guard host.waitUntilEnabled() else {
-            Self.log.error("tap never switched on — Accessibility is probably not granted to this build")
+            Log.hotkey.error("tap never switched on — Accessibility is probably not granted to this build")
             stop()
             lastError = "The hotkey could not switch on. In System Settings → Privacy & Security → Accessibility, remove Inscribe and add it again."
             return false
@@ -280,7 +261,7 @@ final class GlobalHotkeyMonitor {
 
         isRunning = true
         lastError = nil
-        Self.log.notice("tap installed, trigger=\(String(describing: self.trigger), privacy: .public), mode=\(self.activationMode.rawValue, privacy: .public), suppress=\(self.suppressTriggerKey, privacy: .public)")
+        Log.hotkey.notice("tap installed, trigger=\(String(describing: self.trigger), privacy: .public), mode=\(self.activationMode.rawValue, privacy: .public)")
         return true
     }
 
@@ -339,21 +320,25 @@ final class GlobalHotkeyMonitor {
             case .flagsChanged:
                 guard case .globe = state.trigger, keyCode == fnKeyCode else { return (false, nil) }
 
+                // Swallowing the Globe key does not reach its "Press 🌐 to" action, which
+                // the system handles below the event tap. Setting that to "Do Nothing" in
+                // System Settings is what stops it.
+                //
                 // On a flagsChanged for the Fn key, the Fn bit tells press from release.
                 if flags.contains(.maskSecondaryFn) {
-                    guard !state.isKeyDown else { return (state.suppressTriggerKey, nil) }
+                    guard !state.isKeyDown else { return (true, nil) }
                     state.isKeyDown = true
                     state.globeUsedAsModifier = false
                     state.pressStartedRecording = !state.isRecording
-                    return (state.suppressTriggerKey, edge(pressed: true, mode: state.activationMode))
+                    return (true, edge(pressed: true, mode: state.activationMode))
                 } else {
-                    guard state.isKeyDown else { return (state.suppressTriggerKey, nil) }
+                    guard state.isKeyDown else { return (true, nil) }
                     state.isKeyDown = false
                     if state.globeUsedAsModifier {
                         state.globeUsedAsModifier = false
-                        return (state.suppressTriggerKey, nil)
+                        return (true, nil)
                     }
-                    return (state.suppressTriggerKey, edge(pressed: false, mode: state.activationMode))
+                    return (true, edge(pressed: false, mode: state.activationMode))
                 }
 
             case .keyDown:
@@ -386,9 +371,9 @@ final class GlobalHotkeyMonitor {
                 else { return (false, nil) }
 
                 // Ignore the repeat stream produced by holding the key.
-                guard !isRepeat, !state.isKeyDown else { return (state.suppressTriggerKey, nil) }
+                guard !isRepeat, !state.isKeyDown else { return (true, nil) }
                 state.isKeyDown = true
-                return (state.suppressTriggerKey, edge(pressed: true, mode: state.activationMode))
+                return (true, edge(pressed: true, mode: state.activationMode))
 
             case .keyUp:
                 guard case let .combo(triggerKey, _) = state.trigger,
@@ -397,7 +382,7 @@ final class GlobalHotkeyMonitor {
                 else { return (false, nil) }
 
                 state.isKeyDown = false
-                return (state.suppressTriggerKey, edge(pressed: false, mode: state.activationMode))
+                return (true, edge(pressed: false, mode: state.activationMode))
 
             default:
                 return (false, nil)
@@ -417,17 +402,17 @@ final class GlobalHotkeyMonitor {
         // A tap switched off by user input is routine; a timeout means the callback
         // missed its deadline and keystrokes were dropped, which is not.
         if byTimeout {
-            Self.log.error("tap disabled by TIMEOUT, re-enabling")
+            Log.hotkey.error("tap disabled by TIMEOUT, re-enabling")
         } else {
-            Self.log.notice("tap disabled by user input, re-enabling")
+            Log.hotkey.notice("tap disabled by user input, re-enabling")
         }
         guard let port = tapPort.withLockUnchecked({ $0 }) else {
-            Self.log.error("no tap port to re-enable")
+            Log.hotkey.error("no tap port to re-enable")
             return
         }
         CGEvent.tapEnable(tap: port, enable: true)
         if !CGEvent.tapIsEnabled(tap: port) {
-            Self.log.error("tap would not switch back on")
+            Log.hotkey.error("tap would not switch back on")
         }
 
         // A release that happened while the tap was off never arrived, which left the
@@ -459,7 +444,7 @@ final class GlobalHotkeyMonitor {
             return edge(pressed: false, mode: state.activationMode)
         }
         if let action {
-            Self.log.notice("trigger key was released while the tap was off — releasing now")
+            Log.hotkey.notice("trigger key was released while the tap was off — releasing now")
             emit.yield(action)
         }
     }
@@ -477,7 +462,7 @@ final class GlobalHotkeyMonitor {
             // fault that stopped on its own, so the defence is gone and only the
             // reading of it remains.
             if let lastRelease, ContinuousClock.now - lastRelease < Self.chatterWindow {
-                Self.log.error("a press followed a release within \(Self.chatterWindow, privacy: .public) — the Globe key is chattering")
+                Log.hotkey.error("a press followed a release within \(Self.chatterWindow, privacy: .public) — the Globe key is chattering")
             }
             onActivate?()
 
@@ -529,7 +514,7 @@ private final class TapHost: @unchecked Sendable {
 
         let thread = Thread {
             guard let loop: CFRunLoop = CFRunLoopGetCurrent() else {
-                GlobalHotkeyMonitor.log.error("tap thread has no run loop")
+                Log.hotkey.error("tap thread has no run loop")
                 return
             }
             let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -540,7 +525,7 @@ private final class TapHost: @unchecked Sendable {
 
             // The one line worth keeping: a tap that reports itself installed but not
             // enabled receives nothing.
-            GlobalHotkeyMonitor.log.notice("tap enabled=\(isEnabled, privacy: .public)")
+            Log.hotkey.notice("tap enabled=\(isEnabled, privacy: .public)")
 
             CFRunLoopRun()
 
@@ -549,10 +534,6 @@ private final class TapHost: @unchecked Sendable {
         thread.name = "com.inscribe.hotkey-tap"
         thread.qualityOfService = QualityOfService.userInteractive
         thread.start()
-    }
-
-    func reenable() {
-        CGEvent.tapEnable(tap: tap, enable: true)
     }
 
     func invalidate() {
