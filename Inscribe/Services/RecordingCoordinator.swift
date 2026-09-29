@@ -349,7 +349,6 @@ final class RecordingCoordinator {
                 let typed = self.recentlyTyped()
                 let names = reading.terms.filter { !typed.contains(Vocabulary.key($0)) }
                 self.engine.useScreenTerms(names)
-                self.engine.noteScreen(reading)
                 Log.dictation.notice("Screen: \(names.count, privacy: .public) names kept of \(reading.terms.count, privacy: .public), read in \(reading.milliseconds, privacy: .public) ms")
             }
         }

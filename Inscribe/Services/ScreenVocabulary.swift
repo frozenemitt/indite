@@ -13,8 +13,6 @@ enum ScreenVocabulary {
 
     struct Reading: Sendable {
         let terms: [String]
-        let characters: Int
-        let elements: Int
         let milliseconds: Int
     }
 
@@ -52,8 +50,7 @@ enum ScreenVocabulary {
             }
         }
         let terms = unusualWords(in: texts.joined(separator: "\n"), limit: maxTerms)
-        return Reading(terms: terms, characters: characters, elements: visited,
-                       milliseconds: Int((clock.now - start) / .milliseconds(1)))
+        return Reading(terms: terms, milliseconds: Int((clock.now - start) / .milliseconds(1)))
     }
 
     // MARK: - Picking the words

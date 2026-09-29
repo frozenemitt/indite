@@ -72,15 +72,6 @@ final class TranscriptionEngine {
     /// The user's listed words for the session running now.
     private var vocabulary: [String] = []
 
-    /// Measurement only: this dictation's audio, and the recognizer's first guesses.
-    private var audioLog: DictationAudioLog?
-
-    /// Measurement only: the names on screen, saved with this dictation's audio.
-    func noteScreen(_ reading: ScreenVocabulary.Reading) {
-        audioLog?.noteScreen(reading)
-    }
-    private var firstGuesses = ""
-
     /// Names read from the screen for this dictation. They count as listed words, but
     /// never override one of the user's own; see `Vocabulary`.
     private var screenTerms: [String] = []
@@ -243,7 +234,6 @@ final class TranscriptionEngine {
         error = nil
         currentTranscript = ""
         volatileText = ""
-        firstGuesses = ""
         timedSegments = []
         vocabularySegments = []
         screenTerms = []
@@ -295,8 +285,6 @@ final class TranscriptionEngine {
         spectrumWanted.withLock { $0 = publishesSpectrum }
         let spectrumWanted = self.spectrumWanted
 
-        let audioLog = owner == .dictation ? DictationAudioLog(format: targetFormat) : nil
-        self.audioLog = audioLog
         audioProcessingTask = Task.detached(priority: .userInitiated) { [weak self] in
             let converter = BufferConverter()
             // Built the first time the band is wanted, which may be mid-session.
@@ -322,7 +310,6 @@ final class TranscriptionEngine {
 
                 do {
                     let converted = try converter.convertBuffer(audioData.buffer, to: targetFormat)
-                    audioLog?.write(converted)
                     spotter?.append(converted)
                     let input = AnalyzerInput(buffer: converted)
                     analyzerContinuation?.yield(input)
@@ -475,8 +462,6 @@ final class TranscriptionEngine {
             Self.log.notice("Spelled listed words as listed")
             currentTranscript = spelled
         }
-        audioLog?.finish(recognized: currentTranscript, firstGuesses: firstGuesses, vocabulary: vocabulary)
-        audioLog = nil
         Self.log.notice("recording stopped, delivering \(self.currentTranscript.count, privacy: .public) chars; \(finalAtRelease, privacy: .public) of \(heardAtRelease, privacy: .public) were final at release; results \(drained ? "drained" : "cut off", privacy: .public) after \(drainMs, privacy: .public) ms")
 
         // Released last. The wait on the spotter above gives up the main actor, and a
@@ -731,7 +716,6 @@ final class TranscriptionEngine {
                             self.vocabularySegments.append(Vocabulary.Segment(text: text, tookSecondGuess: text != heard, runs: vocabularyRuns))
                         }
                         if result.isFinal {
-                            self.firstGuesses += heard
                             self.currentTranscript += text
                             self.volatileText = ""
                             if self.collectTimedSegments {
