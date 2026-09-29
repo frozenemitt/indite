@@ -15,6 +15,11 @@ struct MenuBarView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.modelContext) private var modelContext
 
+    /// Kept current while the menu is open, so a microphone plugged in or switched on
+    /// appears without reopening it.
+    @State private var devices: [AudioInputDevice] = []
+    @State private var systemDefaultName = ""
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Dictation control
@@ -25,6 +30,10 @@ struct MenuBarView: View {
 
             // Prompt selection
             promptSection
+
+            // Microphone selection, the same setting as in Settings
+            microphoneSection
+                .padding(.top, 8)
 
             Divider()
                 .padding(.vertical, 4)
@@ -157,6 +166,74 @@ struct MenuBarView: View {
             .menuStyle(.borderlessButton)
             .disabled(!settings.aiEnabled)
         }
+    }
+
+    // MARK: - Microphone Section
+
+    private var microphoneSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Microphone")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Menu {
+                microphoneButton(
+                    uid: AudioInputDevice.systemDefaultUID,
+                    name: "System Default (\(systemDefaultName))"
+                )
+                if !devices.isEmpty {
+                    Divider()
+                }
+                ForEach(devices) { device in
+                    microphoneButton(uid: device.uid, name: device.name)
+                }
+            } label: {
+                HStack {
+                    Text(selectedMicrophoneName)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.1))
+                )
+            }
+            .menuStyle(.borderlessButton)
+        }
+        .task {
+            devices = AudioDeviceCatalog.inputDevices()
+            systemDefaultName = AudioDeviceCatalog.systemDefaultName()
+            for await _ in AudioDeviceCatalog.changes() {
+                devices = AudioDeviceCatalog.inputDevices()
+                systemDefaultName = AudioDeviceCatalog.systemDefaultName()
+            }
+        }
+    }
+
+    private func microphoneButton(uid: String, name: String) -> some View {
+        Button {
+            settings.inputDeviceUID = uid
+        } label: {
+            HStack {
+                Text(name)
+                if uid == settings.inputDeviceUID {
+                    Image(systemName: "checkmark")
+                }
+            }
+        }
+    }
+
+    /// The chosen microphone, or what recording falls back to when it is unplugged.
+    private var selectedMicrophoneName: String {
+        let uid = settings.inputDeviceUID
+        if uid == AudioInputDevice.systemDefaultUID {
+            return "System Default (\(systemDefaultName))"
+        }
+        return devices.first { $0.uid == uid }?.name ?? "Not Connected: Using System Default"
     }
 
     private var selectedPromptName: String {
