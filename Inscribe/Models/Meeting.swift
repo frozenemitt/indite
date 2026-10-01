@@ -38,7 +38,7 @@ final class Meeting {
     var speakers: [MeetingSpeaker]
 
     init(title: String = "", startedAt: Date = Date()) {
-        self.title = title.isEmpty ? Meeting.defaultTitle(for: startedAt) : title
+        self.title = title.isEmpty ? Meeting.placeholderTitle : title
         self.startedAt = startedAt
         self.endedAt = nil
         self.rawTranscript = ""
@@ -47,10 +47,35 @@ final class Meeting {
         self.speakers = []
     }
 
-    static func defaultTitle(for date: Date) -> String {
+    /// What a meeting is called until it has a title of its own.
+    ///
+    /// The default used to be "Meeting" and the date, which every list already shows
+    /// beside the title. A dozen meetings were then told apart by their times alone.
+    static let placeholderTitle = "New Meeting"
+
+    /// The old default's date format, kept to recognize titles nobody chose.
+    private static let datedTitleFormat: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE d MMMM, HH:mm"
-        return "Meeting \(formatter.string(from: date))"
+        return formatter
+    }()
+
+    /// Whether the title is one Inscribe gave it by default: the placeholder, or the
+    /// dated title of meetings recorded before titles were written. Only such a title
+    /// is replaced by a written one. A title the user typed is theirs.
+    var hasDefaultTitle: Bool {
+        if title == Self.placeholderTitle { return true }
+        guard title.hasPrefix("Meeting ") else { return false }
+        return Self.datedTitleFormat.date(from: String(title.dropFirst("Meeting ".count))) != nil
+    }
+
+    /// A title from the first words spoken, for when the model cannot write one.
+    var titleFromOpeningWords: String {
+        let words = rawTranscript.split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return "Untitled Meeting" }
+        let opening = words.prefix(6).joined(separator: " ")
+            .trimmingCharacters(in: .punctuationCharacters)
+        return words.count > 6 ? opening + "…" : opening
     }
 
     /// Wall-clock span from start to finish, including any paused stretches.

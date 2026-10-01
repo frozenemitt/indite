@@ -301,6 +301,9 @@ final class MeetingRecorder {
             }
 
             meeting.endedAt = meeting.startedAt.addingTimeInterval(meeting.recordedDuration)
+            if meeting.hasDefaultTitle {
+                meeting.title = meeting.titleFromOpeningWords
+            }
 
             // Checkpoints save the words as heard; the replacements a finished meeting
             // gets at stop() are applied here instead.
@@ -1048,6 +1051,11 @@ final class MeetingRecorder {
         activeMeeting = nil
         AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
 
+        // After the meeting is saved and the recorder is free, and in a task of its
+        // own. A quit waits for stop(), and must not wait for a summary; a meeting
+        // started straight after must not wait for one either.
+        Task { await self.writeTitleAndSummary(for: meeting, in: context) }
+
         // The title is the user's own words, so it is left private and the system
         // redacts it. The counts are what make the line worth keeping.
         Log.meetings.notice("""
@@ -1055,6 +1063,48 @@ final class MeetingRecorder {
             \(meeting.utterances.count, privacy: .public) utterances, \
             \(meeting.speakers.count, privacy: .public) speakers
             """)
+    }
+
+    // MARK: - Title
+
+    /// Give a meeting that has just ended a title, and a summary when it is long
+    /// enough to need one.
+    ///
+    /// The title is written even with the setting off, from the first words spoken:
+    /// "New Meeting" a dozen times over is the list this replaces.
+    private func writeTitleAndSummary(for meeting: Meeting, in context: ModelContext) async {
+        await writeTitle(for: meeting, in: context, usingModel: settings.summarizeMeetingsAtEnd)
+
+        // A summary of a few sentences is those sentences again.
+        guard settings.summarizeMeetingsAtEnd, meeting.rawTranscript.count >= Self.shortestSummarized else { return }
+        await summarize(meeting, in: context)
+    }
+
+    /// Characters of transcript below which a meeting is left unsummarized, about a
+    /// minute of speech.
+    private static let shortestSummarized = 800
+
+    /// Replace a default title with one that says what the meeting was about.
+    ///
+    /// Only a default title: one the user typed, during the meeting or since, stays.
+    private func writeTitle(for meeting: Meeting, in context: ModelContext, usingModel: Bool) async {
+        guard meeting.hasDefaultTitle else { return }
+
+        var title = meeting.titleFromOpeningWords
+        // A few words name themselves better than a model can.
+        if usingModel, meeting.rawTranscript.count >= 200 {
+            do {
+                title = try await aiProcessor.title(forMeetingTranscript: meeting.rawTranscript)
+            } catch {
+                Log.meetings.error("Could not write a title, using the opening words: \(error, privacy: .public)")
+            }
+        }
+
+        // Checked again after the wait: the user may have typed one meanwhile, or
+        // deleted the meeting.
+        guard !meeting.isDeleted, meeting.modelContext != nil, meeting.hasDefaultTitle else { return }
+        meeting.title = title
+        context.saveOrLog()
     }
 
     // MARK: - Summary
@@ -1070,6 +1120,9 @@ final class MeetingRecorder {
         guard summarizing.insert(id).inserted else { return }
         summaryErrors[id] = nil
         defer { summarizing.remove(id) }
+
+        // A meeting from before titles were written gets one when it is summarized.
+        await writeTitle(for: meeting, in: context, usingModel: true)
 
         do {
             var text = MeetingExporter.plainText(meeting)
