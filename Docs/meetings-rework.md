@@ -69,20 +69,18 @@ tried first and pushed Import and Delete into an overflow menu at the far side.
 
 All six are merged to main (353e1da).
 
-Deleting was reworked afterwards, on the branch `recently-deleted`: a meeting is
-deleted at once, with no dialog, into Recently Deleted for thirty days, and the
-list's three commands are icons in the toolbar above it. Installed 2026-10-01; the
-toolbar was seen on screen, and deleting, undoing and recovering are for Jonathan to
-try.
+Deleting was reworked afterwards: a meeting is deleted at once, with no dialog, into
+Recently Deleted for thirty days, and the list's three commands are icons in the
+toolbar above it. Merged to main on 2026-10-01 (e57730c).
 
 The date of deletion is a property of the meeting, `deletedAt`, added in version 2
 of the store. It was kept in preferences for its first hour. The migration ran on
 Jonathan's store on 2026-10-01 with 11 meetings, 179 lines, 19 speakers and 100
 dictations before and after; a copy from before it is in
 `~/Library/Application Support/Inscribe/Backups`. In the installed build, the Delete
-button wrote the date, Undo cleared it, and a second delete wrote it again.
-Recovering from the Recently Deleted list, erasing, and the thirty-day purge have
-not been run against the database.
+button wrote the date, Undo cleared it, and a second delete wrote it again. Jonathan
+recovered a meeting from the Recently Deleted list: "recovery works fine". Delete
+Now and the thirty-day purge have not been run against the database.
 
 The green that marked the selected meeting was the accent color the project was
 created with. The accent is now azure, the ribbon's color, chosen by Jonathan and
@@ -131,3 +129,24 @@ was tried and the highlight drew over it.
   the pill. All three were offered and none has been asked for yet.
 - Recognizing a voice across meetings.
 - Any change to the store's schema.
+
+## Retro, 2026-10-01
+
+The rework is closed: all six slices, Recently Deleted, and the azure accent are on
+main and installed.
+
+- **The deleted date was built twice.** It went into preferences first, to leave the
+  store's shape alone, and moved into the database within the hour when Jonathan
+  asked what that cost. A fact about a meeting belongs on the meeting; the migration
+  that was being avoided took one optional column and one test on a copy.
+- **Two mockups showed what the list will not draw.** The soft tint behind the
+  selected meeting was offered twice before the installed app showed the list
+  painting its own highlight over it. A look for a system control is checked in the
+  app before it is shown as an option.
+- **Nobody had chosen the accent color.** The green came with the project. A color
+  that reaches every button and switch is a decision to put to Jonathan, and it was
+  found only when he objected to it.
+- **An install cut a dictation at its start**, because a backup ran between the idle
+  check and the quit. The check and the quit now run as one command.
+- **What made judging fast:** installing each slice and reading the store or the log
+  afterwards, so every report named what had run and what had not.
