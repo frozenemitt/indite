@@ -20,6 +20,13 @@ struct TranscriptLine: Equatable, Identifiable {
     /// that kept its word timings. Nil for one that did not, where a word's moment is
     /// estimated from its place in the line.
     var wordTimes: [TimeInterval]?
+
+    /// The same line saying something else, after a correction. Its word timings go:
+    /// they were worked out for the words it had.
+    func saying(_ words: String) -> TranscriptLine {
+        TranscriptLine(id: id, speakerId: speakerId, speakerName: speakerName, color: color,
+                       timestamp: timestamp, text: words, start: start, end: end, wordTimes: nil)
+    }
 }
 
 /// A speaker a line can be given to.
@@ -39,6 +46,8 @@ struct TranscriptActions {
     /// Cut a line in two at a character of its text. The second half goes to the
     /// speaker named, or to a new one when none is.
     var split: (_ line: AnyHashable, _ characterOffset: Int, _ speakerId: String?) -> Void = { _, _, _ in }
+    /// Keep a line's words as the user has corrected them.
+    var correct: (_ line: AnyHashable, _ words: String) -> Void = { _, _ in }
 }
 
 /// A meeting's transcript as one continuous text.
@@ -49,9 +58,10 @@ struct TranscriptActions {
 /// run from one speaker's line into the next. Copying a sentence meant copying the
 /// whole transcript.
 ///
-/// This is AppKit's text view, not editable. It selects across speakers, it brings
-/// the system's find bar, and it knows the character under a click, which is what
-/// moves the playhead to a word. Whatever is passed as `header` scrolls with the
+/// This is AppKit's text view. It selects across speakers, it brings the system's
+/// find bar, and it knows the character under a click, which is what moves the
+/// playhead to a word. The words can be typed over to correct them; the names and
+/// times between them cannot. Whatever is passed as `header` scrolls with the
 /// text, as the top of the same page.
 struct TranscriptView<Header: View>: NSViewRepresentable {
     let lines: [TranscriptLine]
@@ -62,6 +72,8 @@ struct TranscriptView<Header: View>: NSViewRepresentable {
     let isPlaying: Bool
     /// Whether there is a recording to seek in.
     let canPlay: Bool
+    /// What the list is searching for. The page opens on the first place it is said.
+    var find = ""
     /// Where the playhead is this instant. Asked many times a second while audio
     /// runs, to mark the word being said, so it is a function and not a value: a value
     /// would have SwiftUI redraw the page for every word.
@@ -104,6 +116,7 @@ struct TranscriptView<Header: View>: NSViewRepresentable {
         coordinator.playhead = playhead
         coordinator.document?.headerController.rootView = AnyView(header())
         coordinator.show(lines)
+        coordinator.land(on: find)
         coordinator.mark(playing: playingID, following: isPlaying)
         coordinator.followWords(isPlaying)
         coordinator.document?.needsLayout = true
@@ -157,20 +170,29 @@ final class TranscriptCoordinator: NSObject {
     /// scrolled to.
     func show(_ newLines: [TranscriptLine]) {
         guard newLines != lines, let textView = document?.textView else { return }
+
+        // After a correction the page hands back the lines the text already shows,
+        // with word timings worked out for the new words. Take the timings and leave
+        // the text alone: setting it again would move the caret out from under the
+        // user's hands and empty the undo stack.
+        if newLines.count == lines.count,
+           zip(newLines, lines).allSatisfy({ $0.saying("") == $1.saying("") && $0.text == $1.text }) {
+            lines = newLines
+            wordsInLine = lines.map(Self.words)
+            playingWord = nil
+            markWord()
+            return
+        }
+
         lines = newLines
         playingIndex = nil
         playingWord = nil
+        textView.undoManager?.removeAllActions()
 
         let text = NSMutableAttributedString()
         wordRanges = []
         lineRanges = []
-        // Kept only where they agree with the timings in number. Timings for some
-        // other wording of the line would mark the wrong words.
-        wordsInLine = lines.map { line in
-            guard let times = line.wordTimes else { return [] }
-            let ranges = WordAlignment.wordRanges(in: line.text)
-            return ranges.count == times.count ? ranges : []
-        }
+        wordsInLine = lines.map(Self.words)
 
         for (index, line) in lines.enumerated() {
             let lineStart = text.length
@@ -198,12 +220,7 @@ final class TranscriptCoordinator: NSObject {
             ]))
 
             let wordsStart = text.length
-            text.append(NSAttributedString(string: line.text, attributes: [
-                .font: TranscriptStyle.wordsFont,
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: TranscriptStyle.wordsParagraph,
-                .transcriptLine: index
-            ]))
+            text.append(NSAttributedString(string: line.text, attributes: Self.wordAttributes(forLineAt: index)))
             wordRanges.append(NSRange(location: wordsStart, length: text.length - wordsStart))
 
             text.append(NSAttributedString(string: "\n", attributes: [
@@ -215,6 +232,136 @@ final class TranscriptCoordinator: NSObject {
 
         textView.textStorage?.setAttributedString(text)
         document?.needsLayout = true
+    }
+
+    /// Where each word of a line sits in its text, for a line that has word timings.
+    /// Kept only where the two agree in number: timings for some other wording of the
+    /// line would mark the wrong words.
+    private static func words(of line: TranscriptLine) -> [NSRange] {
+        guard let times = line.wordTimes else { return [] }
+        let ranges = WordAlignment.wordRanges(in: line.text)
+        return ranges.count == times.count ? ranges : []
+    }
+
+    /// How a line's words are set, and the mark that says which line they belong to.
+    fileprivate static func wordAttributes(forLineAt index: Int) -> [NSAttributedString.Key: Any] {
+        [
+            .font: TranscriptStyle.wordsFont,
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: TranscriptStyle.wordsParagraph,
+            .transcriptLine: index
+        ]
+    }
+
+    // MARK: Corrections
+
+    /// Whether a piece of typing may go ahead: only inside one line's words, never
+    /// across a name or a time, never a line break, and never the whole of a line.
+    ///
+    /// The transcript is a document of lines that each belong to someone. Typing may
+    /// change what a line says and nothing about whose it is or how many there are.
+    func allowsChange(in range: NSRange, to replacement: String, in textView: NSTextView) -> Bool {
+        guard let index = wordRanges.firstIndex(where: {
+            range.location >= $0.location && NSMaxRange(range) <= NSMaxRange($0)
+        }) else { return false }
+        guard !replacement.contains(where: \.isNewline) else { return false }
+        guard wordRanges[index].length - range.length + replacement.utf16.count > 0 else { return false }
+
+        // Typed text takes its look from the character before it, which at the start
+        // of a line is the time above. Say what it is instead.
+        textView.typingAttributes = Self.wordAttributes(forLineAt: index)
+        return true
+    }
+
+    /// Take in what was typed: find where every line now sits, and hand each line
+    /// whose words changed to whoever owns the meeting.
+    ///
+    /// Read back from the shape of the text, which typing cannot change: a name
+    /// begins each line, its words begin after the line break that follows, and they
+    /// end at the break before the next name. So it holds for one keystroke and for a
+    /// Replace All alike. The mark on the words themselves is not trusted for this:
+    /// text typed at the very start of a line takes its look, and so its mark, from
+    /// the time above it.
+    func textChanged(in textView: NSTextView) {
+        guard let storage = textView.textStorage else { return }
+        let text = storage.string as NSString
+
+        var starts = [Int?](repeating: nil, count: lines.count)
+        storage.enumerateAttribute(.transcriptSpeaker, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let index = value as? Int, index < starts.count, starts[index] == nil else { return }
+            starts[index] = range.location
+        }
+        guard starts.allSatisfy({ $0 != nil }) else { return }
+
+        var words: [NSRange] = []
+        for index in lines.indices {
+            let nameEnd = text.range(of: "\n", range: NSRange(location: starts[index]!, length: text.length - starts[index]!))
+            guard nameEnd.location != NSNotFound else { return }
+            let wordsStart = NSMaxRange(nameEnd)
+            let wordsEnd = (index + 1 < lines.count ? starts[index + 1]! : text.length) - 1
+            guard wordsEnd >= wordsStart else { return }
+            words.append(NSRange(location: wordsStart, length: wordsEnd - wordsStart))
+        }
+
+        wordRanges = words
+        lineRanges = lines.indices.map { index in
+            NSRange(location: starts[index]!, length: NSMaxRange(words[index]) + 1 - starts[index]!)
+        }
+
+        for index in lines.indices {
+            let said = text.substring(with: wordRanges[index])
+            guard said != lines[index].text else { continue }
+            // Typed at the start of a line, or pasted, text can bring another look.
+            storage.setAttributes(Self.wordAttributes(forLineAt: index), range: wordRanges[index])
+            lines[index] = lines[index].saying(said)
+            wordsInLine[index] = []
+            actions.correct(lines[index].id, said)
+        }
+        playingWord = nil
+        document?.needsLayout = true
+
+        // Text typed into the line being played arrives without the line's mark, and
+        // the word mark is left where the old words were. Draw the line's again; the
+        // word's comes back with the new timings.
+        if let index = playingIndex, let layoutManager = textView.layoutManager {
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: lineRanges[index])
+            layoutManager.addTemporaryAttribute(.backgroundColor, value: Self.lineTint, forCharacterRange: lineRanges[index])
+        }
+    }
+
+    // MARK: Search
+
+    /// The search the page last landed on, so it lands once for each.
+    private var landedOn = ""
+
+    /// Go to the first place the meeting says what the list is searching for.
+    ///
+    /// The list's search used to find the meeting and leave the reader at the top of
+    /// it. The words are also handed to the system's find, so ⌘G steps to the next
+    /// place they are said.
+    func land(on query: String) {
+        guard query != landedOn else { return }
+        landedOn = query
+        guard !query.isEmpty, let textView = document?.textView else { return }
+
+        // In the words only. A search for a speaker's name should land on what was
+        // said, not on the name above every line of theirs.
+        let text = textView.string as NSString
+        let match = wordRanges.lazy
+            .map { text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], range: $0) }
+            .first { $0.location != NSNotFound }
+        guard let match else { return }
+
+        let pasteboard = NSPasteboard(name: .find)
+        pasteboard.clearContents()
+        pasteboard.setString(query, forType: .string)
+
+        // Once the text has been laid out, which a page opened this instant has not.
+        DispatchQueue.main.async {
+            textView.setSelectedRange(match)
+            textView.scrollRangeToVisible(match)
+            textView.showFindIndicator(for: match)
+        }
     }
 
     // MARK: Playback
@@ -527,8 +674,8 @@ final class TranscriptDocumentView: NSView {
 
 // MARK: - Text View
 
-/// The text view itself: read-only, selectable, and aware of names and words.
-final class TranscriptNSTextView: NSTextView {
+/// The text view itself: aware of names and words, and editable only in the words.
+final class TranscriptNSTextView: NSTextView, NSTextViewDelegate {
     private weak var coordinator: TranscriptCoordinator?
 
     /// Built on the older text system on purpose. Marking the line being played is a
@@ -545,8 +692,19 @@ final class TranscriptNSTextView: NSTextView {
 
         let textView = TranscriptNSTextView(frame: .zero, textContainer: container)
         textView.coordinator = coordinator
-        textView.isEditable = false
+        textView.delegate = textView
+        textView.isEditable = true
         textView.isSelectable = true
+        textView.allowsUndo = true
+        // The words are the meeting's, and a correction is the user's. Nothing here
+        // rewrites either on its own.
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.isGrammarCheckingEnabled = false
+        textView.importsGraphics = false
         textView.drawsBackground = false
         textView.isVerticallyResizable = false
         textView.isHorizontallyResizable = false
@@ -597,6 +755,32 @@ final class TranscriptNSTextView: NSTextView {
               let coordinator, coordinator.canPlay,
               let time = coordinator.time(forCharacterAt: selectedRange().location) else { return }
         coordinator.actions.seek(time)
+    }
+
+    // MARK: Corrections
+
+    func textView(
+        _ textView: NSTextView,
+        shouldChangeTextInRanges affectedRanges: [NSValue],
+        replacementStrings: [String]?
+    ) -> Bool {
+        // No strings means only attributes are changing, which is this view's own doing.
+        guard let replacementStrings, let coordinator else { return true }
+        let allowed = zip(affectedRanges, replacementStrings).allSatisfy { range, string in
+            coordinator.allowsChange(in: range.rangeValue, to: string, in: textView)
+        }
+        if !allowed { NSSound.beep() }
+        return allowed
+    }
+
+    func textDidChange(_ notification: Notification) {
+        coordinator?.textChanged(in: self)
+    }
+
+    /// Words only. A paste from a web page would otherwise bring its fonts and colors
+    /// into the transcript.
+    override func paste(_ sender: Any?) {
+        pasteAsPlainText(sender)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

@@ -213,13 +213,6 @@ struct ScribeApp: App {
         }
         .defaultSize(width: 900, height: 600)
 
-        Window("Import Recording", id: Self.importWindowID) {
-            ImportRecordingView()
-                .environment(settings)
-                .modelContainer(Self.modelContainer)
-        }
-        .defaultSize(width: 560, height: 520)
-
         Window("Dictation History", id: Self.historyWindowID) {
             DictationHistoryView()
                 .environment(settings)
@@ -231,7 +224,6 @@ struct ScribeApp: App {
 
     static let meetingsWindowID = "meetings"
     static let historyWindowID = "history"
-    static let importWindowID = "import"
 
     // MARK: - Launch Setup
 

@@ -27,6 +27,11 @@ final class MeetingPlayer {
 
     private(set) var isPlaying = false
     private(set) var currentTime: TimeInterval = 0
+
+    /// How fast the recording plays: 1 is as it was said.
+    var rate: Float = 1 {
+        didSet { player?.rate = rate }
+    }
     private(set) var lastError: String?
 
     /// The utterance being played or paused in, for highlighting it.
@@ -74,6 +79,7 @@ final class MeetingPlayer {
             let player = try await Self.open(MeetingAudioStore.url(forFileNamed: fileName))
             guard !Task.isCancelled else { return false }
 
+            player.rate = rate
             self.player = player
             loadedFileName = fileName
             currentTime = 0
@@ -93,6 +99,8 @@ final class MeetingPlayer {
     @concurrent
     nonisolated static func open(_ url: URL) async throws -> sending AVAudioPlayer {
         let player = try AVAudioPlayer(contentsOf: url)
+        // Asked for before the player is readied, which is the only time it may be.
+        player.enableRate = true
         player.prepareToPlay()
         return player
     }
@@ -169,6 +177,11 @@ final class MeetingPlayer {
         player.currentTime = max(0, min(time, max(0, player.duration - 0.05)))
         currentTime = player.currentTime
         updatePlayingUtterance()
+    }
+
+    /// Move the playhead by a number of seconds, back when negative.
+    func skip(by seconds: TimeInterval) {
+        seek(to: playhead + seconds)
     }
 
     /// Jump to an utterance and start playing it.
