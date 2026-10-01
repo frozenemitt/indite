@@ -73,7 +73,20 @@ Deleting was reworked afterwards, on the branch `recently-deleted`: a meeting is
 deleted at once, with no dialog, into Recently Deleted for thirty days, and the
 list's three commands are icons in the toolbar above it. Installed 2026-10-01; the
 toolbar was seen on screen, and deleting, undoing and recovering are for Jonathan to
-try. The date of deletion is kept in preferences, so the store's shape is unchanged.
+try.
+
+The date of deletion is a property of the meeting, `deletedAt`, added in version 2
+of the store. It was kept in preferences for its first hour. The migration ran on
+Jonathan's store on 2026-10-01 with 11 meetings, 179 lines, 19 speakers and 100
+dictations before and after; a copy from before it is in
+`~/Library/Application Support/Inscribe/Backups`. In the installed build, the Delete
+button wrote the date, Undo cleared it, and a second delete wrote it again.
+Recovering from the Recently Deleted list, erasing, and the thirty-day purge have
+not been run against the database.
+
+Open: the selected meeting in the list is drawn in the app's green at full strength
+once the list has the keyboard. Jonathan does not love it, and a replacement is
+proposed but not chosen.
 
 ## Rabbit holes
 

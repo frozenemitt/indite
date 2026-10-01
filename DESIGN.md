@@ -153,3 +153,10 @@ carried by shape.
   for thirty days. "I like the recently deleted option." To be judged in use: "I need
   to see it and play around with it to really get an idea if it meets the Apple level
   of polish."
+- 2026-10-01 A deleted meeting's date is kept in the database, on the meeting. Of
+  keeping it in the app's preferences: "Is this really a good idea? What are the
+  consequences?" Then: "Go ahead and move the 30 day date into the database."
+- 2026-10-01 The selected meeting's highlight in the list is to be redesigned. It is
+  the app's green at full strength with white text. "I don't love the green
+  highlight of the conversation that's active. Could you propose a more Apple
+  aligned view?" Options shown; none chosen yet.
