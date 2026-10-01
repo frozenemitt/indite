@@ -30,9 +30,8 @@ Speaker colors in a transcript come from the system palette, by speaker number.
 
 ## Typography
 
-The system font at system text styles. No fixed point sizes except the live clock.
-Transcript and summary text in the Meetings window is set in New York, the system
-serif; names, times and every control stay in San Francisco.
+The system font at system text styles, everywhere. No fixed point sizes except the
+live clock. No serif: see the decisions log.
 
 ## Layout
 
@@ -135,3 +134,7 @@ carried by shape.
   space key to play or pause the audio. Maybe there's another way to do it." The
   transcript is text and Space belongs to it; ⌘Return, the play button and the
   keyboard's Play/Pause key play and pause.
+- 2026-10-01 No serif in the transcript. Tried in the installed app and rejected: "I've
+  decided that I really don't like the serif font in the transcript. I think it's
+  pretty ugly, actually." Overrides the same day's "sure, go ahead and do it". The
+  transcript is set in the system font.

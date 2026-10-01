@@ -118,6 +118,13 @@ final class MeetingPlayer {
         updatePlayingUtterance()
     }
 
+    /// Where the playhead is this instant, read from the recording itself.
+    ///
+    /// `currentTime` is what the page observes and it moves four times a second. The
+    /// transcript marks the word being said, and asks this, which is exact and tells
+    /// nobody when it changes.
+    var playhead: TimeInterval { player?.currentTime ?? currentTime }
+
     /// How long the recording is, or zero before one has opened.
     var duration: TimeInterval { player?.duration ?? 0 }
 

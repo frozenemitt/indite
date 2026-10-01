@@ -36,7 +36,7 @@ that sentence.
 1. The title, the date and length, and the speakers as chips. Clicking a chip renames
    that speaker everywhere.
 2. The summary, folded to its first three points, with Regenerate.
-3. The transcript, as one continuous text in the system serif. It can be selected
+3. The transcript, as one continuous text in the system font. It can be selected
    across speakers, searched with ⌘F, and clicked: a click on a word moves the
    playhead there. The word being played is marked. Space does not play: the
    transcript is text, and Space belongs to text. ⌘Return plays and pauses from the
@@ -57,7 +57,7 @@ Each one ends with something that runs. The uncertain one goes first.
 
 | # | Slice | Uphill or downhill |
 |---|---|---|
-| 1 | The transcript as one text view: selectable across speakers, serif, ⌘F, speaker names clickable, split at the clicked word. A click moves the playhead, estimated inside the line. A playback bar for the whole recording. The rest of the window stays as it is. | Built and installed 2026-10-01. Seen working: the text, a click moving the playhead, ⌘F, the speaker menu. Untried: playing, the Play/Pause key, splitting a line. |
+| 1 | The transcript as one text view: selectable across speakers, ⌘F, speaker names clickable, split at the clicked word. A click moves the playhead, estimated inside the line. A playback bar for the whole recording. The rest of the window stays as it is. | Built and installed 2026-10-01. Seen working: the text, a click moving the playhead, ⌘F, the speaker menu. Untried: playing, the Play/Pause key, splitting a line. |
 | 2 | Word timings kept for new recordings and imports. The click lands on the exact word, and the word being played is marked. | Uphill until the first recording confirms the recognizer times single words. |
 | 3 | Correcting words in place. Added 2026-10-01 at Jonathan's request; it was a no-go in the first shape. | Uphill: the corrected text has to stay matched to the audio, and to the search. |
 | 4 | Layout A: the side column goes; summary block and speaker chips at the top; the playback bar with speed, skip and the speaker strip; Copy as Markdown. | Downhill. |

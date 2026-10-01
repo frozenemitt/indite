@@ -16,6 +16,10 @@ struct TranscriptLine: Equatable, Identifiable {
     let text: String
     let start: TimeInterval
     let end: TimeInterval
+    /// When each word of `text` was spoken, one per word in order, for a recording
+    /// that kept its word timings. Nil for one that did not, where a word's moment is
+    /// estimated from its place in the line.
+    var wordTimes: [TimeInterval]?
 }
 
 /// A speaker a line can be given to.
@@ -58,6 +62,10 @@ struct TranscriptView<Header: View>: NSViewRepresentable {
     let isPlaying: Bool
     /// Whether there is a recording to seek in.
     let canPlay: Bool
+    /// Where the playhead is this instant. Asked many times a second while audio
+    /// runs, to mark the word being said, so it is a function and not a value: a value
+    /// would have SwiftUI redraw the page for every word.
+    let playhead: () -> TimeInterval
     let actions: TranscriptActions
     @ViewBuilder let header: () -> Header
 
@@ -93,9 +101,11 @@ struct TranscriptView<Header: View>: NSViewRepresentable {
         coordinator.actions = actions
         coordinator.speakers = speakers
         coordinator.canPlay = canPlay
+        coordinator.playhead = playhead
         coordinator.document?.headerController.rootView = AnyView(header())
         coordinator.show(lines)
         coordinator.mark(playing: playingID, following: isPlaying)
+        coordinator.followWords(isPlaying)
         coordinator.document?.needsLayout = true
     }
 }
@@ -119,13 +129,24 @@ final class TranscriptCoordinator: NSObject {
     var actions = TranscriptActions()
     var speakers: [TranscriptSpeaker] = []
     var canPlay = false
+    var playhead: () -> TimeInterval = { 0 }
 
     private(set) var lines: [TranscriptLine] = []
     /// Where each line's words sit in the text, in the order of `lines`.
     private var wordRanges: [NSRange] = []
     /// The whole of each line, name and words, for marking the one being played.
     private var lineRanges: [NSRange] = []
+    /// Where each word sits inside its line's words, for the lines that have word
+    /// timings; empty for the others.
+    private var wordsInLine: [[NSRange]] = []
     private var playingIndex: Int?
+    /// The word marked as being said, in the playing line.
+    private var playingWord: Int?
+    /// Moves the word mark along while audio runs.
+    private var wordFollower: Task<Void, Never>?
+
+    private static let lineTint = NSColor.controlAccentColor.withAlphaComponent(0.14)
+    private static let wordTint = NSColor.controlAccentColor.withAlphaComponent(0.42)
 
     // MARK: Text
 
@@ -138,10 +159,18 @@ final class TranscriptCoordinator: NSObject {
         guard newLines != lines, let textView = document?.textView else { return }
         lines = newLines
         playingIndex = nil
+        playingWord = nil
 
         let text = NSMutableAttributedString()
         wordRanges = []
         lineRanges = []
+        // Kept only where they agree with the timings in number. Timings for some
+        // other wording of the line would mark the wrong words.
+        wordsInLine = lines.map { line in
+            guard let times = line.wordTimes else { return [] }
+            let ranges = WordAlignment.wordRanges(in: line.text)
+            return ranges.count == times.count ? ranges : []
+        }
 
         for (index, line) in lines.enumerated() {
             let lineStart = text.length
@@ -200,15 +229,13 @@ final class TranscriptCoordinator: NSObject {
             layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: lineRanges[old])
         }
         playingIndex = index
+        playingWord = nil
         guard let index, index < lineRanges.count else { return }
 
         // A temporary attribute: drawn, and no part of the text, so a copy of the
         // line does not carry a background with it.
-        layoutManager.addTemporaryAttribute(
-            .backgroundColor,
-            value: NSColor.controlAccentColor.withAlphaComponent(0.14),
-            forCharacterRange: lineRanges[index]
-        )
+        layoutManager.addTemporaryAttribute(.backgroundColor, value: Self.lineTint, forCharacterRange: lineRanges[index])
+        markWord()
 
         // Only while audio runs. A click that moves the playhead is already looking at
         // the line, and scrolling under the pointer would move the words it clicked.
@@ -223,13 +250,72 @@ final class TranscriptCoordinator: NSObject {
         }
     }
 
+    /// Keep the word mark moving while audio runs, and place it once when it stops.
+    ///
+    /// Fifteen times a second, inside AppKit. Speech runs at about three words a
+    /// second, and the player's own tick, four a second, would mark every word late.
+    func followWords(_ isPlaying: Bool) {
+        markWord()
+        guard isPlaying else {
+            wordFollower?.cancel()
+            wordFollower = nil
+            return
+        }
+        guard wordFollower == nil else { return }
+        wordFollower = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(66))
+                guard let self, !Task.isCancelled else { return }
+                self.markWord()
+            }
+        }
+    }
+
+    /// Mark the word under the playhead in the playing line, when the line has word
+    /// timings. A line without them keeps the line's own mark and no more: a guess
+    /// at the word would be wrong more often than right.
+    func markWord() {
+        guard let index = playingIndex, index < wordsInLine.count,
+              let times = lines[index].wordTimes, !wordsInLine[index].isEmpty,
+              let layoutManager = document?.textView.layoutManager else { return }
+
+        // The last word that has begun by now.
+        let now = playhead()
+        var low = 0
+        var high = times.count - 1
+        while low < high {
+            let middle = (low + high + 1) / 2
+            if times[middle] <= now { low = middle } else { high = middle - 1 }
+        }
+        guard low != playingWord else { return }
+
+        let base = wordRanges[index].location
+        func absolute(_ word: Int) -> NSRange {
+            NSRange(location: base + wordsInLine[index][word].location, length: wordsInLine[index][word].length)
+        }
+        if let old = playingWord, old < wordsInLine[index].count {
+            layoutManager.addTemporaryAttribute(.backgroundColor, value: Self.lineTint, forCharacterRange: absolute(old))
+        }
+        layoutManager.addTemporaryAttribute(.backgroundColor, value: Self.wordTint, forCharacterRange: absolute(low))
+        playingWord = low
+    }
+
     /// The moment a character of the text was spoken.
     ///
-    /// Estimated from the character's place in its line. A line knows only when it
-    /// began and ended, so a word halfway along it is taken to fall halfway through.
+    /// The start of the word it is in, where the recording kept its word timings.
+    /// Otherwise estimated from the character's place in its line: a line knows only
+    /// when it began and ended, so a word halfway along it is taken to fall halfway
+    /// through.
     func time(forCharacterAt characterIndex: Int) -> TimeInterval? {
         guard let (index, offset) = line(forCharacterAt: characterIndex) else { return nil }
         let line = lines[index]
+
+        if let times = line.wordTimes, !wordsInLine[index].isEmpty {
+            // The word the character is in, or the one before a space that was clicked.
+            let word = wordsInLine[index].lastIndex { $0.location <= offset } ?? 0
+            return times[word]
+        }
+
         let length = max(wordRanges[index].length, 1)
         return line.start + (line.end - line.start) * Double(offset) / Double(length)
     }
@@ -330,16 +416,11 @@ private final class TranscriptMenuItem: NSMenuItem {
 
 // MARK: - Style
 
-/// The transcript's type. The words are set in New York, the system's serif, for
-/// reading at length. Names and times stay in San Francisco, as every control does.
+/// The transcript's type: the system font throughout. The words were tried in New
+/// York, the system's serif, and Jonathan found it ugly on the page.
 @MainActor
 private enum TranscriptStyle {
-    static let wordsFont: NSFont = {
-        let body = NSFont.preferredFont(forTextStyle: .body)
-        guard let serif = body.fontDescriptor.withDesign(.serif) else { return body }
-        // A point larger: the serif reads smaller than the sans at the same size.
-        return NSFont(descriptor: serif, size: body.pointSize + 1) ?? body
-    }()
+    static let wordsFont = NSFont.preferredFont(forTextStyle: .body)
 
     static let nameFont: NSFont = {
         let size = NSFont.preferredFont(forTextStyle: .subheadline).pointSize
@@ -361,7 +442,7 @@ private enum TranscriptStyle {
 
     static let wordsParagraph: NSParagraphStyle = {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 3
+        style.lineSpacing = 4
         style.paragraphSpacing = 18
         return style
     }()

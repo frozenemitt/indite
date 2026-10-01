@@ -1042,6 +1042,10 @@ final class MeetingRecorder {
         if !attributed {
             MeetingAudioStore.delete(fileNamed: meeting.audioFileName)
             meeting.audioFileName = nil
+        } else if let recording = meeting.audioFileName {
+            // The recognizer's timing for every word, beside the recording, so a click
+            // on a word in the transcript can find the moment it was said.
+            MeetingWordTimings.save(tracks: [collectedSegments, callSegments], forRecording: recording)
         }
 
         context.saveOrLog()

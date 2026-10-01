@@ -384,6 +384,9 @@ private struct MeetingDetailView: View {
     @AppStorage("meetingInspectorShown") private var showsInspector = true
     @State private var exportError: String?
     @State private var player = MeetingPlayer()
+    /// When each word of the recording was said, for a meeting recorded since those
+    /// were kept. Nil for an older one.
+    @State private var wordTimings: MeetingWordTimings?
 
     private var isLive: Bool { meeting == recorder.activeMeeting && recorder.hasActiveMeeting }
 
@@ -404,6 +407,7 @@ private struct MeetingDetailView: View {
                     // Not while live, when the file is still being written.
                     .task {
                         await player.load(fileName: meeting.audioFileName)
+                        wordTimings = MeetingWordTimings.load(forRecording: meeting.audioFileName)
                         // Given once the recording is open, so a click on a word marks
                         // its line before play has ever been pressed.
                         player.follow(meeting.orderedUtterances)
@@ -480,6 +484,7 @@ private struct MeetingDetailView: View {
                 // Whether the recording opened, not only whether its file exists, so
                 // a recording that will not play never offers a playhead to move.
                 canPlay: player.loadedFileName != nil,
+                playhead: { player.playhead },
                 actions: transcriptActions
             ) {
                 MeetingPageHeader(meeting: meeting, recorder: recorder, player: player)
@@ -500,8 +505,7 @@ private struct MeetingDetailView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             Text(meeting.rawTranscript)
-                                .fontDesign(.serif)
-                                .lineSpacing(3)
+                                .lineSpacing(4)
                                 .textSelection(.enabled)
                         }
                     }
@@ -525,7 +529,12 @@ private struct MeetingDetailView: View {
                 timestamp: utterance.timestampLabel,
                 text: utterance.text,
                 start: utterance.start,
-                end: utterance.end
+                end: utterance.end,
+                wordTimes: wordTimings?.times(
+                    forWordsOf: utterance.text,
+                    spokenFrom: utterance.start,
+                    to: utterance.end
+                )
             )
         }
     }
