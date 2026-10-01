@@ -20,6 +20,8 @@ The one thing a person remembers: the ribbon of light that moves with their voic
 ## Colors
 
 System colors throughout, so light and dark and the user's accent color work.
+The app's own accent color is the ribbon's azure, `#3D99FF`. It colors the selected
+meeting, the default button, switches, and the block behind the line being played.
 The ribbon has the only colors of Inscribe's own, defined in `ListeningBar.swift`:
 
 - Azure `(0.24, 0.60, 1.00)` and violet `(0.62, 0.38, 1.00)` while listening.
@@ -169,3 +171,10 @@ carried by shape.
   note. Neutral gray for the meeting was offered and turned down. "I think the
   active meeting should be highlighted in an app color, and the green is definitely
   not it." Which color is the app's is not chosen yet.
+- 2026-10-01 Inscribe's color is azure, the ribbon's. Chosen over coral from the app
+  icon, which was recommended, and violet: "Azure". Installed the same hour. The
+  selected meeting is the system's own highlight, azure at full strength under white
+  text. The soft tint under dark text that the mockup showed is not built: the list
+  draws its highlight over any row background, so the tint needs the highlight
+  switched off in the AppKit table behind the list. Jonathan has not chosen between
+  the two.

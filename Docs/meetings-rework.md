@@ -84,9 +84,12 @@ button wrote the date, Undo cleared it, and a second delete wrote it again.
 Recovering from the Recently Deleted list, erasing, and the thirty-day purge have
 not been run against the database.
 
-Open: the selected meeting in the list is drawn in the app's green at full strength
-once the list has the keyboard. Jonathan does not love it, and a replacement is
-proposed but not chosen.
+The green that marked the selected meeting was the accent color the project was
+created with. The accent is now azure, the ribbon's color, chosen by Jonathan and
+installed 2026-10-01. Open: whether the selected meeting stays the system's
+highlight, azure at full strength under white text, or becomes a soft tint under
+dark text as Notes draws it. A row background does not replace the system's
+highlight; that was tried and the highlight drew over it.
 
 ## Rabbit holes
 
