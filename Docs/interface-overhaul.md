@@ -17,13 +17,15 @@ Slices, each shippable on its own, riskiest first.
 
 | # | Slice | Findings | State |
 |---|---|---|---|
-| 1 | System menu with a status line, one Rewrite submenu, Copy Last Dictation; menu bar icon with a shape per state; Start Meeting no longer opens the window | 3, 5, 14, 15, 16 | |
-| 2 | Dictation panel reports the outcome: copied, nothing heard, cut short | 1, 2 | |
-| 3 | Title and summary written when a meeting ends; default title without the date | 8, 9 | |
-| 4 | Meeting pill: 30-point targets, Stop asks once | 6 | |
-| 5 | History row: Show all, Insert names its target, undo for delete, no count | 7, 12, 27 | |
-| 6 | Settings regrouped into seven tabs with a Status list; captions cut; one sound switch; four-way After typing; one name per thing | 4, 18–22, 24–26, 28, 30 | |
-| 7 | Meetings window rework: layout to be chosen; selectable text, search inside a transcript, play from a word, import folded in, New Meeting button | 10, 11, 13, 17, 23, 29 | Waiting on the layout choice |
+| 1 | System menu with a status line, one Rewrite submenu, Recent Dictations and a type-again key; the ribbon as the menu bar icon, with a shape per state; Start Meeting no longer opens the window | 3, 5, 14, 15, 16 | Installed 2026-10-01. Menu, submenus and icon seen working. The status line's colored dot does not show. The type-again key is untried. |
+| 2 | Dictation panel reports the outcome: copied, nothing heard, cut short | 1, 2 | Installed. Untried on screen. |
+| 3 | Title and summary written when a meeting ends; default title without the date | 8, 9 | Installed. The title prompt was tried on nine recorded meetings; the end of a real meeting is untried. |
+| 4 | Meeting pill: 30-point targets, Stop asks once | 6 | Installed. Untried on screen. |
+| 5 | History row: Show all, Insert names its target, undo for delete, no count | 7, 12, 27 | Installed. Untried on screen. |
+| 6 | Settings regrouped into seven tabs with a Status list; captions cut; one sound switch; four-way After typing; one name per thing | 4, 18–22, 24–26, 28, 30 | Installed. Dictation, Rewriting, Meetings and Feedback seen working. |
+| 7 | Meetings window rework, layout A | 10, 11, 13, 17, 23, 29 | Shaped in `Docs/meetings-rework.md`. Not started. |
+
+Slices 1 to 6 are on the branch `interface-overhaul`, not merged.
 
 ## Rabbit holes
 
@@ -36,9 +38,8 @@ Slices, each shippable on its own, riskiest first.
   try the prompt on real transcripts before it ships; fall back to the first words
   spoken when the model is unavailable or fails.
 - **Word timings for play-from-selection.** The recognizer already times every word;
-  the app drops the timings when it groups words into lines. Keeping them means a new
-  store schema version. Call: part of slice 7, with a migration; older meetings
-  estimate the position inside the line.
+  the app drops the timings when it groups words into lines. Call: kept in a file
+  beside the recording, with no change to the store. See `Docs/meetings-rework.md`.
 
 ## No-gos this pass
 

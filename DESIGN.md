@@ -31,13 +31,17 @@ Speaker colors in a transcript come from the system palette, by speaker number.
 ## Typography
 
 The system font at system text styles. No fixed point sizes except the live clock.
+Transcript and summary text in the Meetings window is set in New York, the system
+serif; names, times and every control stay in San Francisco.
 
 ## Layout
 
 - Menu bar: a system menu.
 - Settings: tabs named for the job (Dictation, Rewriting, Words, Meetings, Feedback,
   Apps, About), each a grouped form.
-- Meetings: a list beside a page. The page layout is under review; see the epic.
+- Meetings: a list beside a page, with no third column. The list's commands sit
+  directly above it. The page reads top to bottom: title and speakers, summary,
+  transcript, and a playback bar along the bottom. See `Docs/meetings-rework.md`.
 - Floating panels: glass, dark, draggable, on every desktop.
 
 ## Elevation & Depth
@@ -66,7 +70,8 @@ rewriting ribbon still. No animation on menus or frequent actions.
 
 ## Imagery
 
-SF Symbols. The menu bar icon is a template image, so state is carried by shape.
+SF Symbols. The menu bar icon is the ribbon, drawn as a template image, so state is
+carried by shape.
 
 ## Do's and Don'ts
 
@@ -103,3 +108,20 @@ SF Symbols. The menu bar icon is a template image, so state is carried by shape.
 - 2026-10-01 The Meetings window gets a full rework; the layout is not chosen yet.
   "Think about a total overhaul for the meetings UI. I'm sure there are some
   efficiency and experience improvements we can make."
+- 2026-10-01 Meetings layout A, one page. "I agree with your recommendation on the
+  meetings page layout. I like the summary at the top of the meeting with the
+  transcript right below it."
+- 2026-10-01 Commands sit beside what they act on. Of Delete at the far right: "I
+  would have to select one on the left and then go delete it on the right." Delete
+  moves above the list, and several meetings can be selected. "I like the idea of
+  moving the delete in the toolbar directly above the list and allowing for multiple
+  selection of meetings."
+- 2026-10-01 Play audio from selected text. "I am very happy to hear that we can
+  select text and play audio from the text. I would like to incorporate that."
+- 2026-10-01 Recent Dictations and the type-again key. "I think those are really
+  high value adds to the menu."
+- 2026-10-01 The ribbon as the menu bar icon. "I like your menu ribbon icon option.
+  I think that looks really cool."
+- 2026-10-01 Serif for transcript text. "I don't really care about the reading face
+  that much. I think that it looks nice having the serif font on the actual text. So,
+  sure, go ahead and do it."
