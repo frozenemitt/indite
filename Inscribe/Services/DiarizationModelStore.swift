@@ -105,8 +105,16 @@ enum DiarizationModelStore {
     /// Left to itself, FluidAudio deletes and re-downloads any model it finds incomplete
     /// or cannot load, wherever it is called from. Set once at launch; `install()` lifts
     /// it for its own download and puts it back.
+    ///
+    /// Also keeps FluidAudio on the repository's `main` branch, which is where every
+    /// install so far came from and what `compareWithRemote()` checks against. FluidAudio
+    /// 0.17 pins these models to one commit and, offline, refuses to load any folder that
+    /// lacks its revision marker. That is every folder installed before the pin, so
+    /// without this line each meeting would start without speakers until the models were
+    /// downloaded again.
     static func stayOffline() {
         ModelHub.offlineMode = true
+        ModelRegistry.revisionOverrides = [repositoryID: "main"]
     }
 
     /// When the models landed on disk.
