@@ -147,3 +147,9 @@ carried by shape.
 - 2026-10-01 Deleting meetings is to be redesigned. Of the bar of buttons above the
   list and the confirmation on every delete: "I'm not super happy with the delete
   functionality. It feels really clunky. It doesn't feel very Apple at all."
+- 2026-10-01 The rounded highlight stays. "I really like the new highlight interface
+  that looks very good, much better than before."
+- 2026-10-01 Deleting follows Voice Memos: at once, no dialog, into Recently Deleted
+  for thirty days. "I like the recently deleted option." To be judged in use: "I need
+  to see it and play around with it to really get an idea if it meets the Apple level
+  of polish."

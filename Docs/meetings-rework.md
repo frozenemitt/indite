@@ -67,7 +67,13 @@ Each one ends with something that runs. The uncertain ones went first.
 The list's commands are in a bar inside the list's column. The window toolbar was
 tried first and pushed Import and Delete into an overflow menu at the far side.
 
-All six are on the branch `meetings-rework`, not merged.
+All six are merged to main (353e1da).
+
+Deleting was reworked afterwards, on the branch `recently-deleted`: a meeting is
+deleted at once, with no dialog, into Recently Deleted for thirty days, and the
+list's three commands are icons in the toolbar above it. Installed 2026-10-01; the
+toolbar was seen on screen, and deleting, undoing and recovering are for Jonathan to
+try. The date of deletion is kept in preferences, so the store's shape is unchanged.
 
 ## Rabbit holes
 
