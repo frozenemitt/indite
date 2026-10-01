@@ -35,6 +35,14 @@ struct MeetingsView: View {
     @State private var importer = MeetingImporter()
     @State private var isDropTargeted = false
 
+    /// Whether the list has the keyboard.
+    ///
+    /// Given to it when the window opens and whenever a meeting is picked. Left to
+    /// the system, the keyboard stayed on the first toolbar button, and a click on a
+    /// row did not move it: the Delete key went to that button, which did nothing
+    /// with it, and the button wore a focus ring the whole time.
+    @FocusState private var listHasKeyboard: Bool
+
     private let trash = MeetingTrash.shared
 
     var body: some View {
@@ -115,6 +123,9 @@ struct MeetingsView: View {
             // A meeting whose thirty days ran out while the window was closed.
             trash.eraseExpired(among: meetings, in: modelContext)
         }
+        .onAppear {
+            listHasKeyboard = true
+        }
         .onChange(of: recorder.activeMeeting, initial: true) { _, meeting in
             // Follow the meeting being recorded, so its page is the one on screen.
             // From the start as well: a window opened mid-meeting showed it without
@@ -134,6 +145,7 @@ struct MeetingsView: View {
             }
         }
         .onChange(of: selection) { _, _ in
+            listHasKeyboard = true
             // The recorder's error belongs to the meeting it happened in. Once the user
             // picks another, it would only mislead there. A running meeting keeps its
             // error, since its live page and the pill still need it.
@@ -396,6 +408,7 @@ struct MeetingsView: View {
                 .overlay(alignment: .top) { Divider() }
             }
         }
+        .focused($listHasKeyboard)
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search")
         // The Delete key, and Edit ▸ Delete.
         .onDeleteCommand {
@@ -493,6 +506,7 @@ struct MeetingsView: View {
                     }
                 }
             }
+            .focused($listHasKeyboard)
             .onDeleteCommand {
                 pendingErase = Array(selection)
             }
