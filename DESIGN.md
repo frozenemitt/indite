@@ -131,3 +131,7 @@ carried by shape.
 - 2026-10-01 A window Inscribe opens comes to the front. Of windows opened from the
   new menu landing behind other apps: "That's very difficult because I don't know
   how to find them. So they need to be surfaced to the front when I open them."
+- 2026-10-01 Space does not play or pause a meeting's audio. "Maybe we don't use the
+  space key to play or pause the audio. Maybe there's another way to do it." The
+  transcript is text and Space belongs to it; ⌘Return, the play button and the
+  keyboard's Play/Pause key play and pause.
