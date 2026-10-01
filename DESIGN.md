@@ -138,3 +138,12 @@ carried by shape.
   decided that I really don't like the serif font in the transcript. I think it's
   pretty ugly, actually." Overrides the same day's "sure, go ahead and do it". The
   transcript is set in the system font.
+- 2026-10-01 The playing line is one soft rounded block, with a rounded mark on the
+  word being said. Of the first version, bands of background color: "The
+  highlighting of the speaker section is kind of awkward looking. I think this could
+  be improved a lot."
+- 2026-10-01 Following the audio word by word stays. "The command return works great
+  for following the audio in the transcription. That is very cool."
+- 2026-10-01 Deleting meetings is to be redesigned. Of the bar of buttons above the
+  list and the confirmation on every delete: "I'm not super happy with the delete
+  functionality. It feels really clunky. It doesn't feel very Apple at all."

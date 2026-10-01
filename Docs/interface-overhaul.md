@@ -25,7 +25,7 @@ Slices, each shippable on its own, riskiest first.
 | 6 | Settings regrouped into seven tabs with a Status list; captions cut; one sound switch; four-way After typing; one name per thing | 4, 18–22, 24–26, 28, 30 | Installed. Dictation, Rewriting, Meetings and Feedback seen working. |
 | 7 | Meetings window rework, layout A | 10, 11, 13, 17, 23, 29 | Built and installed on the branch `meetings-rework`; see `Docs/meetings-rework.md` for what has been seen working. |
 
-Slices 1 to 6 are merged to main and pushed (451d3ef). FluidAudio 0.17.4 is merged to main locally (8656b44) and not pushed: no meeting has been recorded with it yet.
+Slices 1 to 6 are merged to main and pushed (451d3ef). FluidAudio 0.17.4 is merged too: Jonathan recorded a meeting with it on 2026-10-01 and its speakers were labelled.
 
 ## Rabbit holes
 
