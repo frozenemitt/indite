@@ -383,7 +383,6 @@ private struct MeetingDetailView: View {
 
     @AppStorage("meetingInspectorShown") private var showsInspector = true
     @State private var exportError: String?
-    @State private var splitTarget: Utterance?
     @State private var player = MeetingPlayer()
 
     private var isLive: Bool { meeting == recorder.activeMeeting && recorder.hasActiveMeeting }
@@ -403,7 +402,12 @@ private struct MeetingDetailView: View {
                     // Opened with the page rather than at the first click, so a
                     // recording that will not open says so before any line is clicked.
                     // Not while live, when the file is still being written.
-                    .task { await player.load(fileName: meeting.audioFileName) }
+                    .task {
+                        await player.load(fileName: meeting.audioFileName)
+                        // Given once the recording is open, so a click on a word marks
+                        // its line before play has ever been pressed.
+                        player.follow(meeting.orderedUtterances)
+                    }
                     .inspector(isPresented: $showsInspector) {
                         inspector
                             .inspectorColumnWidth(min: 240, ideal: 290, max: 400)
@@ -422,20 +426,6 @@ private struct MeetingDetailView: View {
             Button("OK") {}
         } message: { message in
             Text(message)
-        }
-        .sheet(item: $splitTarget) { utterance in
-            SplitUtteranceSheet(meeting: meeting, utterance: utterance) { offset, speaker in
-                _ = meeting.split(
-                    utterance,
-                    atCharacterOffset: offset,
-                    assigningTailTo: speaker,
-                    in: modelContext
-                )
-                finishCorrection()
-                splitTarget = nil
-            } onCancel: {
-                splitTarget = nil
-            }
         }
         .toolbar {
             if !isLive {
@@ -477,173 +467,108 @@ private struct MeetingDetailView: View {
 
     // MARK: Transcript page
 
-    private var transcriptPage: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                header
-
-                // Shown whether or not the meeting has speakers. Hidden once there
-                // were utterances, it kept quiet about a recognizer failure or a
-                // recording that could not be saved in any meeting that had any.
-                if let error = recorder.lastError {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                }
-
-                // A recording that will not open used to leave lines that did nothing
-                // when clicked, with the reason only in the log.
-                if let error = player.lastError {
-                    Label("The recording could not be opened: \(error)", systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                }
-
-                transcript
-            }
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
-            .frame(maxWidth: 760, alignment: .leading)
-            .frame(maxWidth: .infinity)
-        }
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Wrapped rather than cut off. A default title, "Meeting Sunday 28
-            // September, 14:30", did not fit on one line at the window's default size.
-            TextField("Title", text: $meeting.title, axis: .vertical)
-                .lineLimit(1...3)
-                .textFieldStyle(.plain)
-                .font(.largeTitle.bold())
-                .onSubmit { modelContext.saveOrLog() }
-
-            Text(details)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    /// When the meeting was, how long it ran and what was kept, as one line.
-    ///
-    /// One string rather than a row of pieces: in a narrow window each piece wrapped on
-    /// its own, into ragged columns.
-    private var details: String {
-        var parts = [meeting.startedAt.formatted(date: .long, time: .shortened)]
-        if meeting.endedAt != nil {
-            parts.append(MeetingExporter.durationLabel(meeting.duration))
-        }
-        if meeting.wasPaused {
-            parts.append("\(MeetingExporter.durationLabel(meeting.recordedDuration)) recorded")
-        }
-        if !meeting.hasAudio && meeting.endedAt != nil {
-            parts.append("no recording kept")
-        }
-        return parts.joined(separator: " · ")
-    }
-
+    /// The page for a finished meeting: its header, then the transcript, scrolling as
+    /// one, with the playback bar along the bottom when there is a recording.
     @ViewBuilder
-    private var transcript: some View {
+    private var transcriptPage: some View {
         if meeting.hasSpeakerAttribution {
-            // Whether the recording opened, not only whether its file exists, so a
-            // recording that will not play never offers lines that do nothing.
-            let hasAudio = player.loadedFileName != nil
-            // Read once for every line. The player changes it only when playback
-            // crosses into another utterance, so this view redraws then and not
-            // on every tick of the clock.
-            let playingID = player.playingUtteranceID
-            let isPlaying = player.isPlaying
-            // Sorted once for every line's menu, not once per line.
-            let speakers = meeting.sortedSpeakers
+            TranscriptView(
+                lines: transcriptLines,
+                speakers: meeting.sortedSpeakers.map { TranscriptSpeaker(id: $0.speakerId, name: $0.resolvedName) },
+                playingID: player.playingUtteranceID.map { AnyHashable($0) },
+                isPlaying: player.isPlaying,
+                // Whether the recording opened, not only whether its file exists, so
+                // a recording that will not play never offers a playhead to move.
+                canPlay: player.loadedFileName != nil,
+                actions: transcriptActions
+            ) {
+                MeetingPageHeader(meeting: meeting, recorder: recorder, player: player)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if player.loadedFileName != nil {
+                    PlaybackBar(player: player)
+                }
+            }
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    MeetingPageHeader(meeting: meeting, recorder: recorder, player: player)
 
-            // Lazy, so a long meeting builds only the lines on screen.
-            LazyVStack(alignment: .leading, spacing: 18) {
-                ForEach(meeting.orderedUtterances) { utterance in
-                    let isPlayingLine = isPlaying && utterance.persistentModelID == playingID
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            speakerMenu(for: utterance, speakers: speakers)
-
-                            // Hearing the moment is the only way to know whether an
-                            // attribution is right, so the line plays it.
-                            if hasAudio {
-                                Button {
-                                    togglePlayback(of: utterance)
-                                } label: {
-                                    Label(utterance.timestampLabel,
-                                          systemImage: isPlayingLine ? "pause.fill" : "play.fill")
-                                        .labelStyle(.titleAndIcon)
-                                        .font(.caption.monospacedDigit())
-                                }
-                                .buttonStyle(.plain)
+                    Group {
+                        if meeting.rawTranscript.isEmpty {
+                            Text("No transcript was captured.")
                                 .foregroundStyle(.secondary)
-                                .help(isPlayingLine ? "Pause" : "Play from here")
-                                // Named for what it does. VoiceOver otherwise read the
-                                // timestamp alone.
-                                .accessibilityLabel(isPlayingLine ? "Pause" : "Play from \(utterance.timestampLabel)")
-                            } else {
-                                Text(utterance.timestampLabel)
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        // Clicked rather than selectable: selection took the click, so
-                        // the words could not play themselves. Export ▸ Copy Transcript
-                        // still copies the text.
-                        Text(utterance.text)
-                            .font(.body)
-                            .lineSpacing(3)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if hasAudio { togglePlayback(of: utterance) }
-                            }
-                            .pointerStyle(hasAudio ? .link : nil)
-
-                        // Only on the line being played, so its later sentences can be
-                        // reached without playing through the start.
-                        if hasAudio, utterance.persistentModelID == playingID {
-                            LineScrubber(utterance: utterance, player: player)
+                        } else {
+                            Text(meeting.rawTranscript)
+                                .fontDesign(.serif)
+                                .lineSpacing(3)
+                                .textSelection(.enabled)
                         }
                     }
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(utterance.persistentModelID == playingID
-                                  ? Color.accentColor.opacity(0.12) : .clear)
-                    )
-                    .padding(.horizontal, -10)
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 32)
+                    .padding(.bottom, 24)
                 }
             }
-        } else if meeting.rawTranscript.isEmpty {
-            Text("No transcript was captured.")
-                .foregroundStyle(.secondary)
-        } else {
-            Text(meeting.rawTranscript)
-                .lineSpacing(3)
-                .textSelection(.enabled)
         }
     }
 
-    /// Play from a line, or pause it if it is the line playing.
-    ///
-    /// A line paused part way resumes where it stopped rather than from its start, so
-    /// clicking the same words twice more carries on listening.
-    private func togglePlayback(of utterance: Utterance) {
-        if player.isPlaying, player.playingUtteranceID == utterance.persistentModelID {
-            player.pause()
-            return
+    /// The meeting's lines as the transcript view takes them.
+    private var transcriptLines: [TranscriptLine] {
+        meeting.orderedUtterances.map { utterance in
+            TranscriptLine(
+                id: AnyHashable(utterance.persistentModelID),
+                speakerId: utterance.speakerId,
+                speakerName: meeting.displayName(forSpeakerId: utterance.speakerId),
+                color: NSColor(meeting.color(forSpeakerId: utterance.speakerId)),
+                timestamp: utterance.timestampLabel,
+                text: utterance.text,
+                start: utterance.start,
+                end: utterance.end
+            )
         }
-        player.follow(meeting.orderedUtterances)
-        if !player.isPlaying,
-           player.currentTime > utterance.start, player.currentTime < utterance.end {
-            player.play()
-        } else {
-            player.play(from: utterance)
-        }
+    }
+
+    /// What a click or a menu choice in the transcript does to the meeting.
+    private var transcriptActions: TranscriptActions {
+        TranscriptActions(
+            seek: { time in
+                player.seek(to: time)
+            },
+            reassign: { line, speakerId in
+                guard let utterance = utterance(line),
+                      let speaker = meeting.speakers.first(where: { $0.speakerId == speakerId }) else { return }
+                meeting.reassign(utterance, to: speaker)
+                finishCorrection()
+            },
+            reassignToNewSpeaker: { line in
+                guard let utterance = utterance(line) else { return }
+                meeting.reassign(utterance, to: meeting.addSpeaker(in: modelContext))
+                finishCorrection()
+            },
+            split: { line, offset, speakerId in
+                guard let utterance = utterance(line) else { return }
+                // The text view counts in UTF-16 units and the cut is made in
+                // characters. They differ as soon as a line holds an emoji.
+                let text = utterance.text
+                let characters = text.distance(
+                    from: text.startIndex,
+                    to: String.Index(utf16Offset: min(offset, text.utf16.count), in: text)
+                )
+                _ = meeting.split(
+                    utterance,
+                    atCharacterOffset: characters,
+                    assigningTailTo: speakerId.flatMap { id in meeting.speakers.first { $0.speakerId == id } },
+                    in: modelContext
+                )
+                finishCorrection()
+            }
+        )
+    }
+
+    private func utterance(_ line: AnyHashable) -> Utterance? {
+        meeting.utterances.first { AnyHashable($0.persistentModelID) == line }
     }
 
     // MARK: Inspector
@@ -787,53 +712,6 @@ private struct MeetingDetailView: View {
 
     // MARK: Corrections
 
-    /// Reassign, or cut an utterance that holds two people.
-    private func speakerMenu(for utterance: Utterance, speakers: [MeetingSpeaker]) -> some View {
-        Menu {
-            Section("Attribute to") {
-                ForEach(speakers) { speaker in
-                    Button {
-                        meeting.reassign(utterance, to: speaker)
-                        finishCorrection()
-                    } label: {
-                        if speaker.speakerId == utterance.speakerId {
-                            Label(speaker.resolvedName, systemImage: "checkmark")
-                        } else {
-                            Text(speaker.resolvedName)
-                        }
-                    }
-                }
-            }
-
-            Divider()
-
-            Button("Attribute to a New Speaker") {
-                let speaker = meeting.addSpeaker(in: modelContext)
-                meeting.reassign(utterance, to: speaker)
-                finishCorrection()
-            }
-
-            if !UtteranceSplitPoint.candidates(in: utterance.text).isEmpty {
-                Button("Split This Line…") {
-                    splitTarget = utterance
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(meeting.color(forSpeakerId: utterance.speakerId))
-                    .frame(width: 8, height: 8)
-                Text(meeting.displayName(forSpeakerId: utterance.speakerId))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(meeting.color(forSpeakerId: utterance.speakerId))
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Change who said this")
-    }
-
     /// Join lines the correction left side by side, drop any speaker left with
     /// nothing attributed to them, save, and give the player the new lines.
     private func finishCorrection() {
@@ -879,43 +757,126 @@ private struct MeetingDetailView: View {
     }
 }
 
-// MARK: - Line Scrubber
+// MARK: - Page Header
 
-/// Scrub within the line being played.
+/// The top of a finished meeting's page: its title, when it was, and anything that
+/// went wrong with it.
 ///
-/// A view of its own because it reads the playback time, which changes four times a
-/// second. Read in the detail view's body, that time redrew the whole transcript
-/// with it.
-private struct LineScrubber: View {
-    let utterance: Utterance
+/// A view of its own, handed what it reads, because it is drawn inside the
+/// transcript's scrolling page, which is AppKit's and carries no SwiftUI environment
+/// across. Reading the meeting, the recorder and the player in its own body is what
+/// makes it redraw when one of them changes.
+private struct MeetingPageHeader: View {
+    @Bindable var meeting: Meeting
+    let recorder: MeetingRecorder
     let player: MeetingPlayer
 
     var body: some View {
-        // A hundredth of a second short of the line's end. The moment the line ends is
-        // where the next one starts, so a drag to the far right moved the highlight on
-        // and took away the slider under the pointer.
-        let upper = max(utterance.start, utterance.end - 0.01)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                // Wrapped rather than cut off, so a long title is read whole.
+                TextField("Title", text: $meeting.title, axis: .vertical)
+                    .lineLimit(1...3)
+                    .textFieldStyle(.plain)
+                    .font(.largeTitle.bold())
+                    .onSubmit { meeting.modelContext?.saveOrLog() }
 
-        HStack(spacing: 10) {
+                Text(details)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Shown whether or not the meeting has speakers. Hidden once there
+            // were utterances, it kept quiet about a recognizer failure or a
+            // recording that could not be saved in any meeting that had any.
+            if let error = recorder.lastError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+
+            // A recording that will not open used to leave lines that did nothing
+            // when clicked, with the reason only in the log.
+            if let error = player.lastError {
+                Label("The recording could not be opened: \(error)", systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .frame(maxWidth: 760, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 32)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+    }
+
+    /// When the meeting was, how long it ran and what was kept, as one line.
+    ///
+    /// One string rather than a row of pieces: in a narrow window each piece wrapped on
+    /// its own, into ragged columns.
+    private var details: String {
+        var parts = [meeting.startedAt.formatted(date: .long, time: .shortened)]
+        if meeting.endedAt != nil {
+            parts.append(MeetingExporter.durationLabel(meeting.duration))
+        }
+        if meeting.wasPaused {
+            parts.append("\(MeetingExporter.durationLabel(meeting.recordedDuration)) recorded")
+        }
+        if !meeting.hasAudio && meeting.endedAt != nil {
+            parts.append("no recording kept")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: - Playback Bar
+
+/// Play, the time, and a slider over the whole recording.
+///
+/// Playback used to exist only line by line: a click on a line played it, and a
+/// scrubber appeared under that line alone. There was no way to play a meeting
+/// through or to reach a moment without first playing its line.
+///
+/// A view of its own because it reads the playback time, which changes four times a
+/// second. Read in the page's body, that time redrew the whole transcript with it.
+private struct PlaybackBar: View {
+    let player: MeetingPlayer
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // ⌘Return, not Space: the transcript is text, and Space belongs to text.
+            Button {
+                player.togglePlayback()
+            } label: {
+                Label(player.isPlaying ? "Pause" : "Play",
+                      systemImage: player.isPlaying ? "pause.fill" : "play.fill")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 22, height: 22)
+            }
+            .keyboardShortcut(.return, modifiers: .command)
+            .help(player.isPlaying ? "Pause (⌘↩)" : "Play from the playhead (⌘↩)")
+
             Text(MeetingExporter.durationLabel(player.currentTime))
-                .frame(minWidth: 36, alignment: .trailing)
+                .frame(minWidth: 40, alignment: .trailing)
 
             Slider(
                 value: Binding(
-                    get: { min(max(player.currentTime, utterance.start), upper) },
+                    get: { player.currentTime },
                     set: { player.seek(to: $0) }
                 ),
-                in: utterance.start...upper
+                in: 0...max(player.duration, 0.01)
             )
-            .controlSize(.mini)
+            .controlSize(.small)
             .accessibilityLabel("Playback position")
 
-            Text(MeetingExporter.durationLabel(utterance.end))
-                .frame(minWidth: 36, alignment: .leading)
+            Text(MeetingExporter.durationLabel(player.duration))
+                .frame(minWidth: 40, alignment: .leading)
         }
-        .font(.caption.monospacedDigit())
+        .font(.callout.monospacedDigit())
         .foregroundStyle(.secondary)
-        .padding(.top, 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 }
 
@@ -1091,74 +1052,4 @@ private struct LiveMeetingView: View {
     }
 }
 
-#endif
-
-// MARK: - Split Sheet
-
-#if os(macOS)
-/// Cut one block of text into two speakers.
-///
-/// Offers sentence boundaries rather than a free cursor: a missed handover almost
-/// always falls at the end of a sentence, and picking from a short list is faster
-/// than placing a caret in a wall of text.
-private struct SplitUtteranceSheet: View {
-    let meeting: Meeting
-    let utterance: Utterance
-    let onSplit: (Int, MeetingSpeaker?) -> Void
-    let onCancel: () -> Void
-
-    @State private var selectedOffset: Int?
-    @State private var tailSpeaker: MeetingSpeaker?
-
-    private var candidates: [(offset: Int, preview: String)] {
-        UtteranceSplitPoint.candidates(in: utterance.text)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Split This Line")
-                .font(.headline)
-
-            Text("Currently all attributed to \(meeting.displayName(forSpeakerId: utterance.speakerId)). Choose where the next speaker starts.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ScrollView {
-                Picker("Next speaker starts at", selection: $selectedOffset) {
-                    ForEach(candidates, id: \.offset) { candidate in
-                        Text("…\(candidate.preview)")
-                            .tag(candidate.offset as Int?)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 180)
-
-            // Not the line's own speaker. The second half would join straight back
-            // onto the first, and the split would change nothing.
-            Picker("Second half is", selection: $tailSpeaker) {
-                Text("A new speaker").tag(nil as MeetingSpeaker?)
-                ForEach(meeting.sortedSpeakers.filter { $0.speakerId != utterance.speakerId }) { speaker in
-                    Text(speaker.resolvedName).tag(speaker as MeetingSpeaker?)
-                }
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel", action: onCancel)
-                    .keyboardShortcut(.cancelAction)
-                Button("Split") {
-                    guard let selectedOffset else { return }
-                    onSplit(selectedOffset, tailSpeaker)
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(selectedOffset == nil)
-            }
-        }
-        .padding(20)
-        .frame(width: 460)
-    }
-}
 #endif

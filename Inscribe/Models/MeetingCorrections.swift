@@ -157,28 +157,3 @@ extension Meeting {
         }
     }
 }
-
-// MARK: - Split Points
-
-/// Where an utterance could reasonably be cut.
-enum UtteranceSplitPoint {
-
-    /// The start of every sentence after the first, offered as candidate cut points.
-    ///
-    /// A missed handover almost always falls on a sentence boundary, so these are
-    /// enough without asking the user to place a cursor mid-word.
-    static func candidates(in text: String) -> [(offset: Int, preview: String)] {
-        // Treating every ".", "?" and "!" as a sentence end offered cuts inside "3.5",
-        // after "Mr.", and inside "...", which left dots at the start of the next
-        // speaker's line. The sentence tokenizer knows none of those end a sentence.
-        let tokenizer = NLTokenizer(unit: .sentence)
-        tokenizer.string = text
-
-        return tokenizer.tokens(for: text.startIndex..<text.endIndex).dropFirst().compactMap { sentence in
-            let preview = text[sentence.lowerBound...].trimmingCharacters(in: .whitespaces)
-            guard !preview.isEmpty else { return nil }
-            // Counted in Characters, which is what `Meeting.split` cuts at.
-            return (text.distance(from: text.startIndex, to: sentence.lowerBound), String(preview.prefix(60)))
-        }
-    }
-}
