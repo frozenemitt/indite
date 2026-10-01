@@ -178,3 +178,5 @@ carried by shape.
   draws its highlight over any row background, so the tint needs the highlight
   switched off in the AppKit table behind the list. Jonathan has not chosen between
   the two.
+- 2026-10-01 The selected meeting keeps the system's own highlight: azure at full
+  strength under white text. The soft tint is not to be built. "keep the full tint"

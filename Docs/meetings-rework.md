@@ -86,10 +86,10 @@ not been run against the database.
 
 The green that marked the selected meeting was the accent color the project was
 created with. The accent is now azure, the ribbon's color, chosen by Jonathan and
-installed 2026-10-01. Open: whether the selected meeting stays the system's
-highlight, azure at full strength under white text, or becomes a soft tint under
-dark text as Notes draws it. A row background does not replace the system's
-highlight; that was tried and the highlight drew over it.
+installed 2026-10-01. The selected meeting stays the system's highlight, azure at
+full strength under white text; Jonathan chose it over a soft tint under dark text
+as Notes draws it. A row background does not replace the system's highlight; that
+was tried and the highlight drew over it.
 
 ## Rabbit holes
 
