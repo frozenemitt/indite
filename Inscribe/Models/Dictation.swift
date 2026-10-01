@@ -41,8 +41,6 @@ final class Dictation {
         self.createdAt = createdAt
     }
 
-    var characterCount: Int { text.count }
-
     /// Whether the AI changed anything, so the UI can offer the original.
     var wasEditedByAI: Bool {
         guard let rawText else { return false }
