@@ -160,3 +160,12 @@ carried by shape.
   the app's green at full strength with white text. "I don't love the green
   highlight of the conversation that's active. Could you propose a more Apple
   aligned view?" Options shown; none chosen yet.
+- 2026-10-01 Green is not Inscribe's color. It is the accent color the project was
+  created with (#00AB83, in the first commit) and nobody chose it. "I don't know
+  where you got this idea of green being our app color, but I don't think that is
+  our app color."
+- 2026-10-01 The selected meeting is highlighted in the app's color, as Notes does:
+  gray for the selected folder in the sidebar, the app's yellow for the selected
+  note. Neutral gray for the meeting was offered and turned down. "I think the
+  active meeting should be highlighted in an app color, and the green is definitely
+  not it." Which color is the app's is not chosen yet.
