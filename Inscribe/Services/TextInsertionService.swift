@@ -278,6 +278,15 @@ enum TextInsertionService {
                 \(focusedNowText?.count ?? -1, privacy: .public) chars, \
                 transcript present: \(landedInFocused, privacy: .public)
                 """)
+
+            // The same element still has focus, nothing in it moved, and neither it nor
+            // anything it sits inside is a text control. That is text one can select
+            // and not type into, such as a web page or the messages of a chat, and the
+            // paste cannot have landed. Said as copied, not as a paste in doubt.
+            if sameElement, !landed, !isEditable(field) {
+                log.notice("The focused element takes no text — reporting the transcript as copied")
+                return .copiedToClipboard
+            }
             return .pastedUnconfirmed
         }
 
@@ -494,6 +503,33 @@ enum TextInsertionService {
             return true
         }
 
+        return false
+    }
+
+    /// Whether an element is a text control, or sits inside one.
+    ///
+    /// `acceptsText` also takes any element with a selected-text range, because that
+    /// is all some editors show. Selectable text that cannot be edited shows the same,
+    /// so this is the stricter test, used only to say afterwards why a paste did
+    /// nothing. An editor in a web view has the text area as an ancestor of whatever
+    /// part of it holds focus.
+    private static func isEditable(_ element: AXUIElement) -> Bool {
+        var current: AXUIElement? = element
+        for _ in 0..<8 {
+            guard let candidate = current else { return false }
+            if let role = copyAttribute(candidate, kAXRoleAttribute as String) as? String,
+               textRoles.contains(role) {
+                return true
+            }
+            var settable: DarwinBoolean = false
+            if AXUIElementIsAttributeSettable(candidate, kAXValueAttribute as CFString, &settable) == .success,
+               settable.boolValue {
+                return true
+            }
+            guard let parent = copyAttribute(candidate, kAXParentAttribute as String),
+                  CFGetTypeID(parent) == AXUIElementGetTypeID() else { return false }
+            current = (parent as! AXUIElement)
+        }
         return false
     }
 

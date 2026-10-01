@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import os
 
 #if os(macOS)
 import AppKit
@@ -74,12 +75,9 @@ struct MenuBarView: View {
 
         Divider()
 
-        // Activated as well as opened: a menu bar app is not the active application
-        // while its menu is showing, so the window would open behind whatever the user
-        // was looking at.
         Button("Settings…") {
             openSettings()
-            NSApp.activate()
+            WindowFronting.bringForward("com_apple_SwiftUI_Settings")
         }
         .keyboardShortcut(",")
 
@@ -96,6 +94,9 @@ struct MenuBarView: View {
     private func statusLine(_ text: String, glyph: Image) -> some View {
         Button {} label: {
             Label { Text(text) } icon: { glyph }
+                // Asked for by name. A menu shows a label's title alone unless told
+                // otherwise, and the dot is how the line is read at a glance.
+                .labelStyle(.titleAndIcon)
         }
         .disabled(true)
     }
@@ -271,7 +272,7 @@ struct MenuBarView: View {
             Button("Edit Prompts…") {
                 SettingsTab.open(.rewriting)
                 openSettings()
-                NSApp.activate()
+                WindowFronting.bringForward("com_apple_SwiftUI_Settings")
             }
         }
     }
@@ -392,13 +393,49 @@ struct MenuBarView: View {
     // MARK: - Windows
 
     /// Open one of the app's windows and bring it to the front.
-    ///
-    /// A menu bar app is not the active application while its menu is showing, so
-    /// `openWindow` on its own puts the new window behind whatever the user was
-    /// looking at, and they have to go and find it.
     private func show(_ windowID: String) {
         openWindow(id: windowID)
-        NSApp.activate()
+        WindowFronting.bringForward(windowID)
+    }
+}
+
+// MARK: - Window Fronting
+
+/// Brings a window Inscribe has just opened in front of every other app's.
+///
+/// A menu bar app is not the active application while its menu is showing, so a
+/// window it opens lands behind whatever the user was looking at. `NSApp.activate()`
+/// used to be enough, when the menu was a panel: a click in the panel was a click in
+/// one of Inscribe's own windows, and macOS grants activation after that. A click in
+/// a system menu is not, the request was declined, and every window opened from the
+/// menu went to the back.
+///
+/// So the app activates over the others, which is what the user asked for by choosing
+/// the window from the menu, and the window is ordered to the front whether or not the
+/// activation is granted.
+@MainActor
+enum WindowFronting {
+    /// - Parameter identifierPrefix: The start of the window's identifier: the id of a
+    ///   `Window` scene, or SwiftUI's own for the Settings window.
+    static func bringForward(_ identifierPrefix: String) {
+        // After this turn of the run loop, since a window opened a moment ago does not
+        // exist until then.
+        Task { @MainActor in
+            NSApp.activate(ignoringOtherApps: true)
+            let window = NSApp.windows.first { $0.identifier?.rawValue.hasPrefix(identifierPrefix) == true }
+            window?.makeKeyAndOrderFront(nil)
+            window?.orderFrontRegardless()
+
+            // What came of it, read once things have settled. A window that stays
+            // behind is invisible from inside the app, so the log is the only witness.
+            try? await Task.sleep(for: .milliseconds(500))
+            Log.app.notice("""
+                Brought \(identifierPrefix, privacy: .public) forward: \
+                found \(window != nil, privacy: .public), \
+                app active \(NSApp.isActive, privacy: .public), \
+                window key \(window?.isKeyWindow ?? false, privacy: .public)
+                """)
+        }
     }
 }
 
