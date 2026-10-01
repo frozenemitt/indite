@@ -80,7 +80,14 @@ dictations before and after; a copy from before it is in
 `~/Library/Application Support/Inscribe/Backups`. In the installed build, the Delete
 button wrote the date, Undo cleared it, and a second delete wrote it again. Jonathan
 recovered a meeting from the Recently Deleted list: "recovery works fine". Delete
-Now and the thirty-day purge have not been run against the database.
+Now and the thirty-day purge were run on 2026-10-01 against two throwaway meetings
+recorded for the purpose, each given a stand-in recording and word-timings file.
+Delete Now, after its confirmation, removed the meeting's row and both files. A
+meeting dated 29 days deleted survived a launch and read "1 day left"; dated 31
+days, the next launch logged "Erasing 1 meetings deleted more than 30 days ago" and
+removed its row and both files. The other 12 meetings, 196 lines and 21 speakers
+were unchanged. The dates were set by editing the store while the app was quit. The
+confirmation's Cancel button was not pressed in the test.
 
 The green that marked the selected meeting was the accent color the project was
 created with. The accent is now azure, the ribbon's color, chosen by Jonathan and
