@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 #if os(macOS)
 import CoreAudio
@@ -15,6 +16,36 @@ struct AudioInputDevice: Identifiable, Hashable, Sendable {
 
     /// The sentinel meaning "whatever macOS is currently set to".
     static let systemDefaultUID = "default"
+}
+
+/// The microphones available right now, kept current for as long as the app runs.
+///
+/// For the menu bar menu, which is built from state and has no moment of appearing in
+/// which to start watching: a microphone plugged in has to be in the list the next
+/// time the menu opens.
+@MainActor
+@Observable
+final class AudioInputList {
+    static let shared = AudioInputList()
+
+    private(set) var devices: [AudioInputDevice] = AudioDeviceCatalog.inputDevices()
+    private(set) var systemDefaultName = AudioDeviceCatalog.systemDefaultName()
+
+    /// The name of the microphone a recording with this setting uses: the device
+    /// itself, or the system default when it is the default or is not connected.
+    func name(forUID uid: String) -> String {
+        guard uid != AudioInputDevice.systemDefaultUID else { return systemDefaultName }
+        return devices.first { $0.uid == uid }?.name ?? systemDefaultName
+    }
+
+    private init() {
+        Task { [weak self] in
+            for await _ in AudioDeviceCatalog.changes() {
+                self?.devices = AudioDeviceCatalog.inputDevices()
+                self?.systemDefaultName = AudioDeviceCatalog.systemDefaultName()
+            }
+        }
+    }
 }
 
 /// Lists the microphones available to record from.

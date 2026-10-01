@@ -10,7 +10,7 @@ import AppKit
 /// microphone is still hearing anything — and the difference between those two only
 /// becomes apparent when you play the recording back.
 ///
-/// Deliberately small and mute: the band, the clock, and nothing else. A dictation
+/// Deliberately small and mute: the band, the clock, Pause and Stop. A dictation
 /// panel is worth reading for the twenty seconds it exists; this one has to be
 /// bearable for an hour.
 @MainActor
@@ -32,7 +32,9 @@ final class MeetingIndicatorController {
     var onStop: (() -> Void)?
 
     static let width: CGFloat = 232
-    static let height: CGFloat = 64
+    /// The band, and a row of controls 30 points tall. At 20 points the two buttons
+    /// were the smallest targets in the app, on the panel reached for mid-call.
+    static let height: CGFloat = 76
 
     /// Visible over full-screen apps and on every desktop: a meeting is usually a
     /// full-screen call, and that is exactly when the indicator is wanted.
@@ -296,6 +298,13 @@ final class MeetingIndicatorModel {
 private struct MeetingIndicatorView: View {
     @Bindable var model: MeetingIndicatorModel
 
+    /// True for a few seconds after a click on Stop, while the panel asks.
+    ///
+    /// Stop ends and saves the meeting, and an ended meeting cannot be resumed. It
+    /// used to do that on one click, on a target 24 points wide, 10 points from Pause.
+    @State private var isConfirmingStop = false
+    @State private var confirmTimeout: Task<Void, Never>?
+
     var body: some View {
         VStack(spacing: 6) {
             ListeningBar(spectrum: model.spectrum, isProcessing: false)
@@ -304,59 +313,124 @@ private struct MeetingIndicatorView: View {
                 // is why the dictation panel needed a drag view underneath it.
                 .allowsHitTesting(false)
 
-            HStack(spacing: 10) {
-                Image(systemName: model.isPaused ? "pause.circle.fill" : "record.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(model.isPaused ? Color.orange : Color.red)
-
-                Text(MeetingExporter.durationLabel(model.seconds))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.primary)
-
-                // A mark rather than the message: the panel is too small to hold one.
-                // The words are in its tooltip and in the meeting window.
-                if let error = model.error {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .help(error)
-                }
-
-                Spacer(minLength: 0)
-
-                // A caption-sized glyph is an 11pt target. These are the panel's only
-                // controls, reached for in the middle of a call, so each one takes the
-                // row's full height.
-                //
-                // Labels rather than bare images, so VoiceOver reads the action and not
-                // the symbol's name.
-                Button(action: model.pauseOrResume) {
-                    Label(model.isPaused ? "Resume" : "Pause",
-                          systemImage: model.isPaused ? "play.fill" : "pause.fill")
-                        .labelStyle(.iconOnly)
-                        .frame(width: 24, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .disabled(!model.canPauseOrResume)
-                .help(model.microphoneHeldReason ?? (model.isPaused ? "Resume" : "Pause"))
-
-                Button(action: model.stop) {
-                    Label("Stop", systemImage: "stop.fill")
-                        .labelStyle(.iconOnly)
-                        .frame(width: 24, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .help("Stop and save")
+            if isConfirmingStop {
+                confirmation
+            } else {
+                controls
             }
-            .buttonStyle(.borderless)
-            .font(.caption)
-            .foregroundStyle(.primary)
         }
         .opacity(model.contentOpacity)
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, 9)
         .frame(width: MeetingIndicatorController.width, height: MeetingIndicatorController.height)
         .environment(\.colorScheme, .dark)
+    }
+
+    private var controls: some View {
+        HStack(spacing: 8) {
+            Image(systemName: model.isPaused ? "pause.circle.fill" : "record.circle.fill")
+                .font(.caption)
+                .foregroundStyle(model.isPaused ? Color.orange : Color.red)
+
+            Text(MeetingExporter.durationLabel(model.seconds))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.primary)
+
+            // A mark rather than the message: the panel is too small to hold one.
+            // The words are in its tooltip and in the meeting window.
+            if let error = model.error {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .help(error)
+            }
+
+            Spacer(minLength: 0)
+
+            // Labels rather than bare images, so VoiceOver reads the action and not
+            // the symbol's name.
+            Button(action: model.pauseOrResume) {
+                Label(model.isPaused ? "Resume" : "Pause",
+                      systemImage: model.isPaused ? "play.fill" : "pause.fill")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(.white.opacity(0.16)))
+                    .contentShape(Circle())
+            }
+            .disabled(!model.canPauseOrResume)
+            .help(model.microphoneHeldReason ?? (model.isPaused ? "Resume" : "Pause"))
+
+            Button {
+                askToStop()
+            } label: {
+                Label("Stop", systemImage: "stop.fill")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(Color.red.opacity(0.85)))
+                    .contentShape(Circle())
+            }
+            .help("End and save the meeting")
+        }
+        .buttonStyle(.plain)
+        .font(.caption)
+        .foregroundStyle(.primary)
+    }
+
+    /// Asked in the panel itself, and the meeting goes on recording while it asks. A
+    /// dialog would bring Inscribe forward over the call.
+    private var confirmation: some View {
+        HStack(spacing: 8) {
+            Text("End meeting?")
+                .font(.callout)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            Button("Cancel") {
+                stopAsking()
+            }
+            .buttonStyle(PillButtonStyle(fill: .white.opacity(0.16)))
+
+            Button("End") {
+                stopAsking()
+                model.stop()
+            }
+            .buttonStyle(PillButtonStyle(fill: Color.red.opacity(0.85)))
+        }
+    }
+
+    private func askToStop() {
+        isConfirmingStop = true
+        // Left alone, the question goes away. A panel still asking ten minutes later
+        // would end the meeting on the next stray click.
+        confirmTimeout?.cancel()
+        confirmTimeout = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            isConfirmingStop = false
+        }
+    }
+
+    private func stopAsking() {
+        confirmTimeout?.cancel()
+        isConfirmingStop = false
+    }
+}
+
+/// A capsule button for the pill's two answers, 30 points tall like its round ones.
+private struct PillButtonStyle: ButtonStyle {
+    let fill: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(Capsule().fill(fill))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .contentShape(Capsule())
     }
 }
 #endif

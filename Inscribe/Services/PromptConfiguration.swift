@@ -263,16 +263,19 @@ final class PromptConfiguration {
             isBuiltIn: true,
             keepsWords: true
         ),
+        // Not a prompt anyone picks from a list of prompts: it is how "Off" is stored
+        // where a prompt id is expected, such as an app profile that turns rewriting
+        // off for one app. `rewritingPrompts` leaves it out.
         Prompt(
             id: rawPromptId,
-            name: "Raw (No Processing)",
+            name: "Off",
             systemPrompt: "",
             userTemplate: "",
             isBuiltIn: true
         )
     ]
 
-    /// The "Raw" prompt ID for skipping AI processing
+    /// The id that stands for "no rewriting", where a prompt id is expected.
     static let rawPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
     /// The default "Clean Up" prompt ID
@@ -300,14 +303,14 @@ final class PromptConfiguration {
         prompts.filter { !$0.isBuiltIn }
     }
 
-    /// Get all built-in prompts
-    var builtInPromptsList: [Prompt] {
-        prompts.filter { $0.isBuiltIn }
+    /// Every prompt that rewrites, which is all of them but the stand-in for "Off".
+    var rewritingPrompts: [Prompt] {
+        prompts.filter { $0.id != Self.rawPromptId }
     }
 
-    /// Get only prompts marked as visible (for the menu bar dropdown)
-    var visiblePrompts: [Prompt] {
-        prompts.filter { $0.isVisible }
+    /// Get all built-in prompts
+    var builtInPromptsList: [Prompt] {
+        rewritingPrompts.filter { $0.isBuiltIn }
     }
 
     /// Toggle visibility for a prompt (works for both built-in and custom)

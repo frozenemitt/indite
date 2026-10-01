@@ -205,7 +205,7 @@ struct PromptQuery: EntityQuery {
 
     func suggestedEntities() async throws -> [PromptEntity] {
         let config = PromptConfiguration()
-        return config.prompts.map { PromptEntity(id: $0.id, name: $0.name) }
+        return config.rewritingPrompts.map { PromptEntity(id: $0.id, name: $0.name) }
     }
 }
 

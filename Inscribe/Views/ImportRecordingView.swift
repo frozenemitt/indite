@@ -39,7 +39,7 @@ struct ImportRecordingView: View {
                     .disabled(!speakerModelsInstalled)
                 Text(speakerModelsInstalled
                      ? "Runs the same diarization meetings use. Slower, and worth it only when more than one person is talking."
-                     : "Install the speaker models in Settings → Dictation → Speaker Models to separate speakers.")
+                     : "Install the speaker models in Settings → Meetings to separate speakers.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

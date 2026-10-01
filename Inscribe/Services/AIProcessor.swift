@@ -13,6 +13,13 @@ struct TranscriptionResult {
     var text: String
 }
 
+/// A meeting's title, constrained the same way.
+@Generable
+struct MeetingTitle {
+    @Guide(description: "A title of three to seven words naming what the meeting was about")
+    var title: String
+}
+
 /// AI-powered text processor using Apple's on-device FoundationModels
 @MainActor
 final class AIProcessor {
@@ -85,6 +92,47 @@ final class AIProcessor {
             usesWarmSession: usesWarmSession,
             onPartial: onPartial
         )
+    }
+
+    /// Write a short title for a meeting from the start of its transcript.
+    ///
+    /// The opening only: a meeting's subject is nearly always named in its first
+    /// minutes, and 5,000 characters fit the smallest context the model has. Tried on
+    /// nine recorded meetings of 2,000 to 18,000 characters, each title took about a
+    /// second and named that meeting's own subject. Asking for sentence case made the
+    /// titles worse, so the model's capitals are left as they come.
+    ///
+    /// Greedy, so the same meeting gets the same title.
+    func title(forMeetingTranscript transcript: String) async throws -> String {
+        guard FoundationModelsHelper.isCurrentLocaleSupported() else {
+            throw AIProcessorError.languageNotSupported
+        }
+        if let reason = FoundationModelsHelper.unavailabilityReason() {
+            throw AIProcessorError.appleIntelligenceUnavailable(reason)
+        }
+
+        let session = FoundationModelsHelper.createSession(
+            instructions: "You name meetings. Given what was said in one, you write a short, specific title that tells it apart from other meetings."
+        )
+        let prompt = """
+            Write a title for this meeting, three to seven words. Name the subject that was discussed. \
+            Do not use the words meeting, discussion, conversation or call. No quotation marks and no full stop.
+
+            <transcript>
+            \(transcript.prefix(5000))
+            </transcript>
+            """
+        let result = try await FoundationModelsHelper.generateStructured(
+            session: session,
+            prompt: prompt,
+            generating: MeetingTitle.self,
+            options: GenerationOptions(samplingMode: .greedy)
+        )
+        let title = result.title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"“”."))
+        guard !title.isEmpty else { throw AIProcessorError.emptyResult }
+        return title
     }
 
     /// Load the model for the prompt this dictation will use, while it is being spoken.

@@ -8,12 +8,29 @@ struct DictationHistoryView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(RecordingCoordinator.self) private var coordinator
     @Environment(\.modelContext) private var modelContext
+    /// Read so the list is drawn again when the window comes forward: Insert names
+    /// the app it will type into, and that is whichever app was in front before.
+    @Environment(\.appearsActive) private var appearsActive
 
     @Query(sort: \Dictation.createdAt, order: .reverse) private var dictations: [Dictation]
 
     @State private var searchText = ""
     @State private var justCopied: CopiedKind?
     @State private var isConfirmingClearAll = false
+    /// The dictations shown in full. The rest stop at four lines.
+    @State private var expanded: Set<PersistentIdentifier> = []
+    /// The dictation deleted last, held for a few seconds so it can be put back.
+    @State private var lastDeleted: DeletedDictation?
+    @State private var undoTimeout: Task<Void, Never>?
+
+    /// What it takes to put a deleted dictation back as it was.
+    private struct DeletedDictation {
+        let text: String
+        let rawText: String?
+        let destination: String?
+        let promptName: String?
+        let createdAt: Date
+    }
 
     /// Which copy button last completed, so only that button's own label flips —
     /// not its sibling, which copies a different string for the same dictation.
@@ -70,6 +87,21 @@ struct DictationHistoryView: View {
             } else {
                 list
             }
+
+            // The trash deletes at once, as it should for one row among a hundred.
+            // It used to be final as well, while Clear All asked first.
+            if lastDeleted != nil {
+                HStack {
+                    Text("Dictation deleted.")
+                    Spacer()
+                    Button("Undo") { undoDelete() }
+                        .keyboardShortcut("z")
+                }
+                .font(.callout)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.bar)
+            }
         }
         .frame(minWidth: 480, minHeight: 320)
         .navigationTitle("Dictation History")
@@ -99,8 +131,7 @@ struct DictationHistoryView: View {
     private var list: some View {
         List {
             ForEach(filtered) { dictation in
-                let countLabel = dictation.characterCount == 1
-                    ? "1 character" : "\(dictation.characterCount) characters"
+                let isExpanded = expanded.contains(dictation.persistentModelID)
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
@@ -123,19 +154,24 @@ struct DictationHistoryView: View {
                                 .background(Capsule().fill(Color.secondary.opacity(0.15)))
                         }
 
-                        Spacer()
-
-                        Text("\(dictation.characterCount)")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .monospacedDigit()
-                            .help(countLabel)
-                            .accessibilityLabel(countLabel)
                     }
 
                     Text(dictation.text)
                         .textSelection(.enabled)
-                        .lineLimit(4)
+                        .lineLimit(isExpanded ? nil : 4)
+
+                    // A long dictation stopped at four lines with no way to read on.
+                    if Self.isLong(dictation.text) {
+                        Button(isExpanded ? "Show less" : "Show all") {
+                            if isExpanded {
+                                expanded.remove(dictation.persistentModelID)
+                            } else {
+                                expanded.insert(dictation.persistentModelID)
+                            }
+                        }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                    }
 
                     HStack(spacing: 12) {
                         Button {
@@ -153,7 +189,7 @@ struct DictationHistoryView: View {
                         Button {
                             insert(dictation)
                         } label: {
-                            Label("Insert", systemImage: "text.cursor")
+                            Label(insertTitle, systemImage: "text.cursor")
                         }
 
                         if dictation.wasEditedByAI, let raw = dictation.rawText {
@@ -173,8 +209,7 @@ struct DictationHistoryView: View {
                         Spacer()
 
                         Button(role: .destructive) {
-                            modelContext.delete(dictation)
-                            modelContext.saveOrLog()
+                            delete(dictation)
                         } label: {
                             Label("Delete", systemImage: "trash")
                                 .labelStyle(.iconOnly)
@@ -187,6 +222,54 @@ struct DictationHistoryView: View {
                 .padding(.vertical, 4)
             }
         }
+    }
+
+    /// Whether a dictation is likely to run past four lines: by its length, or by its
+    /// own line breaks. A guess, since the lines depend on the window's width; a
+    /// "Show all" on text that already fits costs nothing.
+    private static func isLong(_ text: String) -> Bool {
+        text.count > 280 || text.filter(\.isNewline).count > 3
+    }
+
+    /// "Insert into Mail", naming the app the text will be typed into.
+    private var insertTitle: String {
+        _ = appearsActive
+        guard let name = coordinator.appInFront?.localizedName else { return "Insert" }
+        return "Insert into \(name)"
+    }
+
+    private func delete(_ dictation: Dictation) {
+        lastDeleted = DeletedDictation(
+            text: dictation.text,
+            rawText: dictation.rawText,
+            destination: dictation.destination,
+            promptName: dictation.promptName,
+            createdAt: dictation.createdAt
+        )
+        modelContext.delete(dictation)
+        modelContext.saveOrLog()
+
+        undoTimeout?.cancel()
+        undoTimeout = Task {
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            lastDeleted = nil
+        }
+    }
+
+    /// Put the dictation deleted last back where it was, by its own date.
+    private func undoDelete() {
+        guard let deleted = lastDeleted else { return }
+        modelContext.insert(Dictation(
+            text: deleted.text,
+            rawText: deleted.rawText,
+            destination: deleted.destination,
+            promptName: deleted.promptName,
+            createdAt: deleted.createdAt
+        ))
+        modelContext.saveOrLog()
+        undoTimeout?.cancel()
+        lastDeleted = nil
     }
 
     /// The time alone for something dictated today; the date and time otherwise, so
@@ -235,7 +318,7 @@ struct DictationHistoryView: View {
             // notification say the text was copied, so the user knows to paste it.
             let destination = switch outcome {
             case .inserted(let appName): appName
-            case .copiedToClipboard: "Clipboard"
+            case .copiedToClipboard, .pastedUnconfirmed: "Clipboard"
             }
             NotificationService.shared.showTranscriptionCompleteIfEnabled(
                 characterCount: dictation.text.count,

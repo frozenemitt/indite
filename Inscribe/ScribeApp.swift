@@ -171,17 +171,21 @@ struct ScribeApp: App {
                 .environment(coordinator)
                 .environment(hotkeyMonitor)
                 .environment(meetingRecorder)
+                .environment(AudioInputList.shared)
                 .modelContainer(Self.modelContainer)
         } label: {
             // The dictation's own AI rewrite, not its whole delivery and not every AI
             // request in flight. With AI off, the brain showed on every release; a meeting
             // summary running in the background also turned the icon into the brain.
             MenuBarIcon(
-                isRecording: transcriptionEngine.isRecording,
-                isProcessing: coordinator.isRewriting
+                isDictating: coordinator.isCancellable,
+                isRewriting: coordinator.isRewriting,
+                meeting: meetingRecorder.state,
+                meetingClock: meetingRecorder.clockLabel,
+                keyHasFailed: hotkeyMonitor.hasFailed
             )
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
 
         // Settings window
         Settings {
@@ -294,6 +298,9 @@ struct ScribeApp: App {
             // meeting here would eat the key in whatever app the user is actually using,
             // for the whole length of the meeting — and cancel the meeting with it.
             Self.mirrorRecordingState(from: coordinator, into: hotkeyMonitor)
+            hotkeyMonitor.onRetype = {
+                Task { @MainActor in await coordinator.typeLastDictation() }
+            }
             hotkeyMonitor.onUndo = {
                 Task { @MainActor in
                     guard let text = await TextInsertionService.undoLastInsertion() else { return }
@@ -328,6 +335,7 @@ struct ScribeApp: App {
             hotkeyMonitor.trigger = settings.hotkeyTrigger
             hotkeyMonitor.activationMode = settings.hotkeyActivationMode
             hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
+            hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
 
             let started = hotkeyMonitor.start()
             let trigger = settings.useGlobeKey ? "Globe" : settings.hotkeyString

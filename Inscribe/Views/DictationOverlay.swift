@@ -1,5 +1,38 @@
 import SwiftUI
 
+/// How a dictation ended, for the panel to say.
+struct OverlayOutcome: Equatable {
+    let symbol: String
+    let headline: String
+    /// Shown dimmed under the headline: the words that were copied, or the microphone
+    /// that heard nothing.
+    var detail = ""
+
+    /// No text field had focus, so the words are on the clipboard.
+    static func copied(_ text: String) -> OverlayOutcome {
+        OverlayOutcome(symbol: "doc.on.clipboard", headline: "Copied. Press ⌘V to paste.", detail: text)
+    }
+
+    /// The paste was sent and the field never said it arrived.
+    static let unconfirmed = OverlayOutcome(
+        symbol: "questionmark.circle",
+        headline: "Pasted, but the app did not confirm it.",
+        detail: "If the words are missing, they are on the clipboard. Press ⌘V."
+    )
+
+    static func nothingHeard(microphone: String) -> OverlayOutcome {
+        OverlayOutcome(symbol: "exclamationmark.triangle", headline: "Nothing was heard.",
+                       detail: "Microphone: \(microphone)")
+    }
+
+    /// Something went wrong. `copied` adds where the words went, when they went to the
+    /// clipboard.
+    static func problem(_ message: String, copied: Bool = false) -> OverlayOutcome {
+        OverlayOutcome(symbol: "exclamationmark.triangle", headline: message,
+                       detail: copied ? "The words are on the clipboard. Press ⌘V to paste." : "")
+    }
+}
+
 #if os(macOS)
 import AppKit
 
@@ -25,6 +58,9 @@ final class DictationOverlayController {
     /// Held so the desktop-change notifications keep arriving for the life of the app.
     private var spaceObserver: (any NSObjectProtocol)?
 
+    /// Takes an outcome off the screen once it has been up long enough to read.
+    private var outcomeTask: Task<Void, Never>?
+
     static let minimumHeight: CGFloat = 92
     static let width: CGFloat = 460
     static let bandHeight: CGFloat = 22
@@ -44,11 +80,46 @@ final class DictationOverlayController {
     // MARK: - Presentation
 
     func show() {
+        outcomeTask?.cancel()
+        model.outcome = nil
         model.text = ""
         model.rewrite = ""
         model.isProcessing = false
         model.spectrum = []
+        present()
+    }
 
+    /// Say how a dictation ended, when it did not end with the words in the field.
+    ///
+    /// A dictation copied to the clipboard used to look the same as one that was
+    /// typed, and one that heard nothing closed the panel without a word. The only
+    /// report was a notification, which many people switch off, and which appears at
+    /// the far corner of the screen from where the panel is being watched.
+    ///
+    /// Up for three seconds, then gone. A dictation started meanwhile takes the panel
+    /// over at once.
+    func showOutcome(_ outcome: OverlayOutcome) {
+        outcomeTask?.cancel()
+        model.outcome = outcome
+        model.text = outcome.detail
+        model.rewrite = ""
+        model.isProcessing = false
+        model.spectrum = []
+        present()
+        // The headline needs room the one-line panel does not have. The text reports
+        // its own height only when that changes, and an outcome's one line of detail
+        // is often as tall as the dictation before it.
+        fitToText()
+
+        outcomeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            self?.hide()
+        }
+    }
+
+    /// Put the panel on screen at one line's height, where the user left it.
+    private func present() {
         // A panel the window server has taken off the other desktops is thrown away
         // and rebuilt, because it cannot be talked back onto them.
         //
@@ -145,7 +216,9 @@ final class DictationOverlayController {
     }
 
     func hide() {
+        outcomeTask?.cancel()
         panel?.orderOut(nil)
+        model.outcome = nil
         model.text = ""
         model.rewrite = ""
         model.isProcessing = false
@@ -194,7 +267,7 @@ final class DictationOverlayController {
         // stopped working once the glass view was in it: the glass pins its content to
         // its own bounds, which come from the panel, so every view was being told its
         // height by the one thing that wanted to be told. The panel stopped growing.
-        let chrome = Self.bandHeight + Self.contentSpacing + Self.verticalPadding
+        let chrome = Self.bandHeight + Self.contentSpacing + Self.verticalPadding + headlineHeight
         let fitted = max(min(model.textHeight, ceiling) + chrome, Self.minimumHeight)
         let tallest = max(ceiling + chrome, Self.minimumHeight)
         // Grows to the text, and keeps any height the text gives back, up to the
@@ -229,6 +302,11 @@ final class DictationOverlayController {
     /// Kept clear between the panel and the edges of the screen.
     private static let screenMargin: CGFloat = 12
 
+    /// The room an outcome's headline takes above the text, or none while dictating.
+    private var headlineHeight: CGFloat {
+        model.outcome == nil ? 0 : DictationOverlayView.lineHeight + Self.contentSpacing
+    }
+
     /// The text room in the tallest panel the screen can hold.
     ///
     /// The panel grows downward and then upward, so only a dictation taller than
@@ -240,7 +318,7 @@ final class DictationOverlayController {
         // Everything in the panel that is not text: the band, the gap under it, and
         // the padding. Only the padding was counted, so the tallest panel grew 32
         // points too high, up under the menu bar.
-        let chrome = Self.bandHeight + Self.contentSpacing + Self.verticalPadding
+        let chrome = Self.bandHeight + Self.contentSpacing + Self.verticalPadding + headlineHeight
         let room = screen.visibleFrame.height - 2 * Self.screenMargin - chrome
         return max(room, DictationOverlayView.lineHeight)
     }
@@ -446,6 +524,9 @@ private final class DragHandleView: NSView {
 @Observable
 final class OverlayModel {
     var text = ""
+
+    /// Set while the panel reports how a dictation ended, in place of live words.
+    var outcome: OverlayOutcome?
     var isProcessing = false
     /// The AI's rewrite as far as it has got, shown in place of the dictated words.
     var rewrite = ""
@@ -485,6 +566,15 @@ private struct DictationOverlayView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DictationOverlayController.contentSpacing) {
             ListeningBar(spectrum: model.spectrum, isProcessing: model.isProcessing)
+
+            if let outcome = model.outcome {
+                Label(outcome.headline, systemImage: outcome.symbol)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: Self.lineHeight)
+            }
 
             // Clipped to the newest lines rather than truncated.
             //
@@ -562,6 +652,7 @@ private struct DictationOverlayView: View {
     /// Swapping it for "Processing…" on release hid the words at the moment the user
     /// wants to check them, to say what the band's amber already says.
     private var displayText: String {
+        if model.outcome != nil { return model.text }
         if model.isProcessing, !model.rewrite.isEmpty { return model.rewrite }
         if !model.text.isEmpty { return model.text }
         return model.isProcessing ? "Processing…" : "Listening…"
@@ -569,7 +660,8 @@ private struct DictationOverlayView: View {
 
     /// A placeholder, or a dictation waiting for its rewrite, is drawn dimmed.
     private var isDimmed: Bool {
-        model.isProcessing ? model.rewrite.isEmpty : model.text.isEmpty
+        if model.outcome != nil { return true }
+        return model.isProcessing ? model.rewrite.isEmpty : model.text.isEmpty
     }
 }
 

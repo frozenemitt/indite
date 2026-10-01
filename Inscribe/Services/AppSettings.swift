@@ -8,7 +8,8 @@ final class AppSettings {
 
     // MARK: - AI Processing Settings
 
-    /// Whether to process transcription with AI before copying
+    /// Whether a dictation is rewritten by the AI before it is delivered. False is the
+    /// Rewrite menu's "Off".
     var aiEnabled: Bool {
         didSet { save("aiEnabled", aiEnabled) }
     }
@@ -89,6 +90,14 @@ final class AppSettings {
     /// correction is right.
     var keepMeetingAudio: Bool {
         didSet { save("keepMeetingAudio", keepMeetingAudio) }
+    }
+
+    /// Write a title and a summary when a meeting ends.
+    ///
+    /// On by default: a list of meetings named for their dates cannot be told apart,
+    /// and a summary nobody asked for is cheaper than one nobody remembered to ask for.
+    var summarizeMeetingsAtEnd: Bool {
+        didSet { save("summarizeMeetingsAtEnd", summarizeMeetingsAtEnd) }
     }
 
     // MARK: - Dictation History
@@ -181,6 +190,19 @@ final class AppSettings {
         didSet { save("undoHotkeyString", undoHotkeyString) }
     }
 
+    /// Enable a shortcut that types the last dictation again, at the cursor.
+    ///
+    /// For a dictation that landed in the wrong place: put the cursor where the words
+    /// should have gone and press it.
+    var retypeHotkeyEnabled: Bool {
+        didSet { save("retypeHotkeyEnabled", retypeHotkeyEnabled) }
+    }
+
+    /// The type-again shortcut. Always a combination, as the undo shortcut is.
+    var retypeHotkeyString: String {
+        didSet { save("retypeHotkeyString", retypeHotkeyString) }
+    }
+
     // MARK: - Output Behaviour (macOS only)
 
     /// Where finished text goes: "smartInsert" types into the focused text field and
@@ -242,6 +264,14 @@ final class AppSettings {
     // MARK: - Initialization
 
     init() {
+        // "Raw (No Processing)" used to be a prompt one could select. Off is the
+        // Rewrite choice now, so a stored selection of it becomes that. Done in the
+        // store, before anything is read from it.
+        if UserDefaults.standard.string(forKey: "selectedPromptId") == PromptConfiguration.rawPromptId.uuidString {
+            UserDefaults.standard.removeObject(forKey: "selectedPromptId")
+            UserDefaults.standard.set(false, forKey: "aiEnabled")
+        }
+
         // Load saved settings with defaults
         self.aiEnabled = UserDefaults.standard.object(forKey: "aiEnabled") as? Bool ?? true
         self.playFeedbackSounds = UserDefaults.standard.object(forKey: "playFeedbackSounds") as? Bool ?? true
@@ -262,6 +292,8 @@ final class AppSettings {
         self.useGlobeKey = UserDefaults.standard.object(forKey: "useGlobeKey") as? Bool ?? true
         self.undoHotkeyEnabled = UserDefaults.standard.object(forKey: "undoHotkeyEnabled") as? Bool ?? true
         self.undoHotkeyString = UserDefaults.standard.string(forKey: "undoHotkeyString") ?? "⌃⌥⌘Z"
+        self.retypeHotkeyEnabled = UserDefaults.standard.object(forKey: "retypeHotkeyEnabled") as? Bool ?? true
+        self.retypeHotkeyString = UserDefaults.standard.string(forKey: "retypeHotkeyString") ?? "⌃⌥⌘V"
         self.outputModeRaw = UserDefaults.standard.string(forKey: "outputModeRaw") ?? "smartInsert"
         self.restoreClipboardAfterPaste = UserDefaults.standard.object(forKey: "restoreClipboardAfterPaste") as? Bool ?? true
         self.autoSubmitAfterInsert = UserDefaults.standard.object(forKey: "autoSubmitAfterInsert") as? Bool ?? false
@@ -282,6 +314,7 @@ final class AppSettings {
         self.inputDeviceUID = UserDefaults.standard.string(forKey: "inputDeviceUID") ?? "default"
         self.captureSystemAudioInMeetings = UserDefaults.standard.object(forKey: "captureSystemAudioInMeetings") as? Bool ?? false
         self.keepMeetingAudio = UserDefaults.standard.object(forKey: "keepMeetingAudio") as? Bool ?? true
+        self.summarizeMeetingsAtEnd = UserDefaults.standard.object(forKey: "summarizeMeetingsAtEnd") as? Bool ?? true
         self.keepDictationHistory = UserDefaults.standard.object(forKey: "keepDictationHistory") as? Bool ?? true
         self.dictationHistoryLimit = UserDefaults.standard.object(forKey: "dictationHistoryLimit") as? Int ?? 100
         self.notifyOnError = UserDefaults.standard.object(forKey: "notifyOnError") as? Bool ?? true
@@ -356,6 +389,8 @@ final class AppSettings {
         useGlobeKey = true
         undoHotkeyEnabled = true
         undoHotkeyString = "⌃⌥⌘Z"
+        retypeHotkeyEnabled = true
+        retypeHotkeyString = "⌃⌥⌘V"
         outputModeRaw = "smartInsert"
         restoreClipboardAfterPaste = true
         autoSubmitAfterInsert = false
@@ -376,6 +411,7 @@ final class AppSettings {
         inputDeviceUID = "default"
         captureSystemAudioInMeetings = false
         keepMeetingAudio = true
+        summarizeMeetingsAtEnd = true
         keepDictationHistory = true
         dictationHistoryLimit = 100
         notifyOnError = true
@@ -460,6 +496,16 @@ extension AppSettings {
               let (keyCode, flags) = parseHotkeyForEventTap(undoHotkeyString) else { return nil }
         let undo = HotkeyTrigger.combo(keyCode: keyCode, modifiers: flags)
         return undo == hotkeyTrigger ? nil : undo
+    }
+
+    /// The type-again binding to hand `GlobalHotkeyMonitor`: nil when switched off, when
+    /// unparseable, or when it is the dictation trigger or the undo one. Those two are
+    /// checked first, so a clash would leave this one silently dead; Settings says so.
+    var retypeHotkeyTrigger: HotkeyTrigger? {
+        guard retypeHotkeyEnabled,
+              let (keyCode, flags) = parseHotkeyForEventTap(retypeHotkeyString) else { return nil }
+        let retype = HotkeyTrigger.combo(keyCode: keyCode, modifiers: flags)
+        return retype == hotkeyTrigger || retype == undoHotkeyTrigger ? nil : retype
     }
 
     /// Parse `hotkeyString` (e.g. "⌃⌥⌘C") into event-tap terms.
