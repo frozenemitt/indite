@@ -17,9 +17,9 @@ Slices, each shippable on its own, riskiest first.
 
 | # | Slice | Findings | State |
 |---|---|---|---|
-| 1 | System menu with a status line, one Rewrite submenu, Recent Dictations and a type-again key; the ribbon as the menu bar icon, with a shape per state; Start Meeting no longer opens the window | 3, 5, 14, 15, 16 | Installed 2026-10-01. Menu, submenus and icon seen working. The status line's colored dot does not show. The type-again key is untried. |
-| 2 | Dictation panel reports the outcome: copied, nothing heard, cut short | 1, 2 | Installed. Untried on screen. |
-| 3 | Title and summary written when a meeting ends; default title without the date | 8, 9 | Installed. The title prompt was tried on nine recorded meetings; the end of a real meeting is untried. |
+| 1 | System menu with a status line, one Rewrite submenu, Recent Dictations and a type-again key; the ribbon as the menu bar icon, with a shape per state; Start Meeting no longer opens the window | 3, 5, 14, 15, 16 | Installed 2026-10-01. Menu, submenus and icon seen working. Windows opened from the menu went behind other apps; fixed the same day, and the fix is unconfirmed until Jonathan opens one. The type-again key is untried. |
+| 2 | Dictation panel reports the outcome: copied, nothing heard, cut short | 1, 2 | Installed. Jonathan saw "Nothing was heard" work. With no field in focus in Claude the panel said the paste was unconfirmed where it should have said copied; fixed, unconfirmed. |
+| 3 | Title and summary written when a meeting ends; default title without the date | 8, 9 | Installed. Jonathan recorded a short meeting and the title was written. |
 | 4 | Meeting pill: 30-point targets, Stop asks once | 6 | Installed. Untried on screen. |
 | 5 | History row: Show all, Insert names its target, undo for delete, no count | 7, 12, 27 | Installed. Untried on screen. |
 | 6 | Settings regrouped into seven tabs with a Status list; captions cut; one sound switch; four-way After typing; one name per thing | 4, 18–22, 24–26, 28, 30 | Installed. Dictation, Rewriting, Meetings and Feedback seen working. |

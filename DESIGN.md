@@ -125,3 +125,9 @@ carried by shape.
 - 2026-10-01 Serif for transcript text. "I don't really care about the reading face
   that much. I think that it looks nice having the serif font on the actual text. So,
   sure, go ahead and do it."
+- 2026-10-01 Words in a transcript can be corrected. "If we could just be able to
+  overwrite what's in the transcript with a correction, that would be an excellent
+  addition."
+- 2026-10-01 A window Inscribe opens comes to the front. Of windows opened from the
+  new menu landing behind other apps: "That's very difficult because I don't know
+  how to find them. So they need to be surfaced to the front when I open them."
