@@ -171,17 +171,21 @@ struct ScribeApp: App {
                 .environment(coordinator)
                 .environment(hotkeyMonitor)
                 .environment(meetingRecorder)
+                .environment(AudioInputList.shared)
                 .modelContainer(Self.modelContainer)
         } label: {
             // The dictation's own AI rewrite, not its whole delivery and not every AI
             // request in flight. With AI off, the brain showed on every release; a meeting
             // summary running in the background also turned the icon into the brain.
             MenuBarIcon(
-                isRecording: transcriptionEngine.isRecording,
-                isProcessing: coordinator.isRewriting
+                isDictating: coordinator.isCancellable,
+                isRewriting: coordinator.isRewriting,
+                meeting: meetingRecorder.state,
+                meetingClock: meetingRecorder.clockLabel,
+                keyHasFailed: hotkeyMonitor.hasFailed
             )
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
 
         // Settings window
         Settings {

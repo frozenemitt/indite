@@ -81,6 +81,13 @@ final class MeetingRecorder {
     /// Whether this meeting is recording system playback as well as the microphone.
     private(set) var systemAudioActive = false
 
+    /// The recorded time as text, changed once a second while a meeting is open.
+    ///
+    /// For the menu bar, which shows the clock beside its icon. `recordedSeconds` is
+    /// worked out from the wall clock when asked and tells nobody when it changes, so
+    /// a view reading it never redrew.
+    private(set) var clockLabel = MeetingExporter.durationLabel(0)
+
     /// Meetings whose summary is being written.
     ///
     /// Kept here rather than in the view that asked for it. That view is rebuilt for
@@ -354,6 +361,11 @@ final class MeetingRecorder {
             while !Task.isCancelled {
                 guard let self, self.state != .idle else { return }
 
+                // Assigned only when the text changes, so the menu bar redraws once a
+                // second and not twenty times.
+                let clock = MeetingExporter.durationLabel(self.recordedSeconds)
+                if self.clockLabel != clock { self.clockLabel = clock }
+
                 // Told to the engine as well as the panel, so the band is computed from
                 // the moment the panel is on, not from the next resume.
                 if self.engine.owner == .meeting {
@@ -430,6 +442,7 @@ final class MeetingRecorder {
         callSegments = []
         sessionOffset = 0
         completedAudioSeconds = 0
+        clockLabel = MeetingExporter.durationLabel(0)
 
         // Inserted up front so a crash mid-meeting still leaves a findable record,
         // but not published until recording actually starts — the window selects

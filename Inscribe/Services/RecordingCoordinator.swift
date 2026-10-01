@@ -23,9 +23,6 @@ final class RecordingCoordinator {
 
     // MARK: - State
 
-    /// Skip the AI pass for the next recording only. Reset once it is consumed.
-    var skipAIOnce = false
-
     /// Where the last result went, kept with the dictation in its history.
     private(set) var lastDestination: String?
 
@@ -122,6 +119,13 @@ final class RecordingCoordinator {
     #if os(macOS)
     @ObservationIgnored private var lastExternalApp: NSRunningApplication?
     @ObservationIgnored private var activationObserver: (any NSObjectProtocol)?
+
+    /// The profile of the app the next dictation would go to, if it has one.
+    ///
+    /// Observed, for the menu, which says when an app's own rule overrides the choice
+    /// it shows. Assigned only when it changes, which is when the user moves between
+    /// an app with a profile and one without.
+    private(set) var frontProfile: AppProfile?
     #endif
     @ObservationIgnored private var interruptionObserver: (any NSObjectProtocol)?
 
@@ -161,6 +165,7 @@ final class RecordingCoordinator {
         if let app = NSWorkspace.shared.frontmostApplication,
            app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastExternalApp = app
+            frontProfile = settings.profile(forBundleIdentifier: app.bundleIdentifier)
         }
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
@@ -169,7 +174,12 @@ final class RecordingCoordinator {
         ) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
-            MainActor.assumeIsolated { self?.lastExternalApp = app }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.lastExternalApp = app
+                let profile = self.settings.profile(forBundleIdentifier: app.bundleIdentifier)
+                if self.frontProfile != profile { self.frontProfile = profile }
+            }
         }
         #endif
 
@@ -197,12 +207,19 @@ final class RecordingCoordinator {
 
     // MARK: - Resolved Settings
 
-    /// The prompt to run, honouring any per-app override.
-    private var effectivePromptId: UUID? {
+    /// The prompt this dictation runs, or nil when its words go out as they were heard.
+    ///
+    /// An app's profile decides first, and it can turn rewriting off for that app as
+    /// well as choose a prompt. Otherwise the menu's Rewrite choice decides. Off is
+    /// stored as the prompt that does nothing, so a profile can hold it.
+    private var rewritePromptId: UUID? {
+        var promptId = settings.aiEnabled
+            ? settings.selectedPromptId ?? PromptConfiguration.defaultPromptId
+            : PromptConfiguration.rawPromptId
         #if os(macOS)
-        if let promptId = activeProfile?.promptId { return promptId }
+        if let override = activeProfile?.promptId { promptId = override }
         #endif
-        return settings.selectedPromptId
+        return promptId == PromptConfiguration.rawPromptId ? nil : promptId
     }
 
     #if os(macOS)
@@ -306,9 +323,9 @@ final class RecordingCoordinator {
         // Load the model while the user is still speaking. It has to be in memory
         // before it can answer, and that load used to begin only once they had
         // finished — seconds of waiting bolted onto seconds of talking.
-        let usesAI = settings.aiEnabled && !skipAIOnce
+        let usesAI = rewritePromptId != nil
         if usesAI {
-            aiProcessor.prewarm(promptId: effectivePromptId)
+            aiProcessor.prewarm(promptId: rewritePromptId)
         }
 
         #if os(macOS)
@@ -381,7 +398,7 @@ final class RecordingCoordinator {
 
         #if os(macOS)
         stopOverlayTicker()
-        if settings.showDictationOverlay, settings.aiEnabled, !skipAIOnce {
+        if settings.showDictationOverlay, rewritePromptId != nil {
             overlay.showProcessing()
         } else {
             overlay.hide()
@@ -418,7 +435,6 @@ final class RecordingCoordinator {
             #if os(macOS)
             overlay.hide()
             #endif
-            skipAIOnce = false
             // A session loaded for this dictation's prompt would otherwise be picked up
             // by the next one, with the instructions it held when it was loaded.
             aiProcessor.discardPrewarm()
@@ -458,11 +474,8 @@ final class RecordingCoordinator {
             Log.dictation.error("Delivering a transcript cut short: \(engineError, privacy: .public)")
         }
 
-        let shouldUseAI = settings.aiEnabled && !skipAIOnce
-        skipAIOnce = false
-
-        guard shouldUseAI else {
-            // Loaded at the start if AI was on then; "Skip AI" pressed mid-recording
+        guard let promptId = rewritePromptId else {
+            // Loaded at the start if rewriting was on then; switched off mid-recording
             // leaves it unused.
             aiProcessor.discardPrewarm()
             await deliver(transcript)
@@ -496,7 +509,6 @@ final class RecordingCoordinator {
 
         AudioFeedbackService.shared.startProcessingLoop(settings: settings)
 
-        let promptId = effectivePromptId
         // Held so the deadline can cancel it. `withDeadline` only stops waiting, and a
         // rewrite left running kept streaming into the next dictation's panel and held
         // the menu bar in its processing state until the model finished.
@@ -541,8 +553,7 @@ final class RecordingCoordinator {
         }
 
         await deliver(finalText)
-        let promptName = aiProcessor.promptConfiguration
-            .prompt(withId: promptId ?? PromptConfiguration.defaultPromptId)?.name
+        let promptName = aiProcessor.promptConfiguration.prompt(withId: promptId)?.name
         finishHistory(entry, text: finalText, rawText: transcript, promptName: promptName)
         AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
         NotificationService.shared.showTranscriptionCompleteIfEnabled(
@@ -612,7 +623,6 @@ final class RecordingCoordinator {
         prefixWarmer = nil
         engine.cancelRecording(owner: .dictation)
         aiProcessor.discardPrewarm()
-        skipAIOnce = false
         lastDestination = nil
         if !quietly {
             AudioFeedbackService.shared.playIfEnabled(.recordingStopped, settings: settings)
@@ -710,7 +720,7 @@ final class RecordingCoordinator {
     /// matches the request character for character.
     private func startPrefixWarmer() {
         prefixWarmer?.cancel()
-        let promptId = effectivePromptId
+        let promptId = rewritePromptId
         prefixWarmer = Task { [weak self] in
             for round in 0... {
                 if round > 0 { try? await Task.sleep(for: .seconds(2)) }

@@ -8,7 +8,8 @@ final class AppSettings {
 
     // MARK: - AI Processing Settings
 
-    /// Whether to process transcription with AI before copying
+    /// Whether a dictation is rewritten by the AI before it is delivered. False is the
+    /// Rewrite menu's "Off".
     var aiEnabled: Bool {
         didSet { save("aiEnabled", aiEnabled) }
     }
@@ -89,6 +90,14 @@ final class AppSettings {
     /// correction is right.
     var keepMeetingAudio: Bool {
         didSet { save("keepMeetingAudio", keepMeetingAudio) }
+    }
+
+    /// Write a title and a summary when a meeting ends.
+    ///
+    /// On by default: a list of meetings named for their dates cannot be told apart,
+    /// and a summary nobody asked for is cheaper than one nobody remembered to ask for.
+    var summarizeMeetingsAtEnd: Bool {
+        didSet { save("summarizeMeetingsAtEnd", summarizeMeetingsAtEnd) }
     }
 
     // MARK: - Dictation History
@@ -242,6 +251,14 @@ final class AppSettings {
     // MARK: - Initialization
 
     init() {
+        // "Raw (No Processing)" used to be a prompt one could select. Off is the
+        // Rewrite choice now, so a stored selection of it becomes that. Done in the
+        // store, before anything is read from it.
+        if UserDefaults.standard.string(forKey: "selectedPromptId") == PromptConfiguration.rawPromptId.uuidString {
+            UserDefaults.standard.removeObject(forKey: "selectedPromptId")
+            UserDefaults.standard.set(false, forKey: "aiEnabled")
+        }
+
         // Load saved settings with defaults
         self.aiEnabled = UserDefaults.standard.object(forKey: "aiEnabled") as? Bool ?? true
         self.playFeedbackSounds = UserDefaults.standard.object(forKey: "playFeedbackSounds") as? Bool ?? true
@@ -282,6 +299,7 @@ final class AppSettings {
         self.inputDeviceUID = UserDefaults.standard.string(forKey: "inputDeviceUID") ?? "default"
         self.captureSystemAudioInMeetings = UserDefaults.standard.object(forKey: "captureSystemAudioInMeetings") as? Bool ?? false
         self.keepMeetingAudio = UserDefaults.standard.object(forKey: "keepMeetingAudio") as? Bool ?? true
+        self.summarizeMeetingsAtEnd = UserDefaults.standard.object(forKey: "summarizeMeetingsAtEnd") as? Bool ?? true
         self.keepDictationHistory = UserDefaults.standard.object(forKey: "keepDictationHistory") as? Bool ?? true
         self.dictationHistoryLimit = UserDefaults.standard.object(forKey: "dictationHistoryLimit") as? Int ?? 100
         self.notifyOnError = UserDefaults.standard.object(forKey: "notifyOnError") as? Bool ?? true
@@ -376,6 +394,7 @@ final class AppSettings {
         inputDeviceUID = "default"
         captureSystemAudioInMeetings = false
         keepMeetingAudio = true
+        summarizeMeetingsAtEnd = true
         keepDictationHistory = true
         dictationHistoryLimit = 100
         notifyOnError = true

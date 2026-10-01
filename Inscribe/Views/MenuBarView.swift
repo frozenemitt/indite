@@ -2,8 +2,18 @@ import SwiftUI
 import SwiftData
 
 #if os(macOS)
+import AppKit
 
-/// The main menu bar interface for the transcription tool
+/// The menu under the menu bar icon.
+///
+/// A system menu, not a panel drawn to look like one. The panel had no highlight under
+/// the pointer and no arrow keys, and its "⌘," and "⌘Q" were labels with no shortcut
+/// behind them. Nothing here needs a window: every row is a command, a choice or a
+/// line of status.
+///
+/// The first line says what Inscribe is doing, and what is wrong when something is. A
+/// dictation key that had stopped working used to be reported in small gray type at
+/// the end of a row, with the way to fix it in a tooltip.
 struct MenuBarView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(PromptConfiguration.self) private var promptConfig
@@ -11,454 +21,351 @@ struct MenuBarView: View {
     @Environment(RecordingCoordinator.self) private var coordinator
     @Environment(MeetingRecorder.self) private var meetingRecorder
     @Environment(GlobalHotkeyMonitor.self) private var hotkeyMonitor
+    @Environment(AudioInputList.self) private var inputs
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @Environment(\.modelContext) private var modelContext
 
-    /// Kept current while the menu is open, so a microphone plugged in or switched on
-    /// appears without reopening it.
-    @State private var devices: [AudioInputDevice] = []
-    @State private var systemDefaultName = ""
+    /// The newest dictation, for Copy Last Dictation.
+    @Query(MenuBarView.lastDictation) private var recent: [Dictation]
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Dictation control
-            recordingButton
-
-            Divider()
-                .padding(.vertical, 4)
-
-            // Prompt selection
-            promptSection
-
-            // Microphone selection, the same setting as in Settings
-            microphoneSection
-                .padding(.top, 8)
-
-            Divider()
-                .padding(.vertical, 4)
-
-            // Quick toggles
-            quickToggles
-
-            Divider()
-                .padding(.vertical, 4)
-
-            // Meetings
-            meetingSection
-
-            Divider()
-                .padding(.vertical, 4)
-
-            // Footer actions
-            footerSection
-        }
-        .padding(8)
-        .frame(width: 280)
+    private static var lastDictation: FetchDescriptor<Dictation> {
+        var descriptor = FetchDescriptor<Dictation>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        descriptor.fetchLimit = 1
+        return descriptor
     }
 
-    // MARK: - Recording Button
+    var body: some View {
+        if meetingRecorder.hasActiveMeeting {
+            meetingSection
+            Divider()
+        }
 
-    /// Why the button cannot start a dictation, when something else holds the engine.
+        if hotkeyMonitor.hasFailed {
+            keyRepairSection
+            Divider()
+        } else if !meetingRecorder.hasActiveMeeting {
+            statusLine(readyLine, glyph: MenuGlyph.dot(.systemGreen))
+            if let profileLine {
+                Text(profileLine)
+            }
+            Divider()
+        }
+
+        Button(dictationTitle) {
+            Task { await coordinator.toggle() }
+        }
+        .disabled(coordinator.isDelivering || dictationIsBlocked)
+
+        if !meetingRecorder.hasActiveMeeting {
+            Button("Start Meeting") { startMeeting() }
+                .disabled(transcriptionEngine.isBusy)
+        }
+
+        Divider()
+
+        rewriteMenu
+        microphoneMenu
+
+        Divider()
+
+        Button("Meetings") { show(ScribeApp.meetingsWindowID) }
+        Button("Dictation History") { show(ScribeApp.historyWindowID) }
+        Button("Copy Last Dictation") {
+            if let last = recent.first { ClipboardService.copy(last.text) }
+        }
+        .disabled(recent.isEmpty)
+
+        Divider()
+
+        // Activated as well as opened: a menu bar app is not the active application
+        // while its menu is showing, so the window would open behind whatever the user
+        // was looking at.
+        Button("Settings…") {
+            openSettings()
+            NSApp.activate()
+        }
+        .keyboardShortcut(",")
+
+        Button("Quit Inscribe") {
+            NSApplication.shared.terminate(nil)
+        }
+        .keyboardShortcut("q")
+    }
+
+    // MARK: - Status
+
+    /// A line that says something and does nothing: a disabled item, as the system's
+    /// own menus show their status.
+    private func statusLine(_ text: String, glyph: Image) -> some View {
+        Button {} label: {
+            Label { Text(text) } icon: { glyph }
+        }
+        .disabled(true)
+    }
+
+    /// What to press, in the words Settings uses for it.
+    private var readyLine: String {
+        if coordinator.isDelivering { return "Finishing the dictation…" }
+        if coordinator.isCancellable { return "Listening…" }
+        if transcriptionEngine.isBusy, transcriptionEngine.owner == .shortcut {
+            return "A shortcut is recording."
+        }
+        let key = settings.useGlobeKey ? "the Globe key" : settings.hotkeyDisplay
+        switch settings.hotkeyActivationMode {
+        case .pushToTalk: return "Ready. Hold \(key) to dictate."
+        case .toggle: return "Ready. Press \(key) to dictate."
+        }
+    }
+
+    /// Says when the app in front has a rule of its own.
+    ///
+    /// The Rewrite choice below is the default. A profile for the app in front
+    /// overrides it, and nothing in the menu used to show that: the menu named one
+    /// prompt while the dictation ran another.
+    private var profileLine: String? {
+        guard let profile = coordinator.frontProfile, let promptId = profile.promptId,
+              promptId != globalChoice.promptId else { return nil }
+        if promptId == PromptConfiguration.rawPromptId {
+            return "In \(profile.appName), rewriting is off."
+        }
+        guard let name = promptConfig.prompt(withId: promptId)?.name else { return nil }
+        return "In \(profile.appName), rewriting uses \(name)."
+    }
+
+    /// The line for a dictation key that will not start, and the one thing that fixes it.
+    @ViewBuilder
+    private var keyRepairSection: some View {
+        statusLine("The dictation key is not working.", glyph: MenuGlyph.warning)
+
+        if AccessibilityPermission.isTrusted {
+            // Trusted, and the tap still would not build. Trying again is all there is.
+            Button("Try Again") { hotkeyMonitor.start() }
+        } else {
+            Button("Allow Accessibility Access…") {
+                AccessibilityPermission.openSystemSettings()
+            }
+        }
+    }
+
+    // MARK: - Dictation
+
+    /// A meeting or a shortcut holds the microphone.
     ///
     /// Asked of the engine's owner rather than `coordinator.isRecording`, which is also
-    /// false while a dictation is starting or stopping. That grayed out the button
-    /// under its own dictation, with a tooltip blaming a meeting.
-    private var dictationBlockedReason: String? {
-        guard transcriptionEngine.isBusy else { return nil }
-        switch transcriptionEngine.owner {
-        case .meeting: return "A meeting is using the microphone."
-        case .shortcut: return "A shortcut is recording."
-        case .dictation, nil: return nil
-        }
+    /// false while a dictation is starting or stopping. That grayed out the row under
+    /// its own dictation.
+    private var dictationIsBlocked: Bool {
+        guard transcriptionEngine.isBusy else { return false }
+        return transcriptionEngine.owner == .meeting || transcriptionEngine.owner == .shortcut
     }
 
     /// "Stop" from the moment a dictation starts coming up, because `toggle()` reads a
     /// press during the start as a stop.
-    ///
-    /// "Processing…" follows the dictation's own delivery, not every AI request in
-    /// flight, which also counted a meeting summary running in the background. That
-    /// grayed out this button while the hotkey went on dictating normally.
-    private var recordingButtonTitle: String {
-        if coordinator.isDelivering { return "Processing…" }
+    private var dictationTitle: String {
+        if coordinator.isDelivering { return "Finishing…" }
         return coordinator.isCancellable ? "Stop Dictation" : "Start Dictation"
     }
 
-    private var recordingButton: some View {
-        Button {
-            Task {
-                await coordinator.toggle()
-            }
-        } label: {
-            HStack {
-                Image(systemName: coordinator.isCancellable ? "stop.fill" : "record.circle")
-                    .font(.title3)
-                    .foregroundStyle(coordinator.isCancellable ? .red : .primary)
+    // MARK: - Meeting
 
-                Text(recordingButtonTitle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+    /// The meeting leads the menu while one is open: its state and clock, then the two
+    /// things that can be done to it.
+    @ViewBuilder
+    private var meetingSection: some View {
+        switch meetingRecorder.state {
+        case .preparing:
+            Text("Starting the meeting…")
+        case .finishing:
+            Text("Saving the meeting…")
+        case .recording, .paused, .idle:
+            statusLine(
+                meetingRecorder.isPaused
+                    ? "Meeting paused · \(meetingRecorder.clockLabel)"
+                    : "Recording a meeting · \(meetingRecorder.clockLabel)",
+                glyph: MenuGlyph.dot(meetingRecorder.isPaused ? .systemOrange : .systemRed)
+            )
 
-                // The key is named only while it works. After a reinstall breaks the
-                // Accessibility grant, the tap is gone, and the menu went on advertising
-                // a key that did nothing. The tooltip says where to turn it back on.
-                if hotkeyMonitor.isRunning {
-                    triggerLabel
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Hotkey not listening")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(coordinator.isCancellable ? Color.red.opacity(0.1) : Color.clear)
-        )
-        .disabled(coordinator.isDelivering || dictationBlockedReason != nil)
-        .help(dictationBlockedReason
-              ?? (hotkeyMonitor.isRunning ? "" : "The hotkey is not listening. See Settings → Hotkey."))
-    }
-
-    // MARK: - Prompt Section
-
-    private var promptSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("AI Prompt")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Menu {
-                // A nil selectedPromptId means the default prompt, not "nothing
-                // selected" — comparing against the id directly left the default
-                // showing no checkmark at all while it was the one actually in use.
-                ForEach(promptConfig.visiblePrompts) { prompt in
-                    Button {
-                        settings.selectedPromptId = prompt.id
-                    } label: {
-                        HStack {
-                            Text(prompt.name)
-                            if prompt.id == (settings.selectedPromptId ?? PromptConfiguration.defaultPromptId) {
-                                Image(systemName: "checkmark")
-                            }
-                        }
+            Button(meetingRecorder.isPaused ? "Resume Meeting" : "Pause Meeting") {
+                Task {
+                    if meetingRecorder.isPaused {
+                        await meetingRecorder.resume()
+                    } else {
+                        await meetingRecorder.pause()
                     }
                 }
-            } label: {
-                HStack {
-                    Text(selectedPromptName)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption)
-                }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.secondary.opacity(0.1))
-                )
             }
-            .menuStyle(.borderlessButton)
-            .disabled(!settings.aiEnabled)
-        }
-    }
+            // A dictation or a shortcut recorded during the pause holds the microphone,
+            // and a resume then fails with an error sound and leaves the meeting paused.
+            .disabled(meetingRecorder.isPaused && transcriptionEngine.isBusy)
 
-    // MARK: - Microphone Section
-
-    private var microphoneSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Microphone")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Menu {
-                microphoneButton(
-                    uid: AudioInputDevice.systemDefaultUID,
-                    name: "System Default (\(systemDefaultName))"
-                )
-                if !devices.isEmpty {
-                    Divider()
+            // Two steps, and both inside the menu. An ended meeting cannot be resumed,
+            // and a dialog would bring Inscribe forward over the call.
+            Menu("End Meeting") {
+                Button("End and Save") {
+                    Task { await meetingRecorder.stop(in: modelContext) }
                 }
-                ForEach(devices) { device in
-                    microphoneButton(uid: device.uid, name: device.name)
-                }
-            } label: {
-                HStack {
-                    Text(selectedMicrophoneName)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption)
-                }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.secondary.opacity(0.1))
-                )
-            }
-            .menuStyle(.borderlessButton)
-        }
-        .task {
-            devices = AudioDeviceCatalog.inputDevices()
-            systemDefaultName = AudioDeviceCatalog.systemDefaultName()
-            for await _ in AudioDeviceCatalog.changes() {
-                devices = AudioDeviceCatalog.inputDevices()
-                systemDefaultName = AudioDeviceCatalog.systemDefaultName()
             }
         }
     }
 
-    private func microphoneButton(uid: String, name: String) -> some View {
-        Button {
-            settings.inputDeviceUID = uid
-        } label: {
-            HStack {
-                Text(name)
-                if uid == settings.inputDeviceUID {
-                    Image(systemName: "checkmark")
+    /// Start without opening the Meetings window.
+    ///
+    /// The window used to come forward over the call about to be joined. The pill and
+    /// the menu bar clock show the meeting is running.
+    private func startMeeting() {
+        Task {
+            await meetingRecorder.start(in: modelContext)
+            // With no window open there is nowhere else for a failed start to say why.
+            if meetingRecorder.state == .idle, let error = meetingRecorder.lastError {
+                NotificationService.shared.showErrorIfEnabled(error, settings: settings)
+            }
+        }
+    }
+
+    // MARK: - Rewrite
+
+    /// Whether the AI rewrites a dictation, and with which prompt: one choice.
+    ///
+    /// It used to be four controls: a prompt picker, an AI switch, a switch to skip the
+    /// AI once, and a prompt named "Raw" that did nothing.
+    private enum RewriteChoice: Hashable {
+        case off
+        case prompt(UUID)
+
+        var promptId: UUID {
+            switch self {
+            case .off: PromptConfiguration.rawPromptId
+            case .prompt(let id): id
+            }
+        }
+    }
+
+    private var globalChoice: RewriteChoice {
+        settings.aiEnabled
+            ? .prompt(settings.selectedPromptId ?? PromptConfiguration.defaultPromptId)
+            : .off
+    }
+
+    private var rewriteMenu: some View {
+        Menu("Rewrite: \(rewriteName)") {
+            Picker("Rewrite", selection: Binding(
+                get: { globalChoice },
+                set: { choice in
+                    switch choice {
+                    case .off:
+                        settings.aiEnabled = false
+                    case .prompt(let id):
+                        settings.selectedPromptId = id
+                        settings.aiEnabled = true
+                    }
+                }
+            )) {
+                Text("Off").tag(RewriteChoice.off)
+                Divider()
+                ForEach(menuPrompts) { prompt in
+                    Text(prompt.name).tag(RewriteChoice.prompt(prompt.id))
                 }
             }
+            .pickerStyle(.inline)
+            .labelsHidden()
+
+            Divider()
+
+            Button("Edit Prompts…") {
+                SettingsTab.open(.rewriting)
+                openSettings()
+                NSApp.activate()
+            }
+        }
+    }
+
+    /// The prompts shown in the menu, and the one in use even when it is hidden from
+    /// the menu: left out, the submenu showed no checkmark at all.
+    private var menuPrompts: [Prompt] {
+        let selected = settings.selectedPromptId ?? PromptConfiguration.defaultPromptId
+        return promptConfig.rewritingPrompts.filter { $0.isVisible || $0.id == selected }
+    }
+
+    private var rewriteName: String {
+        switch globalChoice {
+        case .off:
+            return "Off"
+        case .prompt(let id):
+            // Naming the default here when the lookup fails hides a stored id whose
+            // prompt has been deleted, and with it the reason rewriting has started
+            // failing.
+            return promptConfig.prompt(withId: id)?.name ?? "Missing Prompt"
+        }
+    }
+
+    // MARK: - Microphone
+
+    private var microphoneMenu: some View {
+        Menu("Microphone: \(microphoneName)") {
+            Picker("Microphone", selection: Binding(
+                get: { settings.inputDeviceUID },
+                set: { settings.inputDeviceUID = $0 }
+            )) {
+                Text("System Default (\(inputs.systemDefaultName))")
+                    .tag(AudioInputDevice.systemDefaultUID)
+                Divider()
+                ForEach(inputs.devices) { device in
+                    Text(device.name).tag(device.uid)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
         }
     }
 
     /// The chosen microphone, or what recording falls back to when it is unplugged.
-    private var selectedMicrophoneName: String {
+    private var microphoneName: String {
         let uid = settings.inputDeviceUID
         if uid == AudioInputDevice.systemDefaultUID {
-            return "System Default (\(systemDefaultName))"
+            return inputs.systemDefaultName
         }
-        return devices.first { $0.uid == uid }?.name ?? "Not Connected: Using System Default"
+        return inputs.devices.first { $0.uid == uid }?.name
+            ?? "Not Connected, Using \(inputs.systemDefaultName)"
     }
 
-    private var selectedPromptName: String {
-        if !settings.aiEnabled {
-            return "AI Disabled"
-        }
-        guard let promptId = settings.selectedPromptId else {
-            return "Clean Up"
-        }
-        // Naming the default here when the lookup fails hides a stored id whose prompt
-        // has been deleted, and with it the reason the AI pass has started failing.
-        return promptConfig.prompt(withId: promptId)?.name ?? "Missing Prompt"
-    }
-
-    // MARK: - Quick Toggles
-
-    /// Each label fills the row so its switch sits at the trailing edge, where every
-    /// other row ends. At their own widths the two toggles were centered, and their
-    /// switches sat 11 points apart, left of center.
-    private var quickToggles: some View {
-        VStack(spacing: 4) {
-            Toggle(isOn: Binding(
-                get: { settings.aiEnabled },
-                set: { settings.aiEnabled = $0 }
-            )) {
-                Label("AI Processing", systemImage: "brain")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-
-            Toggle(isOn: Binding(
-                get: { coordinator.skipAIOnce },
-                set: { coordinator.skipAIOnce = $0 }
-            )) {
-                Label("Skip AI This Time", systemImage: "forward.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .disabled(!settings.aiEnabled)
-        }
-        .padding(.vertical, 4)
-    }
+    // MARK: - Windows
 
     /// Open one of the app's windows and bring it to the front.
     ///
-    /// A menu bar app is not the active application while its popover is showing, so
+    /// A menu bar app is not the active application while its menu is showing, so
     /// `openWindow` on its own puts the new window behind whatever the user was
     /// looking at, and they have to go and find it.
     private func show(_ windowID: String) {
         openWindow(id: windowID)
         NSApp.activate()
     }
+}
 
-    // MARK: - Meeting Section
+// MARK: - Menu Glyphs
 
-    /// Meeting mode is deliberately its own control rather than a variant of the
-    /// record button: dictation delivers text and forgets it, a meeting is kept.
-    private var meetingSection: some View {
-        VStack(spacing: 4) {
-            Button {
-                if meetingRecorder.hasActiveMeeting {
-                    Task { await meetingRecorder.stop(in: modelContext) }
-                } else {
-                    show(ScribeApp.meetingsWindowID)
-                    Task { await meetingRecorder.start(in: modelContext) }
-                }
-            } label: {
-                HStack {
-                    // The stop icon while paused too, where the row also reads "Stop
-                    // Meeting". Red only while the microphone is live.
-                    Image(systemName: meetingRecorder.isRecording || meetingRecorder.isPaused
-                          ? "stop.circle.fill" : "person.2.wave.2")
-                        .foregroundStyle(meetingRecorder.isRecording ? .red : .primary)
-                    Text(meetingButtonTitle)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 4)
-            .disabled(!meetingButtonEnabled)
-            .help(meetingRecorder.state == .idle ? (meetingRecorder.microphoneHeldReason ?? "") : "")
-
-            // Shown only when a pause or resume can act. During "Preparing…" and
-            // "Saving…" the row offered a pause that did nothing.
-            if meetingRecorder.isRecording || meetingRecorder.isPaused {
-                Button {
-                    Task {
-                        if meetingRecorder.isPaused {
-                            await meetingRecorder.resume()
-                        } else {
-                            await meetingRecorder.pause()
-                        }
-                    }
-                } label: {
-                    HStack {
-                        Image(systemName: meetingRecorder.isPaused ? "play.circle" : "pause.circle")
-                        Text(meetingRecorder.isPaused ? "Resume Meeting" : "Pause Meeting")
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.vertical, 4)
-                // A dictation or a shortcut recorded during the pause holds the
-                // microphone, and a resume then fails with an error sound and leaves the
-                // meeting paused. The meeting's own resume grays the row out too, with no
-                // tooltip, since a second click then does nothing.
-                .disabled(meetingRecorder.isPaused && transcriptionEngine.isBusy)
-                .help(meetingRecorder.isPaused ? (meetingRecorder.microphoneHeldReason ?? "") : "")
-            }
-
-            Button {
-                show(ScribeApp.meetingsWindowID)
-            } label: {
-                HStack {
-                    Image(systemName: "list.bullet.rectangle")
-                    Text("Meetings")
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 4)
-
-            Button {
-                show(ScribeApp.importWindowID)
-            } label: {
-                HStack {
-                    Image(systemName: "waveform.badge.plus")
-                    Text("Import Recording…")
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 4)
-
-            Button {
-                show(ScribeApp.historyWindowID)
-            } label: {
-                HStack {
-                    Image(systemName: "clock.arrow.circlepath")
-                    Text("Dictation History")
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 4)
+/// Colored marks for the status line.
+///
+/// Drawn as images of their own because a menu tints a symbol as a template, and the
+/// status line's whole point is the color.
+private enum MenuGlyph {
+    static func dot(_ color: NSColor) -> Image {
+        let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            return true
         }
+        image.isTemplate = false
+        return Image(nsImage: image)
     }
 
-    private var meetingButtonTitle: String {
-        switch meetingRecorder.state {
-        case .idle: "Start Meeting"
-        case .preparing: "Preparing…"
-        case .recording, .paused: "Stop Meeting"
-        case .finishing: "Saving…"
+    static var warning: Image {
+        let configuration = NSImage.SymbolConfiguration(paletteColors: [.systemOrange])
+        guard let image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) else {
+            return Image(systemName: "exclamationmark.triangle.fill")
         }
-    }
-
-    /// "Preparing…" and "Saving…" report progress and cannot be acted on, as in the
-    /// Meetings window. A click on "Preparing…" used to wait for the start and then
-    /// stop, saving a meeting a second or two long.
-    private var meetingButtonEnabled: Bool {
-        switch meetingRecorder.state {
-        case .idle: !transcriptionEngine.isBusy
-        case .recording, .paused: true
-        case .preparing, .finishing: false
-        }
-    }
-
-    // MARK: - Footer Section
-
-    private var footerSection: some View {
-        VStack(spacing: 4) {
-            // Activated for the same reason as `show(_:)`: an open Settings window
-            // behind another app's otherwise stays there.
-            Button {
-                openSettings()
-                NSApp.activate()
-            } label: {
-                HStack {
-                    Image(systemName: "gear")
-                    Text("Settings…")
-                    Spacer()
-                    Text("⌘,")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 4)
-
-            Divider()
-                .padding(.vertical, 4)
-
-            Button {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                HStack {
-                    Image(systemName: "power")
-                    Text("Quit")
-                    Spacer()
-                    Text("⌘Q")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 4)
-        }
-    }
-
-    // MARK: - Trigger Description
-
-    /// What the user actually presses, so the menu never advertises a stale shortcut.
-    ///
-    /// The Globe key is drawn with its SF Symbol, as macOS draws it in menus. The emoji
-    /// came out as a colored globe in an otherwise monochrome popover.
-    private var triggerLabel: Text {
-        settings.useGlobeKey ? Text(Image(systemName: "globe")) : Text(settings.hotkeyDisplay)
+        return Image(nsImage: image)
     }
 }
 
@@ -466,23 +373,38 @@ struct MenuBarView: View {
 
 /// The status bar draws this as a template image, so only the symbol's shape can say
 /// what is happening; a color set here never shows.
+///
+/// One shape per state. A dictation and a meeting used to share the filled microphone,
+/// and a paused meeting showed the idle one.
 struct MenuBarIcon: View {
-    let isRecording: Bool
-    let isProcessing: Bool
+    let isDictating: Bool
+    let isRewriting: Bool
+    let meeting: MeetingRecorder.State
+    let meetingClock: String
+    let keyHasFailed: Bool
 
     var body: some View {
         // Named, or VoiceOver reads the status item as the symbol.
         Image(systemName: iconName)
             .accessibilityLabel("Inscribe")
+
+        // The meeting's clock beside the icon, so an hour-long meeting shows it is
+        // still running without the pill.
+        if !isDictating, !isRewriting, meeting == .recording || meeting == .paused {
+            Text(meetingClock)
+                .monospacedDigit()
+        }
     }
 
     private var iconName: String {
-        if isRecording {
-            return "mic.fill"
-        } else if isProcessing {
-            return "brain"
-        } else {
-            return "mic"
+        // The dictation first: it is what the user is doing this second, and during a
+        // paused meeting it is what holds the microphone.
+        if isDictating { return "waveform" }
+        if isRewriting { return "brain" }
+        switch meeting {
+        case .recording, .preparing, .finishing: return "record.circle"
+        case .paused: return "pause.circle"
+        case .idle: return keyHasFailed ? "mic.slash" : "mic"
         }
     }
 }

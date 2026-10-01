@@ -86,6 +86,12 @@ final class GlobalHotkeyMonitor {
     private(set) var isRunning = false
     private(set) var lastError: String?
 
+    /// Whether a start was tried and did not take.
+    ///
+    /// Not simply `!isRunning`, which is also true for the moment between launch and
+    /// the first start, when nothing is wrong.
+    var hasFailed: Bool { !isRunning && lastError != nil }
+
     // MARK: - Configuration
 
     /// The key that activates recording.
@@ -217,7 +223,7 @@ final class GlobalHotkeyMonitor {
         stop()
 
         guard AccessibilityPermission.isTrusted else {
-            lastError = "Accessibility access is required to detect the hotkey."
+            lastError = "Accessibility access is required for the dictation key."
             isRunning = false
             Log.hotkey.error("not trusted, no tap")
             return false
@@ -255,7 +261,7 @@ final class GlobalHotkeyMonitor {
         guard host.waitUntilEnabled() else {
             Log.hotkey.error("tap never switched on — Accessibility is probably not granted to this build")
             stop()
-            lastError = "The hotkey could not switch on. In System Settings → Privacy & Security → Accessibility, remove Inscribe and add it again."
+            lastError = "The dictation key could not switch on. In System Settings → Privacy & Security → Accessibility, remove Inscribe and add it again."
             return false
         }
 

@@ -64,8 +64,12 @@ final class AudioFeedbackService {
     #if os(macOS)
     /// Start a looping sound to show AI processing is in progress. The None sound plays
     /// nothing, because `makeNSSound` returns nil for it.
+    ///
+    /// Under the same switch as every other sound. It used to play with feedback
+    /// sounds off, so the one switch named for silence left one sound running.
     func startProcessingLoop(settings: AppSettings) {
         stopProcessingLoop()
+        guard settings.playFeedbackSounds else { return }
         guard let sound = SoundCatalog.shared.makeNSSound(for: settings.processingSoundName) else { return }
         sound.loops = true
         sound.play()
