@@ -43,8 +43,6 @@ struct MeetingsView: View {
     /// with it, and the button wore a focus ring the whole time.
     @FocusState private var listHasKeyboard: Bool
 
-    private let trash = MeetingTrash.shared
-
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
@@ -121,7 +119,7 @@ struct MeetingsView: View {
         }
         .task {
             // A meeting whose thirty days ran out while the window was closed.
-            trash.eraseExpired(among: meetings, in: modelContext)
+            MeetingTrash.eraseExpired(in: modelContext)
         }
         .onAppear {
             listHasKeyboard = true
@@ -171,7 +169,7 @@ struct MeetingsView: View {
         } else if let meeting = selection.first, showsDeleted {
             DeletedMeetingPage(
                 meeting: meeting,
-                daysLeft: trash.daysLeft(for: meeting),
+                daysLeft: meeting.daysUntilErased(),
                 recover: { recover([meeting]) },
                 erase: { pendingErase = [meeting] }
             )
@@ -428,7 +426,7 @@ struct MeetingsView: View {
     /// or deleted while the recorder still held it, and one side was left reading a
     /// model the store had dropped.
     private var listedMeetings: [Meeting] {
-        meetings.filter { ($0.endedAt != nil || $0 == recorder.activeMeeting) && !trash.contains($0) }
+        meetings.filter { ($0.endedAt != nil || $0 == recorder.activeMeeting) && $0.deletedAt == nil }
     }
 
     /// The meetings matching the search, grouped by when they happened, as Notes does.
@@ -445,8 +443,8 @@ struct MeetingsView: View {
     /// The deleted meetings, the last one deleted first.
     private var deletedMeetings: [Meeting] {
         meetings
-            .filter { trash.contains($0) }
-            .sorted { (trash.date(for: $0) ?? .distantPast) > (trash.date(for: $1) ?? .distantPast) }
+            .filter { $0.deletedAt != nil }
+            .sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
     }
 
     private var deletedList: some View {
@@ -471,7 +469,7 @@ struct MeetingsView: View {
             List(selection: $selection) {
                 Section("Recently Deleted") {
                     ForEach(deletedMeetings) { meeting in
-                        let days = trash.daysLeft(for: meeting)
+                        let days = meeting.daysUntilErased()
                         MeetingRow(
                             meeting: meeting,
                             showsTime: false,
@@ -537,24 +535,23 @@ struct MeetingsView: View {
             selection = next.map { [$0] } ?? []
         }
 
-        trash.add(doomed)
+        MeetingTrash.delete(doomed, in: modelContext)
 
-        let trash = self.trash
-        undoManager?.registerUndo(withTarget: trash) { _ in
-            MainActor.assumeIsolated { trash.recover(doomed) }
+        undoManager?.registerUndo(withTarget: modelContext) { context in
+            MainActor.assumeIsolated { MeetingTrash.recover(doomed, in: context) }
         }
         undoManager?.setActionName(doomed.count == 1 ? "Delete Meeting" : "Delete Meetings")
     }
 
     private func recover(_ meetings: [Meeting]) {
         guard !meetings.isEmpty else { return }
-        trash.recover(meetings)
+        MeetingTrash.recover(meetings, in: modelContext)
         selection = selection.subtracting(meetings)
     }
 
     private func erase(_ doomed: [Meeting]) {
         selection = selection.subtracting(doomed)
-        trash.erase(doomed, in: modelContext)
+        MeetingTrash.erase(doomed, in: modelContext)
     }
 
     // MARK: - Importing

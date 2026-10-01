@@ -247,6 +247,9 @@ final class MeetingRecorder {
         // in the store at this point is one a crash or a force quit never let finish.
         Task { @MainActor [weak self] in
             self?.closeInterruptedMeetings(in: ScribeApp.modelContainer.mainContext)
+            // At launch as well as when the Meetings window opens, so a recording
+            // whose thirty days are up does not wait on disk for the window.
+            MeetingTrash.eraseExpired(in: ScribeApp.modelContainer.mainContext)
         }
     }
 
