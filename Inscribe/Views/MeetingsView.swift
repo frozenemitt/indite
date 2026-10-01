@@ -9,25 +9,33 @@ import AppKit
 /// Browse recorded meetings, read and correct them, and export.
 ///
 /// A list and a page. Everything about one meeting is on its page, top to bottom:
-/// who spoke, the summary, the transcript, and playback along the bottom. The
-/// commands that act on the list sit directly above it. Delete used to be at the far
-/// side of the window from the list it deleted from, and took one meeting at a time.
+/// who spoke, the summary, the transcript, and playback along the bottom. New
+/// Meeting, Import and Delete are in the toolbar above the list they act on.
+///
+/// Deleting works as it does in Voice Memos and Notes. A swipe, the Delete key, the
+/// toolbar or a right-click removes a meeting at once, with no dialog, into Recently
+/// Deleted at the foot of the list, and ⌘Z brings it back.
 struct MeetingsView: View {
     @Environment(MeetingRecorder.self) private var recorder
     @Environment(TranscriptionEngine.self) private var engine
     @Environment(AppSettings.self) private var settings
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.undoManager) private var undoManager
 
     @Query(sort: \Meeting.startedAt, order: .reverse) private var meetings: [Meeting]
 
     @State private var selection: Set<Meeting> = []
     @State private var searchText = ""
-    /// The meetings waiting on the delete confirmation.
-    @State private var pendingDeletion: [Meeting] = []
+    /// Whether the list is showing Recently Deleted in place of the meetings.
+    @State private var showsDeleted = false
+    /// The deleted meetings waiting on the confirmation to erase them for good.
+    @State private var pendingErase: [Meeting] = []
     /// Why the last start failed, until the user dismisses it.
     @State private var startError: String?
     @State private var importer = MeetingImporter()
     @State private var isDropTargeted = false
+
+    private let trash = MeetingTrash.shared
 
     var body: some View {
         NavigationSplitView {
@@ -47,31 +55,37 @@ struct MeetingsView: View {
                     .help(MeetingStoreStatus.shared.failureReason ?? "")
                 }
 
-                listBar
-                sidebar
+                if showsDeleted {
+                    deletedList
+                } else {
+                    sidebar
+                }
             }
             .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 400)
+            .toolbar { listToolbar }
         } detail: {
             detail
         }
-        .navigationTitle("Meetings")
+        .navigationTitle(showsDeleted ? "Recently Deleted" : "Meetings")
         .frame(minWidth: 760, minHeight: 480)
+        // Erasing is the one delete that cannot be taken back, so it is the one
+        // that asks.
         .confirmationDialog(
-            deletionTitle,
+            pendingErase.count == 1
+                ? "Delete \u{201C}\(pendingErase.first?.title ?? "")\u{201D} now?"
+                : "Delete \(pendingErase.count) meetings now?",
             isPresented: Binding(
-                get: { !pendingDeletion.isEmpty },
-                set: { if !$0 { pendingDeletion = [] } }
+                get: { !pendingErase.isEmpty },
+                set: { if !$0 { pendingErase = [] } }
             ),
             titleVisibility: .visible
         ) {
-            Button(pendingDeletion.count == 1 ? "Delete" : "Delete \(pendingDeletion.count) Meetings", role: .destructive) {
-                delete(pendingDeletion)
-            }
+            Button("Delete", role: .destructive) { erase(pendingErase) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(pendingDeletion.count == 1
-                 ? "Its transcript, summary and recording will be deleted. This can\u{2019}t be undone."
-                 : "Their transcripts, summaries and recordings will be deleted. This can\u{2019}t be undone.")
+            Text(pendingErase.count == 1
+                 ? "Its transcript, summary and recording will be erased. This can\u{2019}t be undone."
+                 : "Their transcripts, summaries and recordings will be erased. This can\u{2019}t be undone.")
         }
         .alert(
             "Couldn\u{2019}t Start Meeting",
@@ -97,11 +111,18 @@ struct MeetingsView: View {
         } message: { message in
             Text(message)
         }
+        .task {
+            // A meeting whose thirty days ran out while the window was closed.
+            trash.eraseExpired(among: meetings, in: modelContext)
+        }
         .onChange(of: recorder.activeMeeting, initial: true) { _, meeting in
             // Follow the meeting being recorded, so its page is the one on screen.
             // From the start as well: a window opened mid-meeting showed it without
             // selecting it, and lost it from view the moment it stopped.
-            if let meeting { selection = [meeting] }
+            if let meeting {
+                showsDeleted = false
+                selection = [meeting]
+            }
         }
         .onChange(of: recorder.state) { old, new in
             // A start that fails goes from preparing straight back to idle, with the
@@ -120,6 +141,10 @@ struct MeetingsView: View {
                 recorder.clearError()
             }
         }
+        .onChange(of: deletedMeetings.isEmpty) { _, isEmpty in
+            // The last one recovered or erased: nothing is left to show there.
+            if isEmpty { showsDeleted = false }
+        }
     }
 
     // MARK: - Detail
@@ -127,14 +152,17 @@ struct MeetingsView: View {
     @ViewBuilder
     private var detail: some View {
         if selection.count > 1 {
-            ContentUnavailableView {
-                Label("\(selection.count) Meetings Selected", systemImage: "square.stack")
-            } actions: {
-                Button("Delete \(selection.count) Meetings\u{2026}", role: .destructive) {
-                    pendingDeletion = deletable(Array(selection))
-                }
-                .disabled(deletable(Array(selection)).isEmpty)
-            }
+            ContentUnavailableView(
+                "\(selection.count) Meetings Selected",
+                systemImage: "square.stack"
+            )
+        } else if let meeting = selection.first, showsDeleted {
+            DeletedMeetingPage(
+                meeting: meeting,
+                daysLeft: trash.daysLeft(for: meeting),
+                recover: { recover([meeting]) },
+                erase: { pendingErase = [meeting] }
+            )
         } else if let meeting = selection.first {
             // A new view per meeting, so what it holds starts fresh with each one: the
             // player, which opens the recording as the page appears, and any export
@@ -146,6 +174,12 @@ struct MeetingsView: View {
             // says the click was heard. It said "No Meeting Selected" for the seconds
             // the speaker models take to load.
             ProgressView("Preparing…")
+        } else if showsDeleted {
+            ContentUnavailableView(
+                "Recently Deleted",
+                systemImage: "trash",
+                description: Text("Deleted meetings are kept here for \(MeetingTrash.daysKept) days.")
+            )
         } else {
             ContentUnavailableView {
                 Label("No Meeting Selected", systemImage: "waveform")
@@ -161,43 +195,53 @@ struct MeetingsView: View {
         }
     }
 
-    // MARK: - List Bar
+    // MARK: - List Toolbar
 
-    /// New Meeting, Import and Delete, directly above the list they act on.
-    ///
-    /// In the column itself, not in the window's toolbar. The toolbar has room above
-    /// the list for one titled button, and it moved the other two into an overflow
-    /// menu at the far side of the window, which is the distance this bar exists to
-    /// remove.
-    private var listBar: some View {
-        HStack(spacing: 6) {
-            newMeetingButton
+    /// New Meeting, Import and Delete, in the toolbar above the list, as Notes has
+    /// them. As icons, so that all three fit there: with a title on one of them the
+    /// toolbar moved the other two into an overflow menu at the far side of the
+    /// window.
+    @ToolbarContentBuilder
+    private var listToolbar: some ToolbarContent {
+        if showsDeleted {
+            ToolbarItemGroup {
+                Button {
+                    recover(Array(selection))
+                } label: {
+                    Label("Recover", systemImage: "arrow.uturn.backward")
+                }
+                .disabled(selection.isEmpty)
+                .help(selection.count > 1 ? "Recover the selected meetings" : "Recover the selected meeting")
 
-            Spacer(minLength: 0)
-
-            Button {
-                chooseRecordings()
-            } label: {
-                Label("Import Recording\u{2026}", systemImage: "plus")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 22, height: 20)
+                Button(role: .destructive) {
+                    pendingErase = Array(selection)
+                } label: {
+                    Label("Delete Now", systemImage: "trash")
+                }
+                .disabled(selection.isEmpty)
+                .help("Delete for good")
             }
-            .keyboardShortcut("o", modifiers: .command)
-            .help("Import a recording (⌘O), or drop one on the list")
+        } else {
+            ToolbarItemGroup {
+                newMeetingButton
 
-            Button(role: .destructive) {
-                pendingDeletion = deletable(Array(selection))
-            } label: {
-                Label("Delete", systemImage: "trash")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 22, height: 20)
+                Button {
+                    chooseRecordings()
+                } label: {
+                    Label("Import Recording\u{2026}", systemImage: "plus")
+                }
+                .keyboardShortcut("o", modifiers: .command)
+                .help("Import a recording (⌘O), or drop one on the list")
+
+                Button {
+                    moveToTrash(Array(selection))
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .disabled(deletable(Array(selection)).isEmpty)
+                .help(selection.count > 1 ? "Delete the selected meetings" : "Delete the selected meeting")
             }
-            .disabled(deletable(Array(selection)).isEmpty)
-            .help(selection.count > 1 ? "Delete the selected meetings" : "Delete the selected meeting")
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 6)
-        .padding(.bottom, 2)
     }
 
     @ViewBuilder
@@ -207,8 +251,8 @@ struct MeetingsView: View {
             Button {
                 startMeeting()
             } label: {
-                // A red record mark with its name beside it. As a bare gray circle it
-                // was the window's main command and the hardest one to recognize.
+                // Red, the one colored thing in the toolbar. As a gray circle it was
+                // the window's main command and the hardest one to recognize.
                 Label {
                     Text("New Meeting")
                 } icon: {
@@ -216,7 +260,6 @@ struct MeetingsView: View {
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(.white, .red)
                 }
-                .labelStyle(.titleAndIcon)
             }
             .keyboardShortcut("n", modifiers: .command)
             // A dictation holds the same microphone. Without this the button looked
@@ -236,7 +279,6 @@ struct MeetingsView: View {
                 if let meeting = recorder.activeMeeting { selection = [meeting] }
             } label: {
                 Label("Show Recording", systemImage: recorder.isPaused ? "pause.circle.fill" : "record.circle.fill")
-                    .labelStyle(.titleAndIcon)
             }
             .foregroundStyle(recorder.isPaused ? .orange : .red)
             .help("Show the meeting being recorded")
@@ -254,6 +296,7 @@ struct MeetingsView: View {
         // its overlay need it.
         let sections = self.sections
         let query = searchText.trimmingCharacters(in: .whitespaces)
+        let deletedCount = deletedMeetings.count
 
         return List(selection: $selection) {
             // An import shows where its meeting will appear, and says what it is doing.
@@ -287,15 +330,23 @@ struct MeetingsView: View {
                             recordingState: meeting == recorder.activeMeeting ? recorder.state : nil,
                             // The sentence the search found, so a result says why it
                             // is one.
-                            excerpt: query.isEmpty ? nil : meeting.excerpt(around: query)
+                            note: query.isEmpty ? nil : meeting.excerpt(around: query)
                         )
                         .tag(meeting)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                moveToTrash([meeting])
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .disabled(deletable([meeting]).isEmpty)
+                        }
                         .contextMenu {
                             // The whole selection when the row is part of it, as in
                             // Finder; the row alone otherwise.
                             let targets = selection.contains(meeting) ? Array(selection) : [meeting]
-                            Button(targets.count > 1 ? "Delete \(targets.count) Meetings\u{2026}" : "Delete\u{2026}", role: .destructive) {
-                                pendingDeletion = deletable(targets)
+                            Button(targets.count > 1 ? "Delete \(targets.count) Meetings" : "Delete", role: .destructive) {
+                                moveToTrash(targets)
                             }
                             .disabled(deletable(targets).isEmpty)
                         }
@@ -319,10 +370,36 @@ struct MeetingsView: View {
                     .allowsHitTesting(false)
             }
         }
+        // At the foot of the list, and only while it holds something.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if deletedCount > 0 {
+                Button {
+                    selection = []
+                    showsDeleted = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "trash")
+                        Text("Recently Deleted")
+                        Spacer()
+                        Text("\(deletedCount)")
+                            .monospacedDigit()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(.bar)
+                .overlay(alignment: .top) { Divider() }
+            }
+        }
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search")
         // The Delete key, and Edit ▸ Delete.
         .onDeleteCommand {
-            pendingDeletion = deletable(Array(selection))
+            moveToTrash(Array(selection))
         }
         // A recording dropped on the list is imported.
         .dropDestination(for: URL.self) { urls, _ in
@@ -331,14 +408,14 @@ struct MeetingsView: View {
         } isTargeted: { isDropTargeted = $0 }
     }
 
-    /// Every finished meeting, and the one being recorded.
+    /// Every finished meeting, and the one being recorded, that has not been deleted.
     ///
     /// Not the one still starting. That meeting is saved from the first second in case
     /// of a crash, and a start that fails deletes it again. Listed, it could be selected
     /// or deleted while the recorder still held it, and one side was left reading a
     /// model the store had dropped.
     private var listedMeetings: [Meeting] {
-        meetings.filter { $0.endedAt != nil || $0 == recorder.activeMeeting }
+        meetings.filter { ($0.endedAt != nil || $0 == recorder.activeMeeting) && !trash.contains($0) }
     }
 
     /// The meetings matching the search, grouped by when they happened, as Notes does.
@@ -350,6 +427,78 @@ struct MeetingsView: View {
         return MeetingSection.group(matching)
     }
 
+    // MARK: - Recently Deleted
+
+    /// The deleted meetings, the last one deleted first.
+    private var deletedMeetings: [Meeting] {
+        meetings
+            .filter { trash.contains($0) }
+            .sorted { (trash.date(for: $0) ?? .distantPast) > (trash.date(for: $1) ?? .distantPast) }
+    }
+
+    private var deletedList: some View {
+        VStack(spacing: 0) {
+            Button {
+                selection = []
+                showsDeleted = false
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.caption.weight(.semibold))
+                    Text("Meetings")
+                    Spacer()
+                }
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            List(selection: $selection) {
+                Section("Recently Deleted") {
+                    ForEach(deletedMeetings) { meeting in
+                        let days = trash.daysLeft(for: meeting)
+                        MeetingRow(
+                            meeting: meeting,
+                            showsTime: false,
+                            recordingState: nil,
+                            note: days == 1 ? "1 day left" : "\(days) days left"
+                        )
+                        .tag(meeting)
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                recover([meeting])
+                            } label: {
+                                Label("Recover", systemImage: "arrow.uturn.backward")
+                            }
+                            .tint(.accentColor)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                pendingErase = [meeting]
+                            } label: {
+                                Label("Delete Now", systemImage: "trash")
+                            }
+                        }
+                        .contextMenu {
+                            let targets = selection.contains(meeting) ? Array(selection) : [meeting]
+                            Button(targets.count > 1 ? "Recover \(targets.count) Meetings" : "Recover") {
+                                recover(targets)
+                            }
+                            Button(targets.count > 1 ? "Delete \(targets.count) Meetings Now\u{2026}" : "Delete Now\u{2026}", role: .destructive) {
+                                pendingErase = targets
+                            }
+                        }
+                    }
+                }
+            }
+            .onDeleteCommand {
+                pendingErase = Array(selection)
+            }
+        }
+    }
+
     // MARK: - Deleting
 
     /// The meeting being recorded, or saved after Stop, is the recorder's until it is
@@ -358,13 +507,9 @@ struct MeetingsView: View {
         meetings.filter { $0 != recorder.activeMeeting }
     }
 
-    private var deletionTitle: String {
-        pendingDeletion.count == 1
-            ? "Delete \u{201C}\(pendingDeletion.first?.title ?? "")\u{201D}?"
-            : "Delete \(pendingDeletion.count) meetings?"
-    }
-
-    private func delete(_ doomed: [Meeting]) {
+    /// Take meetings out of the list at once. They wait in Recently Deleted, and
+    /// Undo puts them straight back.
+    private func moveToTrash(_ doomed: [Meeting]) {
         let doomed = deletable(doomed)
         guard !doomed.isEmpty else { return }
 
@@ -378,13 +523,24 @@ struct MeetingsView: View {
             selection = next.map { [$0] } ?? []
         }
 
-        for meeting in doomed {
-            // The recording is not owned by SwiftData, so cascade delete does not
-            // reach it.
-            MeetingAudioStore.delete(fileNamed: meeting.audioFileName)
-            modelContext.delete(meeting)
+        trash.add(doomed)
+
+        let trash = self.trash
+        undoManager?.registerUndo(withTarget: trash) { _ in
+            MainActor.assumeIsolated { trash.recover(doomed) }
         }
-        modelContext.saveOrLog()
+        undoManager?.setActionName(doomed.count == 1 ? "Delete Meeting" : "Delete Meetings")
+    }
+
+    private func recover(_ meetings: [Meeting]) {
+        guard !meetings.isEmpty else { return }
+        trash.recover(meetings)
+        selection = selection.subtracting(meetings)
+    }
+
+    private func erase(_ doomed: [Meeting]) {
+        selection = selection.subtracting(doomed)
+        trash.erase(doomed, in: modelContext)
     }
 
     // MARK: - Importing
@@ -415,6 +571,31 @@ struct MeetingsView: View {
                     selection = [meeting]
                 }
             }
+        }
+    }
+}
+
+// MARK: - Deleted Meeting
+
+/// A deleted meeting's page: what it is, how long it has left, and the two things
+/// that can be done with it.
+private struct DeletedMeetingPage: View {
+    let meeting: Meeting
+    let daysLeft: Int
+    let recover: () -> Void
+    let erase: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(meeting.title, systemImage: "trash")
+        } description: {
+            Text(daysLeft == 1
+                 ? "This meeting will be deleted for good in 1 day."
+                 : "This meeting will be deleted for good in \(daysLeft) days.")
+        } actions: {
+            Button("Recover", action: recover)
+                .buttonStyle(.borderedProminent)
+            Button("Delete Now\u{2026}", role: .destructive, action: erase)
         }
     }
 }
@@ -465,8 +646,9 @@ private struct MeetingRow: View {
     let showsTime: Bool
     /// The recorder's state on the row of the meeting it holds, nil on every other.
     let recordingState: MeetingRecorder.State?
-    /// The sentence a search matched, when there is a search.
-    let excerpt: String?
+    /// A third line: the sentence a search matched, or how long a deleted meeting
+    /// has left.
+    let note: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -496,8 +678,8 @@ private struct MeetingRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-            if let excerpt {
-                Text(excerpt)
+            if let note {
+                Text(note)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
