@@ -158,9 +158,6 @@ final class TranscriptCoordinator: NSObject {
     /// Moves the word mark along while audio runs.
     private var wordFollower: Task<Void, Never>?
 
-    private static let lineTint = NSColor.controlAccentColor.withAlphaComponent(0.14)
-    private static let wordTint = NSColor.controlAccentColor.withAlphaComponent(0.42)
-
     // MARK: Text
 
     /// Show these lines, doing nothing when they are the ones already shown.
@@ -231,6 +228,8 @@ final class TranscriptCoordinator: NSObject {
         }
 
         textView.textStorage?.setAttributedString(text)
+        textView.playingLine = nil
+        textView.playingWord = nil
         document?.needsLayout = true
     }
 
@@ -320,12 +319,12 @@ final class TranscriptCoordinator: NSObject {
         playingWord = nil
         document?.needsLayout = true
 
-        // Text typed into the line being played arrives without the line's mark, and
-        // the word mark is left where the old words were. Draw the line's again; the
-        // word's comes back with the new timings.
-        if let index = playingIndex, let layoutManager = textView.layoutManager {
-            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: lineRanges[index])
-            layoutManager.addTemporaryAttribute(.backgroundColor, value: Self.lineTint, forCharacterRange: lineRanges[index])
+        // The line being played has moved or grown with the typing, and the word mark
+        // is where the old words were. The line's follows now; the word's comes back
+        // with the new timings.
+        if let index = playingIndex {
+            document?.textView.playingLine = lineRanges[index]
+            document?.textView.playingWord = nil
         }
     }
 
@@ -372,16 +371,17 @@ final class TranscriptCoordinator: NSObject {
         guard index != playingIndex, let textView = document?.textView,
               let layoutManager = textView.layoutManager else { return }
 
-        if let old = playingIndex, old < lineRanges.count {
-            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: lineRanges[old])
-        }
         playingIndex = index
         playingWord = nil
-        guard let index, index < lineRanges.count else { return }
+        textView.playingWord = nil
+        guard let index, index < lineRanges.count else {
+            textView.playingLine = nil
+            return
+        }
 
-        // A temporary attribute: drawn, and no part of the text, so a copy of the
+        // Drawn by the view behind the text, and no part of the text, so a copy of the
         // line does not carry a background with it.
-        layoutManager.addTemporaryAttribute(.backgroundColor, value: Self.lineTint, forCharacterRange: lineRanges[index])
+        textView.playingLine = lineRanges[index]
         markWord()
 
         // Only while audio runs. A click that moves the playhead is already looking at
@@ -424,7 +424,7 @@ final class TranscriptCoordinator: NSObject {
     func markWord() {
         guard let index = playingIndex, index < wordsInLine.count,
               let times = lines[index].wordTimes, !wordsInLine[index].isEmpty,
-              let layoutManager = document?.textView.layoutManager else { return }
+              let textView = document?.textView else { return }
 
         // The last word that has begun by now.
         let now = playhead()
@@ -436,14 +436,8 @@ final class TranscriptCoordinator: NSObject {
         }
         guard low != playingWord else { return }
 
-        let base = wordRanges[index].location
-        func absolute(_ word: Int) -> NSRange {
-            NSRange(location: base + wordsInLine[index][word].location, length: wordsInLine[index][word].length)
-        }
-        if let old = playingWord, old < wordsInLine[index].count {
-            layoutManager.addTemporaryAttribute(.backgroundColor, value: Self.lineTint, forCharacterRange: absolute(old))
-        }
-        layoutManager.addTemporaryAttribute(.backgroundColor, value: Self.wordTint, forCharacterRange: absolute(low))
+        let word = wordsInLine[index][low]
+        textView.playingWord = NSRange(location: wordRanges[index].location + word.location, length: word.length)
         playingWord = low
     }
 
@@ -677,6 +671,53 @@ final class TranscriptDocumentView: NSView {
 /// The text view itself: aware of names and words, and editable only in the words.
 final class TranscriptNSTextView: NSTextView, NSTextViewDelegate {
     private weak var coordinator: TranscriptCoordinator?
+
+    /// The line the playhead is in, name and words, as a range of the text.
+    var playingLine: NSRange? {
+        didSet { if playingLine != oldValue { needsDisplay = true } }
+    }
+
+    /// The word being said, for a recording that kept its word timings.
+    var playingWord: NSRange? {
+        didSet { if playingWord != oldValue { needsDisplay = true } }
+    }
+
+    /// Draw the playing line as one soft block, and the word being said as a mark
+    /// inside it.
+    ///
+    /// Drawn here, behind the text, as two rounded shapes. As a background color on
+    /// the characters it came out as hard-edged bands the width of the page, one for
+    /// the name and one for each row of words, with the page showing between them.
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard let layoutManager, let textContainer else { return }
+        let origin = textContainerOrigin
+
+        if let playingLine, NSMaxRange(playingLine) <= (textStorage?.length ?? 0) {
+            let glyphs = layoutManager.glyphRange(forCharacterRange: playingLine, actualCharacterRange: nil)
+            var block = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            // The full measure, whatever the last row's length.
+            block.origin.x = 0
+            block.size.width = textContainer.size.width
+            block = block.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -12, dy: -6)
+
+            NSColor.controlAccentColor.withAlphaComponent(0.10).setFill()
+            NSBezierPath(roundedRect: block, xRadius: 9, yRadius: 9).fill()
+        }
+
+        if let playingWord, NSMaxRange(playingWord) <= (textStorage?.length ?? 0) {
+            let glyphs = layoutManager.glyphRange(forCharacterRange: playingWord, actualCharacterRange: nil)
+            var mark = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            // The height of the letters, not of the row, which carries the spacing
+            // under it.
+            let font = TranscriptStyle.wordsFont
+            mark.size.height = ceil(font.ascender - font.descender)
+            mark = mark.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -3, dy: -1)
+
+            NSColor.controlAccentColor.withAlphaComponent(0.26).setFill()
+            NSBezierPath(roundedRect: mark, xRadius: 4, yRadius: 4).fill()
+        }
+    }
 
     /// Built on the older text system on purpose. Marking the line being played is a
     /// temporary attribute on the layout manager, and asking a new-system text view
