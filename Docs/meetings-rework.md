@@ -36,14 +36,13 @@ that sentence.
 1. The title, the date and length, and the speakers as chips. Clicking a chip renames
    that speaker everywhere.
 2. The summary, folded to its first three points, with Regenerate.
-3. The transcript, as one continuous text in the system serif. It can be selected
+3. The transcript, as one continuous text in the system font. It can be selected
    across speakers, searched with ⌘F, and clicked: a click on a word moves the
-   playhead there. Space plays from the selection or the playhead. The word being
-   played is marked. Clicking a speaker's name on a line opens the menu that
+   playhead there. The word being played is marked. Space does not play: the
+   transcript is text, and Space belongs to text. ⌘Return plays and pauses from the
+   playhead, and so do the play button and the keyboard's Play/Pause key. Clicking a speaker's name on a line opens the menu that
    reassigns the line; "Split here" cuts the line at the clicked word.
-   A misheard word is corrected in place: select it, press Return, type over it, and
-   press Return again, as a file is renamed in Finder. Outside a correction the text
-   is not editable, so Space always means play.
+   A misheard word is corrected in place by typing over it, as in any document.
 4. A playback bar along the bottom: play, back 15 seconds, the time, a strip showing
    who spoke when, and speed.
 
@@ -54,16 +53,21 @@ transcript is behind a "Show transcript" control, off by default.
 
 ### Slices
 
-Each one ends with something that runs. The uncertain one goes first.
+Each one ends with something that runs. The uncertain ones went first.
 
-| # | Slice | Uphill or downhill |
+| # | Slice | State on 2026-10-01 |
 |---|---|---|
-| 1 | The transcript as one text view: selectable across speakers, serif, ⌘F, speaker names clickable, split at the clicked word. A click moves the playhead, estimated inside the line. The rest of the window stays as it is. | Uphill: this is an AppKit text view inside a SwiftUI window, and the speaker menu has to live inside it. |
-| 2 | Word timings kept for new recordings and imports. The click lands on the exact word, and the word being played is marked. | Uphill until the first recording confirms the recognizer times single words. |
-| 3 | Correcting words in place. Added 2026-10-01 at Jonathan's request; it was a no-go in the first shape. | Uphill: the corrected text has to stay matched to the audio, and to the search. |
-| 4 | Layout A: the side column goes; summary block and speaker chips at the top; the playback bar with speed, skip and the speaker strip; Copy as Markdown. | Downhill. |
-| 5 | The list: New Meeting, Import and Delete above it; selecting several; search that lands on the sentence. The Import window is deleted. Imports keep their audio and their own date. | Downhill. |
-| 6 | The quiet live page. | Downhill. |
+| 1 | The transcript as one text view: selectable across speakers, ⌘F, speaker names clickable, split at the clicked word, a click moving the playhead. | Installed. Seen working on screen, except splitting a line. |
+| 2 | Word timings kept for new recordings and imports; the click lands on the exact word, and the word being played is marked. | Installed. The matching passed six sample cases. Not yet seen on a real recording. |
+| 3 | Correcting words by typing over them. | Installed. Passed an off-screen test: a word typed over, text added at the start of a line, and two forbidden edits refused. Not yet typed in the real window. |
+| 4 | Layout A: speaker chips and the summary at the top, no side column, a playback bar with a strip of who spoke when, skip and speed, Copy as Markdown. | Installed. The page, the chips and their editor, the folded summary and the bar were seen on screen. Playing, skip, speed and dragging the strip are untried. |
+| 5 | The list: New Meeting, Import and Delete above it, selecting several, search that shows and lands on the sentence. Import folded in, keeping audio and the file's own date. | Installed. The bar was seen on screen. Selecting several, deleting, importing and search are untried. |
+| 6 | The quiet live page. | Installed. Untried: it needs a meeting. |
+
+The list's commands are in a bar inside the list's column. The window toolbar was
+tried first and pushed Import and Delete into an overflow menu at the far side.
+
+All six are on the branch `meetings-rework`, not merged.
 
 ## Rabbit holes
 
@@ -81,9 +85,9 @@ Each one ends with something that runs. The uncertain one goes first.
   Call: match the displayed words to the timed words in order, and give a changed word
   the time of the words it replaced.
 - **A corrected word and the Space key.** In text that can be typed into, Space types
-  a space, and it is also the key that plays. Call: the transcript is read-only until
-  a correction is begun with Return on a selection, and read-only again once Return
-  commits it or Escape abandons it. One line is open to correction at a time.
+  a space, so it cannot also be the key that plays. Call, on Jonathan's word: Space
+  is left to the text. ⌘Return, the play button and the keyboard's Play/Pause key
+  play and pause.
 - **A correction has to reach everything that reads the meeting.** The list's search
   reads a second copy of the transcript kept without speakers. Call: search reads the
   speakers' lines where a meeting has them, so there is one text to correct.

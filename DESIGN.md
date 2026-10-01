@@ -30,9 +30,8 @@ Speaker colors in a transcript come from the system palette, by speaker number.
 
 ## Typography
 
-The system font at system text styles. No fixed point sizes except the live clock.
-Transcript and summary text in the Meetings window is set in New York, the system
-serif; names, times and every control stay in San Francisco.
+The system font at system text styles, everywhere. No fixed point sizes except the
+live clock. No serif: see the decisions log.
 
 ## Layout
 
@@ -131,3 +130,20 @@ carried by shape.
 - 2026-10-01 A window Inscribe opens comes to the front. Of windows opened from the
   new menu landing behind other apps: "That's very difficult because I don't know
   how to find them. So they need to be surfaced to the front when I open them."
+- 2026-10-01 Space does not play or pause a meeting's audio. "Maybe we don't use the
+  space key to play or pause the audio. Maybe there's another way to do it." The
+  transcript is text and Space belongs to it; ⌘Return, the play button and the
+  keyboard's Play/Pause key play and pause.
+- 2026-10-01 No serif in the transcript. Tried in the installed app and rejected: "I've
+  decided that I really don't like the serif font in the transcript. I think it's
+  pretty ugly, actually." Overrides the same day's "sure, go ahead and do it". The
+  transcript is set in the system font.
+- 2026-10-01 The playing line is one soft rounded block, with a rounded mark on the
+  word being said. Of the first version, bands of background color: "The
+  highlighting of the speaker section is kind of awkward looking. I think this could
+  be improved a lot."
+- 2026-10-01 Following the audio word by word stays. "The command return works great
+  for following the audio in the transcription. That is very cool."
+- 2026-10-01 Deleting meetings is to be redesigned. Of the bar of buttons above the
+  list and the confirmation on every delete: "I'm not super happy with the delete
+  functionality. It feels really clunky. It doesn't feel very Apple at all."

@@ -36,9 +36,11 @@ final class MeetingAudioStore {
         return FileManager.default.fileExists(atPath: url(forFileNamed: name).path)
     }
 
+    /// Remove a recording, and the word timings kept beside it.
     static func delete(fileNamed name: String?) {
         guard let name else { return }
         try? FileManager.default.removeItem(at: url(forFileNamed: name))
+        try? FileManager.default.removeItem(at: url(forFileNamed: MeetingWordTimings.fileName(forRecording: name)))
     }
 
     /// Total disk used by every saved recording.

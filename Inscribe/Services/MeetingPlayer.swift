@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import MediaPlayer
 import Observation
 import SwiftData
 import os
@@ -26,6 +27,11 @@ final class MeetingPlayer {
 
     private(set) var isPlaying = false
     private(set) var currentTime: TimeInterval = 0
+
+    /// How fast the recording plays: 1 is as it was said.
+    var rate: Float = 1 {
+        didSet { player?.rate = rate }
+    }
     private(set) var lastError: String?
 
     /// The utterance being played or paused in, for highlighting it.
@@ -34,6 +40,15 @@ final class MeetingPlayer {
     /// utterance. Each line used to compare itself against `currentTime`, so every line
     /// of the transcript was redrawn four times a second for as long as audio played.
     private(set) var playingUtteranceID: PersistentIdentifier?
+
+    /// The keyboard's Play/Pause key, held from the first press of play until the
+    /// recording is let go.
+    ///
+    /// The transcript is text, so Space cannot be the key that plays. The key every
+    /// keyboard already has for it can, once Inscribe says it has something playing.
+    /// Not claimed when a meeting is merely opened: that would take the key away from
+    /// music the user is listening to while reading.
+    @ObservationIgnored private var mediaKeyTargets: [(command: MPRemoteCommand, target: Any)] = []
 
     /// Where each utterance sits in the recording, in spoken order.
     @ObservationIgnored private var cues: [(id: PersistentIdentifier, start: TimeInterval, end: TimeInterval)] = []
@@ -64,6 +79,7 @@ final class MeetingPlayer {
             let player = try await Self.open(MeetingAudioStore.url(forFileNamed: fileName))
             guard !Task.isCancelled else { return false }
 
+            player.rate = rate
             self.player = player
             loadedFileName = fileName
             currentTime = 0
@@ -83,12 +99,15 @@ final class MeetingPlayer {
     @concurrent
     nonisolated static func open(_ url: URL) async throws -> sending AVAudioPlayer {
         let player = try AVAudioPlayer(contentsOf: url)
+        // Asked for before the player is readied, which is the only time it may be.
+        player.enableRate = true
         player.prepareToPlay()
         return player
     }
 
     func unload() {
         stop()
+        releaseMediaKeys()
         player = nil
         loadedFileName = nil
         currentTime = 0
@@ -107,12 +126,29 @@ final class MeetingPlayer {
         updatePlayingUtterance()
     }
 
+    /// Where the playhead is this instant, read from the recording itself.
+    ///
+    /// `currentTime` is what the page observes and it moves four times a second. The
+    /// transcript marks the word being said, and asks this, which is exact and tells
+    /// nobody when it changes.
+    var playhead: TimeInterval { player?.currentTime ?? currentTime }
+
+    /// How long the recording is, or zero before one has opened.
+    var duration: TimeInterval { player?.duration ?? 0 }
+
+    /// Play from the playhead, or pause there.
+    func togglePlayback() {
+        isPlaying ? pause() : play()
+    }
+
     func play() {
         guard let player else { return }
         player.play()
         isPlaying = true
         updatePlayingUtterance()
         startTicking()
+        claimMediaKeys()
+        publishNowPlaying()
     }
 
     func pause() {
@@ -120,6 +156,7 @@ final class MeetingPlayer {
         isPlaying = false
         updatePlayingUtterance()
         stopTicking()
+        publishNowPlaying()
     }
 
     func stop() {
@@ -142,10 +179,62 @@ final class MeetingPlayer {
         updatePlayingUtterance()
     }
 
+    /// Move the playhead by a number of seconds, back when negative.
+    func skip(by seconds: TimeInterval) {
+        seek(to: playhead + seconds)
+    }
+
     /// Jump to an utterance and start playing it.
     func play(from utterance: Utterance) {
         seek(to: utterance.start)
         play()
+    }
+
+    // MARK: - Media Keys
+
+    private func claimMediaKeys() {
+        guard mediaKeyTargets.isEmpty else { return }
+        let center = MPRemoteCommandCenter.shared()
+
+        // The system calls these on a queue of its choosing, so each hops to the main
+        // actor and answers at once.
+        func add(_ command: MPRemoteCommand, _ action: @escaping @MainActor (MeetingPlayer) -> Void) {
+            let target = command.addTarget { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    action(self)
+                }
+                return .success
+            }
+            mediaKeyTargets.append((command, target))
+        }
+        add(center.togglePlayPauseCommand) { $0.togglePlayback() }
+        add(center.playCommand) { $0.play() }
+        add(center.pauseCommand) { $0.pause() }
+    }
+
+    private func releaseMediaKeys() {
+        guard !mediaKeyTargets.isEmpty else { return }
+        for (command, target) in mediaKeyTargets {
+            command.removeTarget(target)
+        }
+        mediaKeyTargets = []
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
+    }
+
+    /// Tell the system what is playing and whether it is, which is what routes the
+    /// Play/Pause key here. The title is generic: a meeting's own title is the user's
+    /// words, and this is shown in Control Center.
+    private func publishNowPlaying() {
+        guard !mediaKeyTargets.isEmpty, let player else { return }
+        let center = MPNowPlayingInfoCenter.default()
+        center.nowPlayingInfo = [
+            MPMediaItemPropertyTitle: "Meeting recording",
+            MPMediaItemPropertyPlaybackDuration: player.duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: player.currentTime
+        ]
+        center.playbackState = isPlaying ? .playing : .paused
     }
 
     /// Find the utterance playback is inside.
@@ -184,6 +273,7 @@ final class MeetingPlayer {
         if !player.isPlaying {
             isPlaying = false
             stopTicking()
+            publishNowPlaying()
         }
         updatePlayingUtterance()
     }
