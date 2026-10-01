@@ -20,6 +20,8 @@ The one thing a person remembers: the ribbon of light that moves with their voic
 ## Colors
 
 System colors throughout, so light and dark and the user's accent color work.
+The app's own accent color is the ribbon's azure, `#3D99FF`. It colors the selected
+meeting, the default button, switches, and the block behind the line being played.
 The ribbon has the only colors of Inscribe's own, defined in `ListeningBar.swift`:
 
 - Azure `(0.24, 0.60, 1.00)` and violet `(0.62, 0.38, 1.00)` while listening.
@@ -147,3 +149,34 @@ carried by shape.
 - 2026-10-01 Deleting meetings is to be redesigned. Of the bar of buttons above the
   list and the confirmation on every delete: "I'm not super happy with the delete
   functionality. It feels really clunky. It doesn't feel very Apple at all."
+- 2026-10-01 The rounded highlight stays. "I really like the new highlight interface
+  that looks very good, much better than before."
+- 2026-10-01 Deleting follows Voice Memos: at once, no dialog, into Recently Deleted
+  for thirty days. "I like the recently deleted option." To be judged in use: "I need
+  to see it and play around with it to really get an idea if it meets the Apple level
+  of polish."
+- 2026-10-01 A deleted meeting's date is kept in the database, on the meeting. Of
+  keeping it in the app's preferences: "Is this really a good idea? What are the
+  consequences?" Then: "Go ahead and move the 30 day date into the database."
+- 2026-10-01 The selected meeting's highlight in the list is to be redesigned. It is
+  the app's green at full strength with white text. "I don't love the green
+  highlight of the conversation that's active. Could you propose a more Apple
+  aligned view?" Options shown; none chosen yet.
+- 2026-10-01 Green is not Inscribe's color. It is the accent color the project was
+  created with (#00AB83, in the first commit) and nobody chose it. "I don't know
+  where you got this idea of green being our app color, but I don't think that is
+  our app color."
+- 2026-10-01 The selected meeting is highlighted in the app's color, as Notes does:
+  gray for the selected folder in the sidebar, the app's yellow for the selected
+  note. Neutral gray for the meeting was offered and turned down. "I think the
+  active meeting should be highlighted in an app color, and the green is definitely
+  not it." Which color is the app's is not chosen yet.
+- 2026-10-01 Inscribe's color is azure, the ribbon's. Chosen over coral from the app
+  icon, which was recommended, and violet: "Azure". Installed the same hour. The
+  selected meeting is the system's own highlight, azure at full strength under white
+  text. The soft tint under dark text that the mockup showed is not built: the list
+  draws its highlight over any row background, so the tint needs the highlight
+  switched off in the AppKit table behind the list. Jonathan has not chosen between
+  the two.
+- 2026-10-01 The selected meeting keeps the system's own highlight: azure at full
+  strength under white text. The soft tint is not to be built. "keep the full tint"

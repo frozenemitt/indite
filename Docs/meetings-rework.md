@@ -67,7 +67,29 @@ Each one ends with something that runs. The uncertain ones went first.
 The list's commands are in a bar inside the list's column. The window toolbar was
 tried first and pushed Import and Delete into an overflow menu at the far side.
 
-All six are on the branch `meetings-rework`, not merged.
+All six are merged to main (353e1da).
+
+Deleting was reworked afterwards, on the branch `recently-deleted`: a meeting is
+deleted at once, with no dialog, into Recently Deleted for thirty days, and the
+list's three commands are icons in the toolbar above it. Installed 2026-10-01; the
+toolbar was seen on screen, and deleting, undoing and recovering are for Jonathan to
+try.
+
+The date of deletion is a property of the meeting, `deletedAt`, added in version 2
+of the store. It was kept in preferences for its first hour. The migration ran on
+Jonathan's store on 2026-10-01 with 11 meetings, 179 lines, 19 speakers and 100
+dictations before and after; a copy from before it is in
+`~/Library/Application Support/Inscribe/Backups`. In the installed build, the Delete
+button wrote the date, Undo cleared it, and a second delete wrote it again.
+Recovering from the Recently Deleted list, erasing, and the thirty-day purge have
+not been run against the database.
+
+The green that marked the selected meeting was the accent color the project was
+created with. The accent is now azure, the ribbon's color, chosen by Jonathan and
+installed 2026-10-01. The selected meeting stays the system's highlight, azure at
+full strength under white text; Jonathan chose it over a soft tint under dark text
+as Notes draws it. A row background does not replace the system's highlight; that
+was tried and the highlight drew over it.
 
 ## Rabbit holes
 

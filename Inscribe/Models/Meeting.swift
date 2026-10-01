@@ -31,6 +31,13 @@ final class Meeting {
     /// and an absolute path stored today would dangle tomorrow.
     var audioFileName: String?
 
+    /// When the meeting was deleted, or nil while it has not been.
+    ///
+    /// A deleted meeting leaves the list at once and waits in Recently Deleted, from
+    /// where it can be recovered until thirty days after this date. Added in version 2
+    /// of the store.
+    var deletedAt: Date?
+
     @Relationship(deleteRule: .cascade, inverse: \Utterance.meeting)
     var utterances: [Utterance]
 
