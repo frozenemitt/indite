@@ -80,7 +80,20 @@ final class MeetingTrash {
     /// Erase the meetings whose thirty days are up, and forget dates whose meeting is
     /// no longer in the store.
     func eraseExpired(among meetings: [Meeting], in context: ModelContext, now: Date = .now) {
-        guard !deletedAt.isEmpty else { return }
+        // With no meetings to compare against, every date would look like one whose
+        // meeting is gone. An empty list is more likely a list not loaded yet.
+        guard !deletedAt.isEmpty, !meetings.isEmpty else { return }
+
+        // Dates saved before the key carried the meeting's start are moved to it.
+        var moved = false
+        for meeting in meetings {
+            guard let old = Self.identifierKey(for: meeting), let date = deletedAt[old],
+                  let key = Self.key(for: meeting) else { continue }
+            deletedAt[old] = nil
+            deletedAt[key] = date
+            moved = true
+        }
+        if moved { save() }
 
         let cutoff = Calendar.current.date(byAdding: .day, value: -Self.daysKept, to: now) ?? now
         let expired = meetings.filter { meeting in
@@ -105,12 +118,22 @@ final class MeetingTrash {
         UserDefaults.standard.set(deletedAt, forKey: Self.storageKey)
     }
 
-    /// A meeting's identifier as a string that is the same on every launch.
+    /// What a deleted meeting is found by: its identifier in the store, and the
+    /// moment it started.
     ///
-    /// The store's own identifier, encoded with its keys in a fixed order: the same
-    /// identifier encoded twice must give the same string, or a deleted meeting would
-    /// not be found again.
+    /// The identifier alone is the store's name and a row number. A store put back
+    /// from an older backup hands those row numbers out again, and a meeting recorded
+    /// afterwards could take the number of one deleted before: it would vanish into
+    /// Recently Deleted as it was saved, and be erased when the other's days ran out.
+    /// No two meetings share a row number and a start.
     private static func key(for meeting: Meeting) -> String? {
+        identifierKey(for: meeting).map { "\($0)|\(Int(meeting.startedAt.timeIntervalSinceReferenceDate))" }
+    }
+
+    /// A meeting's identifier as a string that is the same on every launch: encoded
+    /// with its keys in a fixed order, since the same identifier encoded twice must
+    /// give the same string.
+    private static func identifierKey(for meeting: Meeting) -> String? {
         let id = meeting.persistentModelID
         if let known = keys[id] { return known }
         let encoder = JSONEncoder()
@@ -120,6 +143,7 @@ final class MeetingTrash {
         return key
     }
 
-    /// Keys already worked out. The list asks for every meeting's on every redraw.
+    /// Identifier keys already worked out. The list asks for every meeting's on
+    /// every redraw.
     private static var keys: [PersistentIdentifier: String] = [:]
 }
