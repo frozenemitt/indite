@@ -726,6 +726,53 @@ final class RecordingCoordinator {
         #endif
     }
 
+    // MARK: - Typing Again
+
+    /// Type the newest dictation in the history where the cursor is now.
+    func typeLastDictation() async {
+        var descriptor = FetchDescriptor<Dictation>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        descriptor.fetchLimit = 1
+        guard let last = (try? modelContext?.fetch(descriptor))?.first else {
+            AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
+            report(.problem(settings.keepDictationHistory
+                            ? "There is no dictation to type again."
+                            : "History is off, so there is no dictation to type again."))
+            return
+        }
+        await typeAgain(last.text)
+    }
+
+    /// Type a dictation from the history into the app in front, where the cursor is.
+    ///
+    /// For words that landed in the wrong place. Typed as they were delivered the first
+    /// time, with no rewrite and no Return pressed after them: the point is to put
+    /// them somewhere, and sending them is the user's to do.
+    func typeAgain(_ text: String) async {
+        // A dictation under way owns the panel and the paste.
+        guard !isCancellable, !isDelivering else {
+            AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
+            return
+        }
+        #if os(macOS)
+        let outcome = await TextInsertionService.deliver(
+            text,
+            targetApp: appInFront,
+            restoreClipboard: settings.restoreClipboardAfterPaste,
+            autoSubmit: false
+        )
+        switch outcome {
+        case .inserted:
+            AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
+        case .copiedToClipboard:
+            report(.copied(text))
+        case .pastedUnconfirmed:
+            report(.unconfirmed)
+        }
+        #else
+        ClipboardService.copy(text)
+        #endif
+    }
+
     /// Say in the dictation panel how a dictation ended, or why it did not start.
     ///
     /// Only when the panel is switched on. With it off, notifications are the report,

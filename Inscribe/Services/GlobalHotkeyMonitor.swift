@@ -43,7 +43,7 @@ private let relevantModifiers: CGEventFlags = [
 
 /// What a tapped keystroke turned out to mean.
 private enum HotkeyAction: Sendable {
-    case activate, deactivate, toggle, cancel, undo
+    case activate, deactivate, toggle, cancel, undo, retype
     /// The Globe key turned out to be a modifier for another key, so the recording it
     /// started was never meant. Cancelled without the stop sound.
     case abandon
@@ -55,6 +55,7 @@ private enum HotkeyAction: Sendable {
 private struct TapState: Sendable {
     var trigger: HotkeyTrigger = .globe
     var undoTrigger: HotkeyTrigger?
+    var retypeTrigger: HotkeyTrigger?
     var activationMode: HotkeyActivationMode = .pushToTalk
     var isRecording = false
     var isKeyDown = false
@@ -118,6 +119,14 @@ final class GlobalHotkeyMonitor {
         }
     }
 
+    /// Optional third binding that types the last dictation again, at the cursor.
+    var retypeTrigger: HotkeyTrigger? {
+        didSet {
+            let value = retypeTrigger
+            tapState.withLock { $0.retypeTrigger = value }
+        }
+    }
+
     /// Whether a dictation is running, which is the only time Escape should cancel.
     ///
     /// Pushed in rather than pulled: the tap answers on its own thread, and asking the
@@ -141,6 +150,8 @@ final class GlobalHotkeyMonitor {
     var onCancel: (() -> Void)?
     /// The undo shortcut was pressed.
     var onUndo: (() -> Void)?
+    /// The last dictation should be typed again, where the cursor is now.
+    var onRetype: (() -> Void)?
     /// A recording started by the Globe key should be dropped quietly: the key was
     /// being used as a modifier.
     var onAbandon: (() -> Void)?
@@ -371,6 +382,12 @@ final class GlobalHotkeyMonitor {
                     return (true, isRepeat ? nil : .undo)
                 }
 
+                if case let .combo(retypeKey, retypeModifiers) = state.retypeTrigger,
+                   keyCode == retypeKey,
+                   flags.intersection(relevantModifiers) == retypeModifiers.intersection(relevantModifiers) {
+                    return (true, isRepeat ? nil : .retype)
+                }
+
                 guard case let .combo(triggerKey, triggerModifiers) = state.trigger,
                       keyCode == triggerKey,
                       flags.intersection(relevantModifiers) == triggerModifiers.intersection(relevantModifiers)
@@ -481,6 +498,7 @@ final class GlobalHotkeyMonitor {
         case .cancel: onCancel?()
         case .abandon: onAbandon?()
         case .undo: onUndo?()
+        case .retype: onRetype?()
         case let .capture(keyCode, modifiers): onCapture?(keyCode, modifiers)
         }
     }

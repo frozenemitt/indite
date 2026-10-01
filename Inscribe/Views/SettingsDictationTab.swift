@@ -11,7 +11,7 @@ private enum AfterTyping: Hashable {
 
 /// Which shortcut is waiting for a keystroke.
 private enum CaptureTarget {
-    case dictation, undo
+    case dictation, undo, retype
 }
 
 /// Everything about a dictation: the key that starts it, the microphone it hears,
@@ -84,6 +84,28 @@ struct DictationSettingsView: View {
                     }
 
                     Text("Works for two minutes after the text was typed, and puts the text on your clipboard. Not available when After typing presses Return.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Type-Again Key") {
+                Toggle("Type the last dictation again with a key", isOn: $settings.retypeHotkeyEnabled)
+
+                if settings.retypeHotkeyEnabled {
+                    shortcutRow("Key combination", target: .retype, display: settings.retypeHotkeyString)
+
+                    if settings.retypeHotkeyTrigger == nil {
+                        Label {
+                            Text("Off while another key uses the same combination.")
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.caption)
+                    }
+
+                    Text("For a dictation that landed in the wrong place: put the cursor where it should have gone and press this.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -223,6 +245,11 @@ struct DictationSettingsView: View {
             rearm()
         }
         .onChange(of: settings.undoHotkeyString) { _, _ in rearm() }
+        .onChange(of: settings.retypeHotkeyEnabled) { _, _ in
+            if capturing == .retype { capturing = nil }
+            rearm()
+        }
+        .onChange(of: settings.retypeHotkeyString) { _, _ in rearm() }
         .onDisappear {
             // Capture swallows every keystroke on the machine, so it must never
             // outlive the screen that turned it on.
@@ -276,6 +303,7 @@ struct DictationSettingsView: View {
             switch target {
             case .dictation: settings.hotkeyString = combination
             case .undo: settings.undoHotkeyString = combination
+            case .retype: settings.retypeHotkeyString = combination
             }
             capturing = nil
         }
@@ -286,6 +314,7 @@ struct DictationSettingsView: View {
         hotkeyMonitor.trigger = settings.hotkeyTrigger
         hotkeyMonitor.activationMode = settings.hotkeyActivationMode
         hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
+        hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
         if !hotkeyMonitor.isRunning, AccessibilityPermission.isTrusted {
             hotkeyMonitor.start()
         }

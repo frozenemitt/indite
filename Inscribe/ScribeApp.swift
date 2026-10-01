@@ -298,6 +298,9 @@ struct ScribeApp: App {
             // meeting here would eat the key in whatever app the user is actually using,
             // for the whole length of the meeting — and cancel the meeting with it.
             Self.mirrorRecordingState(from: coordinator, into: hotkeyMonitor)
+            hotkeyMonitor.onRetype = {
+                Task { @MainActor in await coordinator.typeLastDictation() }
+            }
             hotkeyMonitor.onUndo = {
                 Task { @MainActor in
                     guard let text = await TextInsertionService.undoLastInsertion() else { return }
@@ -332,6 +335,7 @@ struct ScribeApp: App {
             hotkeyMonitor.trigger = settings.hotkeyTrigger
             hotkeyMonitor.activationMode = settings.hotkeyActivationMode
             hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
+            hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
 
             let started = hotkeyMonitor.start()
             let trigger = settings.useGlobeKey ? "Globe" : settings.hotkeyString

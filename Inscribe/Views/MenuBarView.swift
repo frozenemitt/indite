@@ -26,12 +26,12 @@ struct MenuBarView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.modelContext) private var modelContext
 
-    /// The newest dictation, for Copy Last Dictation.
-    @Query(MenuBarView.lastDictation) private var recent: [Dictation]
+    /// The newest dictations, for the Recent Dictations submenu.
+    @Query(MenuBarView.recentDictations) private var recent: [Dictation]
 
-    private static var lastDictation: FetchDescriptor<Dictation> {
+    private static var recentDictations: FetchDescriptor<Dictation> {
         var descriptor = FetchDescriptor<Dictation>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
-        descriptor.fetchLimit = 1
+        descriptor.fetchLimit = 5
         return descriptor
     }
 
@@ -70,11 +70,7 @@ struct MenuBarView: View {
         Divider()
 
         Button("Meetings") { show(ScribeApp.meetingsWindowID) }
-        Button("Dictation History") { show(ScribeApp.historyWindowID) }
-        Button("Copy Last Dictation") {
-            if let last = recent.first { ClipboardService.copy(last.text) }
-        }
-        .disabled(recent.isEmpty)
+        recentMenu
 
         Divider()
 
@@ -297,6 +293,70 @@ struct MenuBarView: View {
             // failing.
             return promptConfig.prompt(withId: id)?.name ?? "Missing Prompt"
         }
+    }
+
+    // MARK: - Recent Dictations
+
+    /// The last five dictations. A click types one where the cursor is; with Option
+    /// held, it is copied.
+    ///
+    /// Opening this menu does not take focus from the app in front, so the cursor is
+    /// still where the user left it when the item is chosen. That is what makes the
+    /// menu a way to put a dictation that went astray into the right place, where
+    /// before it took the History window, a search and a Copy.
+    private var recentMenu: some View {
+        Menu("Recent Dictations") {
+            if recent.isEmpty {
+                Text(settings.keepDictationHistory ? "No dictations yet" : "History is switched off")
+            }
+
+            ForEach(Array(recent.enumerated()), id: \.element.persistentModelID) { index, dictation in
+                let button = Button(Self.menuTitle(for: dictation.text)) {
+                    if NSEvent.modifierFlags.contains(.option) {
+                        ClipboardService.copy(dictation.text)
+                    } else {
+                        Task { await coordinator.typeAgain(dictation.text) }
+                    }
+                }
+                // The newest one carries the type-again key, so the menu teaches it.
+                if index == 0, let shortcut = retypeShortcut {
+                    button.keyboardShortcut(shortcut)
+                } else {
+                    button
+                }
+            }
+
+            if !recent.isEmpty {
+                Divider()
+                Text("Click to type at the cursor. ⌥-click to copy.")
+            }
+
+            Divider()
+            Button("Show All…") { show(ScribeApp.historyWindowID) }
+        }
+    }
+
+    /// The first words of a dictation, on one line, short enough for a menu.
+    private static func menuTitle(for text: String) -> String {
+        let line = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return line.count > 44 ? line.prefix(43).trimmingCharacters(in: .whitespaces) + "…" : line
+    }
+
+    /// The type-again key as a menu shortcut, when it is switched on and in use.
+    private var retypeShortcut: KeyboardShortcut? {
+        guard settings.retypeHotkeyTrigger != nil, let key = settings.retypeHotkeyString.last else { return nil }
+        var modifiers: EventModifiers = []
+        for symbol in settings.retypeHotkeyString.dropLast() {
+            switch symbol {
+            case "⌃": modifiers.insert(.control)
+            case "⌥": modifiers.insert(.option)
+            case "⌘": modifiers.insert(.command)
+            case "⇧": modifiers.insert(.shift)
+            default: break
+            }
+        }
+        let equivalent = key == " " ? KeyEquivalent.space : KeyEquivalent(Character(key.lowercased()))
+        return KeyboardShortcut(equivalent, modifiers: modifiers)
     }
 
     // MARK: - Microphone

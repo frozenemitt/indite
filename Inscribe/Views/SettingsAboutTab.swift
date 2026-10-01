@@ -101,6 +101,7 @@ struct AboutSettingsView: View {
         hotkeyMonitor.trigger = settings.hotkeyTrigger
         hotkeyMonitor.activationMode = settings.hotkeyActivationMode
         hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
+        hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
     }
 
     private var entries: [Diagnostics.Entry] {

@@ -190,6 +190,19 @@ final class AppSettings {
         didSet { save("undoHotkeyString", undoHotkeyString) }
     }
 
+    /// Enable a shortcut that types the last dictation again, at the cursor.
+    ///
+    /// For a dictation that landed in the wrong place: put the cursor where the words
+    /// should have gone and press it.
+    var retypeHotkeyEnabled: Bool {
+        didSet { save("retypeHotkeyEnabled", retypeHotkeyEnabled) }
+    }
+
+    /// The type-again shortcut. Always a combination, as the undo shortcut is.
+    var retypeHotkeyString: String {
+        didSet { save("retypeHotkeyString", retypeHotkeyString) }
+    }
+
     // MARK: - Output Behaviour (macOS only)
 
     /// Where finished text goes: "smartInsert" types into the focused text field and
@@ -279,6 +292,8 @@ final class AppSettings {
         self.useGlobeKey = UserDefaults.standard.object(forKey: "useGlobeKey") as? Bool ?? true
         self.undoHotkeyEnabled = UserDefaults.standard.object(forKey: "undoHotkeyEnabled") as? Bool ?? true
         self.undoHotkeyString = UserDefaults.standard.string(forKey: "undoHotkeyString") ?? "⌃⌥⌘Z"
+        self.retypeHotkeyEnabled = UserDefaults.standard.object(forKey: "retypeHotkeyEnabled") as? Bool ?? true
+        self.retypeHotkeyString = UserDefaults.standard.string(forKey: "retypeHotkeyString") ?? "⌃⌥⌘V"
         self.outputModeRaw = UserDefaults.standard.string(forKey: "outputModeRaw") ?? "smartInsert"
         self.restoreClipboardAfterPaste = UserDefaults.standard.object(forKey: "restoreClipboardAfterPaste") as? Bool ?? true
         self.autoSubmitAfterInsert = UserDefaults.standard.object(forKey: "autoSubmitAfterInsert") as? Bool ?? false
@@ -374,6 +389,8 @@ final class AppSettings {
         useGlobeKey = true
         undoHotkeyEnabled = true
         undoHotkeyString = "⌃⌥⌘Z"
+        retypeHotkeyEnabled = true
+        retypeHotkeyString = "⌃⌥⌘V"
         outputModeRaw = "smartInsert"
         restoreClipboardAfterPaste = true
         autoSubmitAfterInsert = false
@@ -479,6 +496,16 @@ extension AppSettings {
               let (keyCode, flags) = parseHotkeyForEventTap(undoHotkeyString) else { return nil }
         let undo = HotkeyTrigger.combo(keyCode: keyCode, modifiers: flags)
         return undo == hotkeyTrigger ? nil : undo
+    }
+
+    /// The type-again binding to hand `GlobalHotkeyMonitor`: nil when switched off, when
+    /// unparseable, or when it is the dictation trigger or the undo one. Those two are
+    /// checked first, so a clash would leave this one silently dead; Settings says so.
+    var retypeHotkeyTrigger: HotkeyTrigger? {
+        guard retypeHotkeyEnabled,
+              let (keyCode, flags) = parseHotkeyForEventTap(retypeHotkeyString) else { return nil }
+        let retype = HotkeyTrigger.combo(keyCode: keyCode, modifiers: flags)
+        return retype == hotkeyTrigger || retype == undoHotkeyTrigger ? nil : retype
     }
 
     /// Parse `hotkeyString` (e.g. "⌃⌥⌘C") into event-tap terms.
