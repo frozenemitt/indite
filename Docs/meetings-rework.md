@@ -53,16 +53,21 @@ transcript is behind a "Show transcript" control, off by default.
 
 ### Slices
 
-Each one ends with something that runs. The uncertain one goes first.
+Each one ends with something that runs. The uncertain ones went first.
 
-| # | Slice | Uphill or downhill |
+| # | Slice | State on 2026-10-01 |
 |---|---|---|
-| 1 | The transcript as one text view: selectable across speakers, ⌘F, speaker names clickable, split at the clicked word. A click moves the playhead, estimated inside the line. A playback bar for the whole recording. The rest of the window stays as it is. | Built and installed 2026-10-01. Seen working: the text, a click moving the playhead, ⌘F, the speaker menu. Untried: playing, the Play/Pause key, splitting a line. |
-| 2 | Word timings kept for new recordings and imports. The click lands on the exact word, and the word being played is marked. | Uphill until the first recording confirms the recognizer times single words. |
-| 3 | Correcting words in place. Added 2026-10-01 at Jonathan's request; it was a no-go in the first shape. | Uphill: the corrected text has to stay matched to the audio, and to the search. |
-| 4 | Layout A: the side column goes; summary block and speaker chips at the top; the playback bar with speed, skip and the speaker strip; Copy as Markdown. | Downhill. |
-| 5 | The list: New Meeting, Import and Delete above it; selecting several; search that lands on the sentence. The Import window is deleted. Imports keep their audio and their own date. | Downhill. |
-| 6 | The quiet live page. | Downhill. |
+| 1 | The transcript as one text view: selectable across speakers, ⌘F, speaker names clickable, split at the clicked word, a click moving the playhead. | Installed. Seen working on screen, except splitting a line. |
+| 2 | Word timings kept for new recordings and imports; the click lands on the exact word, and the word being played is marked. | Installed. The matching passed six sample cases. Not yet seen on a real recording. |
+| 3 | Correcting words by typing over them. | Installed. Passed an off-screen test: a word typed over, text added at the start of a line, and two forbidden edits refused. Not yet typed in the real window. |
+| 4 | Layout A: speaker chips and the summary at the top, no side column, a playback bar with a strip of who spoke when, skip and speed, Copy as Markdown. | Installed. The page, the chips and their editor, the folded summary and the bar were seen on screen. Playing, skip, speed and dragging the strip are untried. |
+| 5 | The list: New Meeting, Import and Delete above it, selecting several, search that shows and lands on the sentence. Import folded in, keeping audio and the file's own date. | Installed. The bar was seen on screen. Selecting several, deleting, importing and search are untried. |
+| 6 | The quiet live page. | Installed. Untried: it needs a meeting. |
+
+The list's commands are in a bar inside the list's column. The window toolbar was
+tried first and pushed Import and Delete into an overflow menu at the far side.
+
+All six are on the branch `meetings-rework`, not merged.
 
 ## Rabbit holes
 

@@ -23,9 +23,9 @@ Slices, each shippable on its own, riskiest first.
 | 4 | Meeting pill: 30-point targets, Stop asks once | 6 | Installed. Untried on screen. |
 | 5 | History row: Show all, Insert names its target, undo for delete, no count | 7, 12, 27 | Installed. Untried on screen. |
 | 6 | Settings regrouped into seven tabs with a Status list; captions cut; one sound switch; four-way After typing; one name per thing | 4, 18–22, 24–26, 28, 30 | Installed. Dictation, Rewriting, Meetings and Feedback seen working. |
-| 7 | Meetings window rework, layout A | 10, 11, 13, 17, 23, 29 | Shaped in `Docs/meetings-rework.md`. Not started. |
+| 7 | Meetings window rework, layout A | 10, 11, 13, 17, 23, 29 | Built and installed on the branch `meetings-rework`; see `Docs/meetings-rework.md` for what has been seen working. |
 
-Slices 1 to 6 are on the branch `interface-overhaul`, not merged.
+Slices 1 to 6 are merged to main and pushed (451d3ef). FluidAudio 0.17.4 is merged to main locally (8656b44) and not pushed: no meeting has been recorded with it yet.
 
 ## Rabbit holes
 
