@@ -47,10 +47,10 @@ struct MeetingsView: View {
                     .help(MeetingStoreStatus.shared.failureReason ?? "")
                 }
 
+                listBar
                 sidebar
             }
             .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 400)
-            .toolbar { listToolbar }
         } detail: {
             detail
         }
@@ -161,18 +161,26 @@ struct MeetingsView: View {
         }
     }
 
-    // MARK: - List Toolbar
+    // MARK: - List Bar
 
     /// New Meeting, Import and Delete, directly above the list they act on.
-    @ToolbarContentBuilder
-    private var listToolbar: some ToolbarContent {
-        ToolbarItemGroup {
+    ///
+    /// In the column itself, not in the window's toolbar. The toolbar has room above
+    /// the list for one titled button, and it moved the other two into an overflow
+    /// menu at the far side of the window, which is the distance this bar exists to
+    /// remove.
+    private var listBar: some View {
+        HStack(spacing: 6) {
             newMeetingButton
+
+            Spacer(minLength: 0)
 
             Button {
                 chooseRecordings()
             } label: {
                 Label("Import Recording\u{2026}", systemImage: "plus")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 22, height: 20)
             }
             .keyboardShortcut("o", modifiers: .command)
             .help("Import a recording (⌘O), or drop one on the list")
@@ -181,10 +189,15 @@ struct MeetingsView: View {
                 pendingDeletion = deletable(Array(selection))
             } label: {
                 Label("Delete", systemImage: "trash")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 22, height: 20)
             }
             .disabled(deletable(Array(selection)).isEmpty)
             .help(selection.count > 1 ? "Delete the selected meetings" : "Delete the selected meeting")
         }
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
     }
 
     @ViewBuilder
@@ -223,6 +236,7 @@ struct MeetingsView: View {
                 if let meeting = recorder.activeMeeting { selection = [meeting] }
             } label: {
                 Label("Show Recording", systemImage: recorder.isPaused ? "pause.circle.fill" : "record.circle.fill")
+                    .labelStyle(.titleAndIcon)
             }
             .foregroundStyle(recorder.isPaused ? .orange : .red)
             .help("Show the meeting being recorded")
