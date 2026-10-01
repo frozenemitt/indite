@@ -235,7 +235,7 @@ struct DictationHistoryView: View {
             // notification say the text was copied, so the user knows to paste it.
             let destination = switch outcome {
             case .inserted(let appName): appName
-            case .copiedToClipboard: "Clipboard"
+            case .copiedToClipboard, .pastedUnconfirmed: "Clipboard"
             }
             NotificationService.shared.showTranscriptionCompleteIfEnabled(
                 characterCount: dictation.text.count,

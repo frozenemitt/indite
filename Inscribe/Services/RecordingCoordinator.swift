@@ -282,6 +282,9 @@ final class RecordingCoordinator {
         guard !engine.isBusy else {
             Log.dictation.notice("Engine busy with \(self.engine.owner?.rawValue ?? "another session", privacy: .public), not starting")
             AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
+            report(.problem(engine.owner == .meeting
+                            ? "A meeting is using the microphone."
+                            : "Inscribe is already recording."))
             return
         }
 
@@ -308,6 +311,7 @@ final class RecordingCoordinator {
         } catch {
             AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
             NotificationService.shared.showErrorIfEnabled(error.localizedDescription, settings: settings)
+            report(.problem(error.localizedDescription))
             Log.dictation.error("Failed to start: \(error, privacy: .public)")
             return
         }
@@ -432,9 +436,6 @@ final class RecordingCoordinator {
         stopTask = nil
 
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            #if os(macOS)
-            overlay.hide()
-            #endif
             // A session loaded for this dictation's prompt would otherwise be picked up
             // by the next one, with the instructions it held when it was loaded.
             aiProcessor.discardPrewarm()
@@ -447,6 +448,7 @@ final class RecordingCoordinator {
                     engineError.localizedDescription,
                     settings: settings
                 )
+                report(.problem(engineError.localizedDescription))
                 Log.dictation.error("Recognition failed: \(engineError, privacy: .public)")
             } else {
                 AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
@@ -454,6 +456,9 @@ final class RecordingCoordinator {
                     "Nothing was heard. Check the input device in Settings.",
                     settings: settings
                 )
+                #if os(macOS)
+                report(.nothingHeard(microphone: AudioInputList.shared.name(forUID: settings.inputDeviceUID)))
+                #endif
                 Log.dictation.notice("Empty transcript, nothing to deliver")
             }
             return
@@ -466,11 +471,13 @@ final class RecordingCoordinator {
         // A recognizer that failed part-way, or a microphone that changed, still hands
         // back what it had. Delivered, and said: passing it off as complete hides that
         // the end is missing.
+        var problem: String?
         if let engineError = engine.error {
             NotificationService.shared.showErrorIfEnabled(
                 "\(engineError.localizedDescription) Everything heard before that was delivered.",
                 settings: settings
             )
+            problem = "Recognition stopped early."
             Log.dictation.error("Delivering a transcript cut short: \(engineError, privacy: .public)")
         }
 
@@ -478,7 +485,7 @@ final class RecordingCoordinator {
             // Loaded at the start if rewriting was on then; switched off mid-recording
             // leaves it unused.
             aiProcessor.discardPrewarm()
-            await deliver(transcript)
+            await deliver(transcript, problem: problem)
             finishHistory(entry, text: transcript, rawText: nil, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showTranscriptionCompleteIfEnabled(
@@ -541,7 +548,7 @@ final class RecordingCoordinator {
                 : error.localizedDescription
             Log.dictation.error("AI failed, delivering raw transcript: \(detail, privacy: .public)")
 
-            await deliver(transcript)
+            await deliver(transcript, problem: "Delivered as heard. The rewrite failed.")
             finishHistory(entry, text: transcript, rawText: nil, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showAIProcessingFailedIfEnabled(
@@ -552,7 +559,7 @@ final class RecordingCoordinator {
             return
         }
 
-        await deliver(finalText)
+        await deliver(finalText, problem: problem)
         let promptName = aiProcessor.promptConfiguration.prompt(withId: promptId)?.name
         finishHistory(entry, text: finalText, rawText: transcript, promptName: promptName)
         AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
@@ -666,7 +673,10 @@ final class RecordingCoordinator {
     // MARK: - Output
 
     /// Send finished text wherever the user's output setting says it goes.
-    private func deliver(_ text: String) async {
+    ///
+    /// - Parameter problem: Something that went wrong on the way, for the panel to say
+    ///   once the text has landed.
+    private func deliver(_ text: String, problem: String? = nil) async {
         #if os(macOS)
         // Dismissed before insertion: the panel is borderless and non-activating, but
         // leaving it up while text lands is visual noise at the wrong moment.
@@ -684,6 +694,8 @@ final class RecordingCoordinator {
         case .clipboardOnly:
             ClipboardService.copy(text)
             lastDestination = "Clipboard"
+            // Copying is what was asked for here, so only a problem is worth the panel.
+            if let problem { report(.problem(problem)) }
 
         case .smartInsert:
             let outcome = await TextInsertionService.deliver(
@@ -697,13 +709,34 @@ final class RecordingCoordinator {
             switch outcome {
             case .inserted(let appName):
                 lastDestination = appName
+                if let problem { report(.problem(problem)) }
             case .copiedToClipboard:
                 lastDestination = "Clipboard"
+                // The setting says type, and the words were copied. That is the one
+                // ending the user cannot see for themselves.
+                report(problem.map { .problem($0, copied: true) } ?? .copied(text))
+            case .pastedUnconfirmed:
+                lastDestination = "Clipboard"
+                report(problem.map { .problem($0, copied: true) } ?? .unconfirmed)
             }
         }
         #else
         ClipboardService.copy(text)
         lastDestination = "Clipboard"
+        #endif
+    }
+
+    /// Say in the dictation panel how a dictation ended, or why it did not start.
+    ///
+    /// Only when the panel is switched on. With it off, notifications are the report,
+    /// as before.
+    private func report(_ outcome: OverlayOutcome) {
+        #if os(macOS)
+        guard settings.showDictationOverlay else {
+            overlay.hide()
+            return
+        }
+        overlay.showOutcome(outcome)
         #endif
     }
 

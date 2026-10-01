@@ -13,6 +13,11 @@ enum TextInsertionOutcome: Sendable, Equatable {
     /// The text could not be typed into a focused field, so it went to the clipboard
     /// instead. The log says why.
     case copiedToClipboard
+    /// ⌘V was sent and the field never reported a change. The text is on the
+    /// clipboard, and it may be in the field as well: some fields, Electron's among
+    /// them, report late or not at all. Kept apart from `copiedToClipboard` so nobody
+    /// is told to paste words that may already be there.
+    case pastedUnconfirmed
 }
 
 /// Writes transcribed text into whatever text field currently has focus, falling
@@ -273,7 +278,7 @@ enum TextInsertionService {
                 \(focusedNowText?.count ?? -1, privacy: .public) chars, \
                 transcript present: \(landedInFocused, privacy: .public)
                 """)
-            return .copiedToClipboard
+            return .pastedUnconfirmed
         }
 
         if autoSubmit {

@@ -31,6 +31,13 @@ final class AudioInputList {
     private(set) var devices: [AudioInputDevice] = AudioDeviceCatalog.inputDevices()
     private(set) var systemDefaultName = AudioDeviceCatalog.systemDefaultName()
 
+    /// The name of the microphone a recording with this setting uses: the device
+    /// itself, or the system default when it is the default or is not connected.
+    func name(forUID uid: String) -> String {
+        guard uid != AudioInputDevice.systemDefaultUID else { return systemDefaultName }
+        return devices.first { $0.uid == uid }?.name ?? systemDefaultName
+    }
+
     private init() {
         Task { [weak self] in
             for await _ in AudioDeviceCatalog.changes() {
