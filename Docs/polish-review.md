@@ -112,3 +112,24 @@ screen on 2026-10-03 at 16:04.
 
 In 9 the toolbar first held five buttons and overflowed at the window's width;
 Copy Original and Clear All moved into a More menu.
+
+## Seven more, 2026-10-03
+
+Found on a second look after the eleven, asked for in full ("Go ahead and do all
+seven"), built and installed at 16:17.
+
+1. An import gets the title and summary a recorded meeting gets when it ends. It
+   used to be named after its file, and a recording's file is named by a UUID; a
+   UUID now counts as a default title.
+2. Meetings still titled by their date, or by a file's name, are retitled when the
+   Meetings window opens. Seen: the nine dated titles and the UUID were rewritten
+   by the model within a minute of the window opening.
+3. One name for the list of past dictations: Recent Dictations, in the menu, on the
+   window and in Settings. Seen on the window and in the Window menu.
+4. The Show all link in a Recent Dictations row is gray, which turns white on the
+   azure of a selected row. Seen only in an inactive window, where the selection
+   is gray and the link stays readable.
+5. Prompts are set in the system font. Seen.
+6. Escape is a tooltip on the dictation key's picker, not a settings row. Seen.
+7. Show All in the menu has no ellipsis. Not seen: the menu bar's menu cannot be
+   photographed from here.
