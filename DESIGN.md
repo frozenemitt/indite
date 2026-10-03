@@ -22,6 +22,7 @@ The one thing a person remembers: the ribbon of light that moves with their voic
 System colors throughout, so light and dark and the user's accent color work.
 The app's own accent color is the ribbon's azure, `#3D99FF`. It colors the selected
 meeting, the default button, switches, and the block behind the line being played.
+The word being said carries no color: it is set in bold.
 The ribbon has the only colors of Inscribe's own, defined in `ListeningBar.swift`:
 
 - Azure `(0.24, 0.60, 1.00)` and violet `(0.62, 0.38, 1.00)` while listening.
@@ -180,3 +181,9 @@ carried by shape.
   the two.
 - 2026-10-01 The selected meeting keeps the system's own highlight: azure at full
   strength under white text. The soft tint is not to be built. "keep the full tint"
+- 2026-10-03 The word being said is set in bold, as Voice Memos sets it on iPhone,
+  and not marked in color. "The word that's being played during the recording is
+  highlighted, not in a color, but in bold. I really like that look, and I think
+  we should adopt it." The soft azure block behind the playing line stays. The bold
+  word is drawn in the slot its regular glyphs have, so the line does not move as
+  the mark goes from word to word.
