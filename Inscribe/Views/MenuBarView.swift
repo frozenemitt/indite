@@ -308,7 +308,7 @@ struct MenuBarView: View {
     private var recentMenu: some View {
         Menu("Recent Dictations") {
             if recent.isEmpty {
-                Text(settings.keepDictationHistory ? "No dictations yet" : "History is switched off")
+                Text(settings.keepDictationHistory ? "No dictations yet" : "Recent dictations are not kept")
             }
 
             ForEach(Array(recent.enumerated()), id: \.element.persistentModelID) { index, dictation in
@@ -333,7 +333,8 @@ struct MenuBarView: View {
             }
 
             Divider()
-            Button("Show All…") { show(ScribeApp.historyWindowID) }
+            // No ellipsis: it opens the list and asks for nothing.
+            Button("Show All") { show(ScribeApp.historyWindowID) }
         }
     }
 

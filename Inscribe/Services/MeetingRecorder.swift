@@ -1079,7 +1079,7 @@ final class MeetingRecorder {
     ///
     /// The title is written even with the setting off, from the first words spoken:
     /// "New Meeting" a dozen times over is the list this replaces.
-    private func writeTitleAndSummary(for meeting: Meeting, in context: ModelContext) async {
+    func writeTitleAndSummary(for meeting: Meeting, in context: ModelContext) async {
         await writeTitle(for: meeting, in: context, usingModel: settings.summarizeMeetingsAtEnd)
 
         // A summary of a few sentences is those sentences again.
@@ -1090,6 +1090,19 @@ final class MeetingRecorder {
     /// Characters of transcript below which a meeting is left unsummarized, about a
     /// minute of speech.
     private static let shortestSummarized = 800
+
+    /// Write a title for every finished meeting still carrying a default one: those
+    /// recorded before titles were written, whose dated titles repeat the date the
+    /// list already shows, and an import named after a file. Run when the Meetings
+    /// window opens. A written title no longer counts as default, so the next pass
+    /// finds nothing.
+    func writeMissingTitles(in context: ModelContext) async {
+        let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
+        for meeting in meetings
+        where meeting.endedAt != nil && meeting.deletedAt == nil && meeting.hasDefaultTitle && meeting != activeMeeting {
+            await writeTitle(for: meeting, in: context, usingModel: settings.summarizeMeetingsAtEnd)
+        }
+    }
 
     /// Replace a default title with one that says what the meeting was about.
     ///

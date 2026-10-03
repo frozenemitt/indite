@@ -59,7 +59,8 @@ System shapes. The dictation panel's corner radius is 26; the meeting pill is a 
 - Native controls before custom ones. A custom control has to do something the native
   one cannot.
 - One name per thing: the dictation key, the dictation panel, the meeting pill,
-  speaker separation, rewriting.
+  speaker separation, rewriting, recent dictations (the menu, the window and the
+  setting; the window was Dictation History and the setting was History).
 - A caption under a setting stays only when it warns: recording other people, writing
   to disk, downloading. Mechanism and rationale go in a tooltip or go away.
 - A failure is said where the person is looking: in the dictation panel, in the pill,
@@ -192,3 +193,7 @@ carried by shape.
   behind the playing line. I think that does help identify where we are."
 - 2026-10-03 All eleven findings of the polish review (`Docs/polish-review.md`) are
   built. "I want you to incorporate all 11 findings."
+- 2026-10-03 Seven more, found on a second look: imports get the written title and
+  summary, old dated titles are rewritten, one name for recent dictations, gray for
+  the link in a selected row, prompts in the system font, Escape as a tooltip, no
+  ellipsis on Show All. "Go ahead and do all seven."

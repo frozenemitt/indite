@@ -213,7 +213,7 @@ struct ScribeApp: App {
         }
         .defaultSize(width: 900, height: 600)
 
-        Window("Dictation History", id: Self.historyWindowID) {
+        Window("Recent Dictations", id: Self.historyWindowID) {
             DictationHistoryView()
                 .environment(settings)
                 .environment(coordinator)

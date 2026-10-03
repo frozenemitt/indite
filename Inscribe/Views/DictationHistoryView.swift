@@ -64,7 +64,7 @@ struct DictationHistoryView: View {
             // The banner shows only while older entries are still listed. With none
             // left, the empty state below already says that history is off.
             if !settings.keepDictationHistory && !dictations.isEmpty {
-                Label("History is switched off in Settings, so nothing new is being kept.",
+                Label("Keeping recent dictations is switched off in Settings, so nothing new is kept.",
                       systemImage: "exclamationmark.circle")
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -82,7 +82,7 @@ struct DictationHistoryView: View {
                     )
                 } else {
                     ContentUnavailableView {
-                        Label("History Is Off", systemImage: "clock.arrow.circlepath")
+                        Label("Dictations Are Not Kept", systemImage: "clock.arrow.circlepath")
                     } description: {
                         Text("Turn on \u{201C}Keep recent dictations\u{201D} in Settings.")
                     } actions: {
@@ -113,7 +113,7 @@ struct DictationHistoryView: View {
             }
         }
         .frame(minWidth: 600, minHeight: 320)
-        .navigationTitle("Dictation History")
+        .navigationTitle("Recent Dictations")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search dictations")
         .toolbar {
             // For the selected dictation. Insert first: it is the reason the window
@@ -216,6 +216,8 @@ struct DictationHistoryView: View {
                         .lineLimit(isExpanded ? nil : 4)
 
                     // A long dictation stopped at four lines with no way to read on.
+                    // In gray, not the link blue: blue all but vanished on the azure
+                    // of a selected row, where gray turns white with the rest.
                     if Self.isLong(dictation.text) {
                         Button(isExpanded ? "Show less" : "Show all") {
                             if isExpanded {
@@ -224,8 +226,9 @@ struct DictationHistoryView: View {
                                 expanded.insert(dictation.persistentModelID)
                             }
                         }
-                        .buttonStyle(.link)
+                        .buttonStyle(.plain)
                         .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.vertical, 4)
