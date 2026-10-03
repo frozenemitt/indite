@@ -563,6 +563,9 @@ private final class TranscriptMenuItem: NSMenuItem {
 private enum TranscriptStyle {
     static let wordsFont = NSFont.preferredFont(forTextStyle: .body)
 
+    /// The word being said: the words' font in bold.
+    static let saidFont = NSFont.systemFont(ofSize: wordsFont.pointSize, weight: .bold)
+
     static let nameFont: NSFont = {
         let size = NSFont.preferredFont(forTextStyle: .subheadline).pointSize
         return NSFont.systemFont(ofSize: size, weight: .semibold)
@@ -666,6 +669,60 @@ final class TranscriptDocumentView: NSView {
     }
 }
 
+// MARK: - Layout
+
+/// Lays the transcript out, and draws the word being said in bold.
+///
+/// The bold word is drawn in the place of its regular glyphs, the few points it is
+/// wider split between its two sides. Set as the font of the word, bold would widen
+/// it in the layout and move every word after it, and the rows below, with each word
+/// said. Drawn, nothing moves: the extra width is taken from the spaces beside it.
+final class TranscriptLayoutManager: NSLayoutManager {
+    /// The characters of the word being said.
+    var saidWord: NSRange?
+    /// The words' font in bold. Handed in by the text view, whose style this is.
+    var saidFont = NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
+
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard let saidWord, let storage = textStorage, NSMaxRange(saidWord) <= storage.length else {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+            return
+        }
+        let word = glyphRange(forCharacterRange: saidWord, actualCharacterRange: nil)
+        guard NSIntersectionRange(glyphsToShow, word).length > 0 else {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+            return
+        }
+
+        let before = NSRange(location: glyphsToShow.location, length: max(0, word.location - glyphsToShow.location))
+        if before.length > 0 { super.drawGlyphs(forGlyphRange: before, at: origin) }
+
+        drawSaidWord(saidWord, glyphs: word, at: origin)
+
+        let after = NSRange(location: NSMaxRange(word), length: max(0, NSMaxRange(glyphsToShow) - NSMaxRange(word)))
+        if after.length > 0 { super.drawGlyphs(forGlyphRange: after, at: origin) }
+    }
+
+    /// Draw the word in bold, centered on the slot its regular glyphs have in the row,
+    /// on the row's own baseline.
+    private func drawSaidWord(_ characters: NSRange, glyphs: NSRange, at origin: NSPoint) {
+        guard let storage = textStorage,
+              let container = textContainer(forGlyphAt: glyphs.location, effectiveRange: nil) else { return }
+        let slot = boundingRect(forGlyphRange: glyphs, in: container)
+        let row = lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+        let baseline = location(forGlyphAt: glyphs.location).y
+
+        let word = NSAttributedString(string: (storage.string as NSString).substring(with: characters), attributes: [
+            .font: saidFont,
+            .foregroundColor: NSColor.labelColor
+        ])
+        let x = origin.x + slot.minX - (word.size().width - slot.width) / 2
+        let y = origin.y + row.minY + baseline
+        // With no line-fragment option, the point is the baseline's start.
+        word.draw(with: NSRect(x: x, y: y, width: 0, height: 0), options: [])
+    }
+}
+
 // MARK: - Text View
 
 /// The text view itself: aware of names and words, and editable only in the words.
@@ -677,54 +734,45 @@ final class TranscriptNSTextView: NSTextView, NSTextViewDelegate {
         didSet { if playingLine != oldValue { needsDisplay = true } }
     }
 
-    /// The word being said, for a recording that kept its word timings.
+    /// The word being said, for a recording that kept its word timings. Set in bold
+    /// by the layout manager, as Voice Memos sets it.
     var playingWord: NSRange? {
-        didSet { if playingWord != oldValue { needsDisplay = true } }
+        didSet {
+            guard playingWord != oldValue else { return }
+            (layoutManager as? TranscriptLayoutManager)?.saidWord = playingWord
+            needsDisplay = true
+        }
     }
 
-    /// Draw the playing line as one soft block, and the word being said as a mark
-    /// inside it.
+    /// Draw the playing line as one soft block.
     ///
-    /// Drawn here, behind the text, as two rounded shapes. As a background color on
-    /// the characters it came out as hard-edged bands the width of the page, one for
-    /// the name and one for each row of words, with the page showing between them.
+    /// Drawn here, behind the text, as a rounded shape. As a background color on the
+    /// characters it came out as hard-edged bands the width of the page, one for the
+    /// name and one for each row of words, with the page showing between them.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        guard let layoutManager, let textContainer else { return }
+        guard let layoutManager, let textContainer,
+              let playingLine, NSMaxRange(playingLine) <= (textStorage?.length ?? 0) else { return }
         let origin = textContainerOrigin
 
-        if let playingLine, NSMaxRange(playingLine) <= (textStorage?.length ?? 0) {
-            let glyphs = layoutManager.glyphRange(forCharacterRange: playingLine, actualCharacterRange: nil)
-            var block = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
-            // The full measure, whatever the last row's length.
-            block.origin.x = 0
-            block.size.width = textContainer.size.width
-            block = block.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -12, dy: -6)
+        let glyphs = layoutManager.glyphRange(forCharacterRange: playingLine, actualCharacterRange: nil)
+        var block = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        // The full measure, whatever the last row's length.
+        block.origin.x = 0
+        block.size.width = textContainer.size.width
+        block = block.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -12, dy: -6)
 
-            NSColor.controlAccentColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(roundedRect: block, xRadius: 9, yRadius: 9).fill()
-        }
-
-        if let playingWord, NSMaxRange(playingWord) <= (textStorage?.length ?? 0) {
-            let glyphs = layoutManager.glyphRange(forCharacterRange: playingWord, actualCharacterRange: nil)
-            var mark = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
-            // The height of the letters, not of the row, which carries the spacing
-            // under it.
-            let font = TranscriptStyle.wordsFont
-            mark.size.height = ceil(font.ascender - font.descender)
-            mark = mark.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -3, dy: -1)
-
-            NSColor.controlAccentColor.withAlphaComponent(0.26).setFill()
-            NSBezierPath(roundedRect: mark, xRadius: 4, yRadius: 4).fill()
-        }
+        NSColor.controlAccentColor.withAlphaComponent(0.10).setFill()
+        NSBezierPath(roundedRect: block, xRadius: 9, yRadius: 9).fill()
     }
 
-    /// Built on the older text system on purpose. Marking the line being played is a
-    /// temporary attribute on the layout manager, and asking a new-system text view
-    /// for its layout manager converts it mid-flight.
+    /// Built on the older text system on purpose. The word being said is drawn by the
+    /// layout manager, and asking a new-system text view for its layout manager
+    /// converts it mid-flight.
     static func make(coordinator: TranscriptCoordinator) -> TranscriptNSTextView {
         let storage = NSTextStorage()
-        let layoutManager = NSLayoutManager()
+        let layoutManager = TranscriptLayoutManager()
+        layoutManager.saidFont = TranscriptStyle.saidFont
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = true
         container.lineFragmentPadding = 0
