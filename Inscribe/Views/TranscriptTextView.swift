@@ -114,6 +114,7 @@ struct TranscriptView<Header: View>: NSViewRepresentable {
         coordinator.speakers = speakers
         coordinator.canPlay = canPlay
         coordinator.playhead = playhead
+        coordinator.watchPlayhead()
         coordinator.document?.headerController.rootView = AnyView(header())
         coordinator.show(lines)
         coordinator.land(on: find)
@@ -414,6 +415,36 @@ final class TranscriptCoordinator: NSObject {
                 try? await Task.sleep(for: .milliseconds(66))
                 guard let self, !Task.isCancelled else { return }
                 self.markWord()
+            }
+        }
+    }
+
+    /// Whether the playhead is being watched for moves made by hand.
+    private var watchesPlayhead = false
+
+    /// Mark the word again each time the playhead is moved by hand: a click on a
+    /// word, a drag of the strip, a skip.
+    ///
+    /// While audio runs the follower catches up within a tick. While paused, nothing
+    /// else would: SwiftUI redraws the page when the playing line changes, and a click
+    /// on another word of the same line changed nothing it watches, so the mark stayed
+    /// on the old word. The playhead says when it has been moved, through observation,
+    /// and this listens once for the life of the page.
+    func watchPlayhead() {
+        guard !watchesPlayhead else { return }
+        watchesPlayhead = true
+        trackPlayhead()
+    }
+
+    private func trackPlayhead() {
+        withObservationTracking {
+            _ = playhead()
+        } onChange: { [weak self] in
+            // Told before the move is made, so the word is marked on the next turn.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.markWord()
+                self.trackPlayhead()
             }
         }
     }

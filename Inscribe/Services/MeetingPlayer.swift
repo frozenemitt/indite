@@ -126,12 +126,21 @@ final class MeetingPlayer {
         updatePlayingUtterance()
     }
 
+    /// How many times the playhead has been moved by hand: a click on a word, the
+    /// strip, a skip. Read by `playhead`, so whoever tracks the playhead hears of
+    /// each move.
+    private(set) var seeks = 0
+
     /// Where the playhead is this instant, read from the recording itself.
     ///
     /// `currentTime` is what the page observes and it moves four times a second. The
     /// transcript marks the word being said, and asks this, which is exact and tells
-    /// nobody when it changes.
-    var playhead: TimeInterval { player?.currentTime ?? currentTime }
+    /// nobody as it plays. It does tell whoever tracks it when the playhead is moved
+    /// by hand, and of nothing else.
+    var playhead: TimeInterval {
+        _ = seeks
+        return player?.currentTime ?? currentTime
+    }
 
     /// How long the recording is, or zero before one has opened.
     var duration: TimeInterval { player?.duration ?? 0 }
@@ -177,6 +186,8 @@ final class MeetingPlayer {
         player.currentTime = max(0, min(time, max(0, player.duration - 0.05)))
         currentTime = player.currentTime
         updatePlayingUtterance()
+        // Last, so whoever hears of the move finds the line already worked out.
+        seeks += 1
     }
 
     /// Move the playhead by a number of seconds, back when negative.
