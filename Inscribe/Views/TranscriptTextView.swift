@@ -92,7 +92,7 @@ struct TranscriptView<Header: View>: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
 
-        let headerController = NSHostingController(rootView: AnyView(header()))
+        let headerController = NSHostingController(rootView: hosted(header(), in: coordinator))
         let document = TranscriptDocumentView(headerController: headerController, coordinator: coordinator)
         scrollView.documentView = document
 
@@ -115,12 +115,28 @@ struct TranscriptView<Header: View>: NSViewRepresentable {
         coordinator.canPlay = canPlay
         coordinator.playhead = playhead
         coordinator.watchPlayhead()
-        coordinator.document?.headerController.rootView = AnyView(header())
+        coordinator.document?.headerController.rootView = hosted(header(), in: coordinator)
         coordinator.show(lines)
         coordinator.land(on: find)
         coordinator.mark(playing: playingID, following: isPlaying)
         coordinator.followWords(isPlaying)
         coordinator.document?.needsLayout = true
+    }
+
+    /// The header as the page hosts it: at its own height, and asking for a layout
+    /// pass whenever that height changes.
+    ///
+    /// The hosting view keeps whatever frame the page's constraints give it and says
+    /// nothing when its content grows. Show all under the summary unfolded ten points
+    /// into the height of three, and every point was cut to one line.
+    private func hosted(_ header: Header, in coordinator: TranscriptCoordinator) -> AnyView {
+        AnyView(
+            header
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
+                    coordinator.document?.needsLayout = true
+                }
+        )
     }
 }
 
