@@ -129,6 +129,16 @@ struct AboutSettingsView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
+                // Where the app comes from, for an open source app's About.
+                HStack(spacing: 6) {
+                    Link("Inscribe on GitHub", destination: ScribeApp.repositoryURL)
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+                    Text("MIT License")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.subheadline)
+
                 Divider()
                     .frame(width: 200)
 

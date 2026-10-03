@@ -197,3 +197,10 @@ carried by shape.
   summary, old dated titles are rewritten, one name for recent dictations, gray for
   the link in a selected row, prompts in the system font, Escape as a tooltip, no
   ellipsis on Show All. "Go ahead and do all seven."
+- 2026-10-03 Three things for the public, and the first release. A welcome window on
+  the first launch, Help opening the README, and the GitHub link and license in
+  About. The app as it stands is 1.0, tagged and released; the version rises by a
+  tenth for something new and a hundredth for fixes, and the build number is the
+  commit count. No Developer ID: people build it from source, free, with
+  `Scripts/install.sh`. "Could you go ahead and create those 3 things." "Keep the
+  explanation of building it from source and give really clear instructions."

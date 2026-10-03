@@ -1,135 +1,168 @@
 # Inscribe
 
-[![Swift](https://img.shields.io/badge/Swift-6.2+-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/Platform-iOS%2026%20%7C%20macOS%2026-blue.svg)](https://developer.apple.com)
+[![macOS 27](https://img.shields.io/badge/macOS-27-blue.svg)](https://www.apple.com/macos/)
+[![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> **Hold the Globe key, talk, and the words appear where your cursor is. Meetings get transcribed and split by speaker. Nothing leaves your Mac.**
+**Hold a key, talk, and the words appear where your cursor is. Record a meeting and
+read it back by speaker. Nothing leaves your Mac.**
 
-Inscribe is a dictation tool for macOS. Transcription runs on Apple's SpeechTranscriber, text cleanup on Apple's Foundation Models, and speaker separation on CoreML models that run locally.
+Inscribe is a dictation and meeting app for the Mac, free and open source. It lives in
+the menu bar as a ribbon that moves with your voice. Transcription runs on Apple's
+speech recognizer, rewriting and summaries on Apple's on-device model, and speaker
+separation on CoreML models that run locally.
 
-## System Requirements
+## Build and run
 
-- **macOS 27 or newer** — the app is macOS-first; the iOS target builds but has no dictation hotkey
-- **Xcode 26** with the Swift 6.2+ toolchain
+There is no download. You build the app on your own Mac, which takes a few minutes
+and costs nothing: no Apple Developer Program membership is needed.
 
-## Permissions
+You need **macOS 27** and **Xcode 26**, free from the App Store. Open Xcode once after
+installing it, so it can finish setting up its tools.
 
-macOS gates most of what makes this work, and it will not prompt twice:
+```bash
+git clone https://github.com/frozenemitt/inscribe.git
+cd inscribe
+Scripts/install.sh
+```
 
-| Permission | Needed for | Without it |
+The script builds Inscribe, puts it in `/Applications`, and launches it. The first
+build downloads one package, FluidAudio, and takes a few minutes; later builds are
+faster.
+
+To build in Xcode instead, open `Inscribe.xcodeproj`, choose your own team under
+Signing & Capabilities for the Inscribe target (a free Apple ID works), and press Run.
+
+### The first launch
+
+Inscribe appears in the menu bar as a ribbon. A welcome window says what the key does
+and what macOS will ask for.
+
+| Permission | Needed for | Asked |
 |---|---|---|
-| **Accessibility** | the Globe key, and typing into other apps | no hotkey, no insertion |
-| **Microphone** | recording | nothing at all |
-| **Speech Recognition** | transcription | nothing at all |
-| **System audio** | recording the other half of a call | meetings hear only you |
+| **Microphone** | hearing you | by macOS, the first time you dictate |
+| **Speech Recognition** | turning speech into text | by macOS, the first time you dictate |
+| **Accessibility** | the dictation key, and typing into other apps | by you, in System Settings → Privacy & Security → Accessibility |
+| **Screen & System Audio Recording** | hearing the other side of a call, in meetings | by you, in System Settings, only if you switch it on |
 
-The macOS target ships **unsandboxed**, deliberately. macOS never grants Accessibility trust to a sandboxed process, so a sandboxed build could neither read the Globe key nor type into another app. That rules out Mac App Store distribution.
+Set **System Settings → Keyboard → "Press 🌐 key to"** to *Do Nothing*, or macOS will
+also switch your input source each time you dictate. The key can be changed in
+Settings → Dictation.
 
-Set **System Settings → Keyboard → "Press 🌐 to"** to *Do Nothing*, or macOS will switch your input source every time you dictate.
+If you rebuild the app, macOS treats it as a new app and forgets the Accessibility
+grant: remove Inscribe from the Accessibility list and add it again.
 
 ## Dictation
 
-- **Hold the Globe key to talk**, or press once to start and again to stop — both are settings. Escape discards a recording.
-- **Types into whatever text field has focus**, falling back to the clipboard when there isn't one. Optionally presses Return afterwards, or Shift+Return so chat apps add a line break instead of sending.
-- **Undo** takes back the last insertion and puts the text on your clipboard.
-- **History** keeps recent dictations, so one that lands in the wrong window is recoverable.
-- **Per-app profiles** override the prompt and output behaviour based on which app you were in when you started talking.
-- **Spoken punctuation** ("period", "new line"), **word replacements** for terms the recognizer mishears, and **vocabulary hints** that steer what it listens for.
-- **A floating panel** shows the words as they arrive.
+- **Hold the Globe key and talk**, or press once to start and again to stop. Escape
+  discards a dictation.
+- **The words are typed where your cursor is.** With no text field in front, they go
+  to the clipboard, and the panel says so.
+- **The ribbon panel** shows the words as they arrive, and says how the dictation
+  ended.
+- **Rewriting**, with Apple's on-device model: clean up, summarize, make formal, or a
+  prompt of your own. It can read the text already in the field, so a dictated reply
+  matches the thread above it.
+- **Words you use**: vocabulary the recognizer should prefer, and replacements for
+  words it mishears.
+- **Per-app profiles** choose the prompt and where the text goes, by the app you are
+  dictating into.
+- **Recent dictations** are kept, so one that landed in the wrong window can be put
+  where it belongs. An undo key takes the last one back; a type-again key types it
+  again.
 
 ## Meetings
 
-- **Speaker separation** using pyannote and WeSpeaker CoreML models, attributing text by timestamp rather than guesswork.
-- **System audio capture** records the far side of a call alongside your microphone, through a Core Audio process tap bound to your mic in one aggregate device.
-- **The recording is kept**, so any timestamp plays back — which is how you check whether an attribution is right.
-- **Correct attribution by hand**: reassign a line, merge two speakers who are one person, or split a line the diarizer ran together.
-- **Pause and resume**, with each session offset onto the meeting's own clock.
-- **Import an existing recording** and run it through the same pipeline.
-- **Export** to Markdown or plain text, with an optional on-device AI summary.
-
-## AI Processing
-
-Apple's Foundation Models rewrite the transcript using a prompt you choose — clean up, summarize, formalize, and others, plus your own with independent generation settings.
-
-Optionally the model is also shown the text already in the field you are dictating into, fenced as context to read but not rewrite, so a dictated reply matches the thread above it.
+- **Start Meeting** from the menu bar. A small pill shows the meeting is still being
+  heard, with Pause and Stop.
+- **The other side of a call** is recorded through a system audio tap, alongside your
+  microphone, when you switch that on.
+- **Speakers are separated** when the meeting ends, and each is named by you.
+- **A title and a summary** are written when the meeting ends.
+- **The transcript plays.** Click a word to hear it; the word being said is set in
+  bold as the audio runs. Lines can be corrected by typing over them, given to
+  another speaker, or split.
+- **Import a recording** or a video, and it gets the same treatment.
+- **Export** as Markdown or plain text. **Deleted meetings** wait thirty days in
+  Recently Deleted.
 
 ## Privacy
 
-Everything runs on-device. Audio and text are never uploaded.
+Everything runs on this Mac. Audio and text are never uploaded.
 
-Inscribe reaches the network only to fetch models and check them for updates, never to send your data:
+Inscribe reaches the network for two things only, and never with your data:
 
-- Apple downloads its speech model through `AssetInventory` on first use.
-- The CoreML speaker models (pyannote community-1, through FluidAudio) download from HuggingFace only when you press Install Models, Update Now or Re-download Models in Settings. Check for Updates reads the repository's public metadata, and Inscribe verifies the installed files against the content hashes HuggingFace publishes: SHA-256 for weights, git blob hashes for the rest.
+- Apple downloads its speech model on first use.
+- The speaker models (pyannote community-1, through FluidAudio) download from
+  HuggingFace only when you press Install Models in Settings → Meetings. Check for
+  Updates reads the repository's public metadata, and the installed files are
+  verified against the hashes HuggingFace publishes.
 
-Meetings and imports never download speaker models, because Inscribe keeps FluidAudio in offline mode. Without the speaker models installed, they record and transcribe without speaker labels.
+Recent dictations are kept in plain text on this Mac. That is a setting, and it can be
+switched off.
 
-Dictation history stores what you dictate in plain text on this Mac. It is a setting, and it can be switched off.
+The Mac app is not sandboxed, on purpose: macOS never grants Accessibility to a
+sandboxed process, and without it there is no dictation key and no typing into other
+apps. That also rules out the Mac App Store.
 
-## Building
+## Versions
 
-```bash
-xcodebuild -project Inscribe.xcodeproj -scheme Inscribe -destination 'platform=macOS' build
-```
+Releases are tagged `v1.0`, `v1.1` and so on, and listed under
+[Releases](https://github.com/frozenemitt/inscribe/releases). The version goes up by
+a tenth when something new ships and by a hundredth when only fixes do. The build
+number beside it, in Settings → About, is the number of commits the app was built
+from, so any two builds can be told apart.
 
-## Architecture
+## Design
+
+The look and the decisions behind it are in [DESIGN.md](DESIGN.md), with the words
+that settled each. The larger pieces of work are shaped in [Docs](Docs) before they
+are built.
+
+## Project layout
 
 ```
 Inscribe/
-├── ScribeApp.swift                  # Entry point, SwiftData container, scenes
-│
-├── Models/                          # SwiftData
-│   ├── Meeting.swift                # Meeting, Utterance, MeetingSpeaker
-│   ├── MeetingCorrections.swift     # Reassign, merge, split
-│   ├── MeetingSchema.swift          # Versioned schema and migration plan
-│   └── Dictation.swift              # History entries
-│
+├── ScribeApp.swift          Entry point, the store, the scenes
+├── Models/                  SwiftData: meetings, speakers, lines, dictations, the schema
 ├── Services/
-│   ├── GlobalHotkeyMonitor.swift    # CGEventTap: Globe key, push-to-talk, undo
-│   ├── TextInsertionService.swift   # Focused-field detection and insertion
-│   ├── AccessibilityPermission.swift
-│   ├── RecordingCoordinator.swift   # One dictation, start to delivery
-│   ├── TranscriptionEngine.swift    # SpeechAnalyzer streaming pipeline
-│   ├── AIProcessor.swift            # Foundation Models
-│   ├── TextProcessor.swift          # Spoken punctuation, replacements
-│   ├── MeetingRecorder.swift        # One meeting, start to saved
-│   ├── MeetingDiarizer.swift        # Whole-recording speaker diarization (pyannote community-1 via FluidAudio)
-│   ├── SpeakerAlignment.swift       # Timestamp-based attribution
-│   ├── SystemAudioCapture.swift     # Core Audio process tap + aggregate
-│   ├── MeetingAudioStore.swift      # Recording storage
-│   ├── MeetingPlayer.swift          # Playback
-│   ├── MeetingExporter.swift        # Markdown and plain text
-│   ├── FileTranscriber.swift        # Existing audio and video files
-│   ├── DiarizationModelStore.swift  # Model verification and updates
-│   ├── DictationHistory.swift
-│   ├── AudioCaptureHelper.swift     # AVAudioEngine capture
-│   ├── AudioDeviceCatalog.swift     # Input device enumeration
-│   └── AppSettings.swift            # Preferences
-│
+│   ├── GlobalHotkeyMonitor  The dictation key, through a CGEvent tap
+│   ├── TranscriptionEngine  Apple's SpeechAnalyzer, streaming
+│   ├── RecordingCoordinator One dictation, from the key press to the typed text
+│   ├── TextInsertionService Finding the focused field and typing into it
+│   ├── AIProcessor          Rewriting, titles and summaries, with Foundation Models
+│   ├── MeetingRecorder      One meeting, from Start to saved
+│   ├── SystemAudioCapture   The other side of a call, through a Core Audio tap
+│   ├── MeetingDiarizer      Speaker separation, with FluidAudio's CoreML models
+│   ├── MeetingPlayer        Playback, and the word being said
+│   └── …
 └── Views/
-    ├── MenuBarView.swift
-    ├── SettingsView.swift
-    ├── MeetingsView.swift           # Browse, correct, export
-    ├── DictationHistoryView.swift
-    ├── ImportRecordingView.swift
-    └── DictationOverlay.swift       # Floating live panel
+    ├── MenuBarView          The menu
+    ├── DictationOverlay     The ribbon panel
+    ├── MeetingIndicator     The meeting pill
+    ├── MeetingsView         The list of meetings
+    ├── MeetingPageView      One meeting: title, summary, transcript, playback
+    ├── TranscriptTextView   The transcript, as one text that plays and corrects
+    ├── Settings*Tab         Settings, one tab per job
+    └── WelcomeView          The first launch
 ```
 
 ## Dependencies
 
-| Dependency | Purpose |
+| Dependency | For |
 |---|---|
-| [FluidAudio](https://github.com/FluidInference/FluidAudio) | Speaker diarization CoreML models |
+| [FluidAudio](https://github.com/FluidInference/FluidAudio) | Speaker separation, with pyannote's CoreML models |
 
-Everything else is Apple's: SwiftUI, SwiftData, Speech, AVFoundation, CoreAudio, FoundationModels, ApplicationServices, AppIntents.
+Everything else is Apple's: SwiftUI, SwiftData, Speech, FoundationModels,
+AVFoundation, CoreAudio, ApplicationServices and AppIntents.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-Originally derived from [Swift Scribe](https://github.com/seamlesscompute/swift-scribe) by seamlesscompute (MIT). Dictation and meeting features are modelled on [voxtype](https://github.com/peteonrails/voxtype).
-
-- **Apple WWDC 2025** — SpeechAnalyzer, Foundation Models, and Rich Text editing sessions
-- **[FluidAudio](https://github.com/FluidInference/FluidAudio)** — speaker diarization models
+Begun from [Swift Scribe](https://github.com/seamlesscompute/swift-scribe) by
+seamlesscompute (MIT). The dictation and meeting features follow
+[voxtype](https://github.com/peteonrails/voxtype). Speaker separation is
+[FluidAudio](https://github.com/FluidInference/FluidAudio)'s.

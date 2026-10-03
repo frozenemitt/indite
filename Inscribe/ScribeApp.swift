@@ -220,10 +220,36 @@ struct ScribeApp: App {
                 .modelContainer(Self.modelContainer)
         }
         .defaultSize(width: 620, height: 520)
+
+        // Opened by the first launch and never again: where the app lives, and what
+        // macOS will ask for.
+        Window("Welcome to Inscribe", id: Self.welcomeWindowID) {
+            WelcomeView()
+                .environment(settings)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(hasSeenWelcome ? .suppressed : .presented)
+        // The Help menu offered nothing. Help is the README, on GitHub.
+        .commands {
+            CommandGroup(replacing: .help) {
+                Button("Inscribe Help") {
+                    NSWorkspace.shared.open(Self.repositoryURL)
+                }
+            }
+        }
     }
 
     static let meetingsWindowID = "meetings"
     static let historyWindowID = "history"
+    static let welcomeWindowID = "welcome"
+
+    /// Where the app's source, README and releases live.
+    static let repositoryURL = URL(string: "https://github.com/frozenemitt/inscribe")!
+
+    /// Read once, as the scenes are built. The welcome window sets it on Continue.
+    private let hasSeenWelcome = UserDefaults.standard.bool(forKey: "hasSeenWelcome")
 
     // MARK: - Launch Setup
 
