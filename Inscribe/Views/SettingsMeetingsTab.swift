@@ -54,10 +54,7 @@ struct MeetingsSettingsView: View {
 
             Section("When a Meeting Ends") {
                 Toggle("Write a title and a summary", isOn: $settings.summarizeMeetingsAtEnd)
-
-                Text("Written on this Mac by Apple’s on-device model.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .help("Written on this Mac by Apple’s on-device model.")
             }
 
             DiarizationModelsSection()

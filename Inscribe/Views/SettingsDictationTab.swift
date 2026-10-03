@@ -65,8 +65,11 @@ struct DictationSettingsView: View {
                 }
             }
 
+            // How each key works is in its tooltip. A caption stays only where it
+            // warns.
             Section("Undo Key") {
                 Toggle("Take back the last dictation with a key", isOn: $settings.undoHotkeyEnabled)
+                    .help("Works for two minutes after the text was typed, and puts the text on your clipboard. Not available when After typing presses Return.")
 
                 if settings.undoHotkeyEnabled {
                     shortcutRow("Key combination", target: .undo, display: settings.undoHotkeyString)
@@ -82,15 +85,12 @@ struct DictationSettingsView: View {
                         }
                         .font(.caption)
                     }
-
-                    Text("Works for two minutes after the text was typed, and puts the text on your clipboard. Not available when After typing presses Return.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
 
             Section("Type-Again Key") {
                 Toggle("Type the last dictation again with a key", isOn: $settings.retypeHotkeyEnabled)
+                    .help("For a dictation that landed in the wrong place: put the cursor where it should have gone and press this.")
 
                 if settings.retypeHotkeyEnabled {
                     shortcutRow("Key combination", target: .retype, display: settings.retypeHotkeyString)
@@ -104,10 +104,6 @@ struct DictationSettingsView: View {
                         }
                         .font(.caption)
                     }
-
-                    Text("For a dictation that landed in the wrong place: put the cursor where it should have gone and press this.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
 

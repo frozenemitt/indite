@@ -187,3 +187,8 @@ carried by shape.
   we should adopt it." The soft azure block behind the playing line stays. The bold
   word is drawn in the slot its regular glyphs have, so the line does not move as
   the mark goes from word to word.
+- 2026-10-03 The azure block behind the playing line stays, with the word in bold
+  inside it. Voice Memos has no block. "I think I do want to keep the azure block
+  behind the playing line. I think that does help identify where we are."
+- 2026-10-03 All eleven findings of the polish review (`Docs/polish-review.md`) are
+  built. "I want you to incorporate all 11 findings."

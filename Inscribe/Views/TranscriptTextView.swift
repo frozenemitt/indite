@@ -369,8 +369,7 @@ final class TranscriptCoordinator: NSObject {
     /// Mark the line the playhead is in, and keep it on screen while audio runs.
     func mark(playing id: AnyHashable?, following: Bool) {
         let index = id.flatMap { id in lines.firstIndex { $0.id == id } }
-        guard index != playingIndex, let textView = document?.textView,
-              let layoutManager = textView.layoutManager else { return }
+        guard index != playingIndex, let textView = document?.textView else { return }
 
         playingIndex = index
         playingWord = nil
@@ -383,19 +382,31 @@ final class TranscriptCoordinator: NSObject {
         // Drawn by the view behind the text, and no part of the text, so a copy of the
         // line does not carry a background with it.
         textView.playingLine = lineRanges[index]
+        isFollowing = following
         markWord()
 
         // Only while audio runs. A click that moves the playhead is already looking at
         // the line, and scrolling under the pointer would move the words it clicked.
-        if following {
-            let glyphs = layoutManager.glyphRange(forCharacterRange: lineRanges[index], actualCharacterRange: nil)
-            var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textView.textContainer!)
-            rect.origin.x += textView.textContainerOrigin.x
-            rect.origin.y += textView.textContainerOrigin.y
-            if !textView.visibleRect.contains(rect) {
-                textView.scrollToVisible(rect.insetBy(dx: 0, dy: -40))
-            }
+        // A line with word timings is followed word by word instead, in `markWord`,
+        // which keeps the word in view through a line taller than the window.
+        if following, wordsInLine[index].isEmpty {
+            show(lineRanges[index], keeping: 40)
         }
+    }
+
+    /// Whether audio runs, which is when the page follows the mark.
+    private var isFollowing = false
+
+    /// Bring a stretch of the text into view, when it is not already.
+    private func show(_ characters: NSRange, keeping margin: CGFloat) {
+        guard let textView = document?.textView, let layoutManager = textView.layoutManager,
+              let container = textView.textContainer else { return }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: characters, actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
+        rect.origin.x += textView.textContainerOrigin.x
+        rect.origin.y += textView.textContainerOrigin.y
+        guard !textView.visibleRect.contains(rect) else { return }
+        document?.scroll(toShow: textView.convert(rect, to: document), keeping: margin)
     }
 
     /// Keep the word mark moving while audio runs, and place it once when it stops.
@@ -403,6 +414,7 @@ final class TranscriptCoordinator: NSObject {
     /// Fifteen times a second, inside AppKit. Speech runs at about three words a
     /// second, and the player's own tick, four a second, would mark every word late.
     func followWords(_ isPlaying: Bool) {
+        isFollowing = isPlaying
         markWord()
         guard isPlaying else {
             wordFollower?.cancel()
@@ -470,6 +482,11 @@ final class TranscriptCoordinator: NSObject {
         let word = wordsInLine[index][low]
         textView.playingWord = NSRange(location: wordRanges[index].location + word.location, length: word.length)
         playingWord = low
+
+        // The page follows the word while audio runs, a few rows at a time.
+        if isFollowing, let range = textView.playingWord {
+            show(range, keeping: 60)
+        }
     }
 
     /// The moment a character of the text was spoken.
@@ -678,6 +695,39 @@ final class TranscriptDocumentView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("Built in code only")
+    }
+
+    /// Bring a part of the page into view, smoothly, as Voice Memos scrolls its
+    /// transcript along with the audio. The page used to jump to each new line, and
+    /// the reader lost their place at every jump. With Reduce Motion it still jumps.
+    ///
+    /// - Parameter margin: Room kept between the part and the edge it comes in at. A
+    ///   part too tall to fit with that room is shown from its top.
+    func scroll(toShow rect: NSRect, keeping margin: CGFloat) {
+        guard let scrollView = enclosingScrollView else { return }
+        let clip = scrollView.contentView
+        let visible = clip.bounds
+        var origin = visible.origin
+        if rect.height + 2 * margin > visible.height || rect.minY - margin < visible.minY {
+            origin.y = rect.minY - margin
+        } else if rect.maxY + margin > visible.maxY {
+            origin.y = rect.maxY + margin - visible.height
+        }
+        origin.y = max(0, min(origin.y, max(0, bounds.height - visible.height)))
+        guard origin != visible.origin else { return }
+
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            clip.scroll(to: origin)
+            scrollView.reflectScrolledClipView(clip)
+            return
+        }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.3
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            clip.animator().setBoundsOrigin(origin)
+        }, completionHandler: {
+            scrollView.reflectScrolledClipView(clip)
+        })
     }
 
     override func layout() {

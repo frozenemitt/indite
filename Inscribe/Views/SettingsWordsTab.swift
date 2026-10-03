@@ -8,6 +8,7 @@ struct WordsSettingsView: View {
 
     @State private var vocabularyText = ""
     @State private var replacements: [ReplacementRow] = []
+    @State private var selectedReplacement: ReplacementRow.ID?
 
     /// One editable row. Carries its own identity so SwiftUI does not reshuffle
     /// text fields as the user types a key that collides with another row.
@@ -24,8 +25,10 @@ struct WordsSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                // Names and jargon, in the system font. In monospaced type they read
+                // as code.
                 TextEditor(text: $vocabularyText)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.body)
                     .frame(minHeight: 120)
                     .onChange(of: vocabularyText) { _, text in
                         settings.vocabularyHints = text
@@ -50,36 +53,48 @@ struct WordsSettingsView: View {
                     .font(.caption)
                 }
 
-                ForEach($replacements) { $row in
-                    HStack {
+                // A table with + and − under it, as System Settings keeps its Text
+                // Replacements. It was a row of two fields and a minus for each pair.
+                Table($replacements, selection: $selectedReplacement) {
+                    TableColumn("Heard") { $row in
                         TextField("Heard", text: $row.spoken, prompt: Text("heard"))
-                        Image(systemName: "arrow.right")
-                            .foregroundStyle(.secondary)
-                        TextField("Written", text: $row.written, prompt: Text("written"))
-                        Button("Remove Replacement", systemImage: "minus.circle") {
-                            replacements.removeAll { $0.id == row.id }
-                            commitReplacements()
-                        }
-                        .labelStyle(.iconOnly)
-                        .help("Remove Replacement")
-                        .buttonStyle(.borderless)
+                            .labelsHidden()
                     }
-                    // A grouped form shows a field's title as a label beside it; the
-                    // arrow already says which side is which.
-                    .labelsHidden()
-                    .onChange(of: row) { _, _ in commitReplacements() }
+                    TableColumn("Written") { $row in
+                        TextField("Written", text: $row.written, prompt: Text("written"))
+                            .labelsHidden()
+                    }
                 }
+                .frame(minHeight: 160)
+                .onChange(of: replacements) { _, _ in commitReplacements() }
+                .onDeleteCommand { removeSelectedReplacement() }
 
-                Button {
-                    replacements.append(ReplacementRow(spoken: "", written: ""))
-                } label: {
-                    Label("Add Replacement", systemImage: "plus")
+                HStack(spacing: 4) {
+                    Button("Add Replacement", systemImage: "plus") {
+                        let row = ReplacementRow(spoken: "", written: "")
+                        replacements.append(row)
+                        selectedReplacement = row.id
+                    }
+                    .help("Add Replacement")
+
+                    Button("Remove Replacement", systemImage: "minus") {
+                        removeSelectedReplacement()
+                    }
+                    .disabled(selectedReplacement == nil)
+                    .help("Remove Replacement")
                 }
+                .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
             }
         }
         .formStyle(.grouped)
         .onAppear(perform: load)
+    }
+
+    private func removeSelectedReplacement() {
+        guard let selectedReplacement else { return }
+        replacements.removeAll { $0.id == selectedReplacement }
+        self.selectedReplacement = nil
     }
 
     private func load() {

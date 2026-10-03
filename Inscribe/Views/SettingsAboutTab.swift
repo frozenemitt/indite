@@ -121,7 +121,7 @@ struct AboutSettingsView: View {
                     .font(.largeTitle)
                     .fontWeight(.bold)
 
-                Text("Background Voice Transcription")
+                Text("Turns speech into text on the Mac")
                     .font(.headline)
                     .foregroundStyle(.secondary)
 

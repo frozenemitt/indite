@@ -13,9 +13,18 @@ struct AppProfilesSettingsView: View {
         Form {
             ForEach($profiles) { $profile in
                 Section {
-                    Toggle(profile.appName, isOn: $profile.isEnabled)
-                        .font(.headline)
-                        .onChange(of: profile.isEnabled) { _, _ in commit() }
+                    // With the app's icon, as System Settings shows beside every app.
+                    Toggle(isOn: $profile.isEnabled) {
+                        Label {
+                            Text(profile.appName)
+                        } icon: {
+                            Image(nsImage: Self.icon(forBundle: profile.bundleIdentifier))
+                                .resizable()
+                                .frame(width: 20, height: 20)
+                        }
+                    }
+                    .font(.headline)
+                    .onChange(of: profile.isEnabled) { _, _ in commit() }
 
                     Picker("Prompt", selection: Binding(
                         get: { profile.promptId },
@@ -77,6 +86,14 @@ struct AppProfilesSettingsView: View {
     private func load() {
         profiles = settings.appProfiles.values
             .sorted { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
+    }
+
+    /// The app's own icon, or the generic one for an app that is no longer installed.
+    private static func icon(forBundle identifier: String) -> NSImage {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) {
+            return NSWorkspace.shared.icon(forFile: url.path)
+        }
+        return NSWorkspace.shared.icon(for: .application)
     }
 
     private func commit() {

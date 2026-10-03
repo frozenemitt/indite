@@ -91,8 +91,19 @@ doc says the app "turns speech into text on the Mac". One line.
   weight on the word being said would blur the two. Bold matches the iPhone.
 - **Space to play.** Decided against on 2026-10-01: the transcript is text.
 
-## Questions
+## Answered and built, 2026-10-03
 
-1. Keep the azure block behind the playing line, now that the word is bold?
-2. Which of 1 to 10 to build? My order: 1, 2, 3, 4, 5, then the Settings items, then
-   9 and 10.
+Jonathan kept the azure block ("I think that does help identify where we are") and
+asked for all eleven. Built the same afternoon and installed at 15:46.
+
+Seen on screen: the playback bar's strip row and centered transport (1), the Feedback
+sliders in the form's columns (6), Vocabulary in the system font and Word
+Replacements as a table (7, 10), the captions gone from the Dictation, Rewriting and
+Meetings tabs (5), the About tagline (11), the History window's toolbar (9), and the
+bold word moving to 0:15 on a skip in the paused page. Not seen: the summary in body
+(2), since the open meeting had no summary; the toolbar holding still on Copy (3);
+the smooth scroll while audio plays (4); an app's icon in its profile (8), since no
+profile exists on this Mac.
+
+In 9 the toolbar first held five buttons and overflowed at the window's width;
+Copy Original and Clear All moved into a More menu.
