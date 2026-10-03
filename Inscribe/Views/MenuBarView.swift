@@ -519,7 +519,8 @@ struct MenuBarIcon: View {
 ///
 /// The same outline the dictation panel draws, from a fixed set of heights, so the
 /// icon does not move. A template image, which the menu bar tints for light and dark.
-private enum MenuBarRibbon {
+/// The welcome window shows it too, so the ribbon is seen before it is looked for.
+enum MenuBarRibbon {
     static let resting = image(swell: 0.5)
     static let speaking = image(swell: 1)
 

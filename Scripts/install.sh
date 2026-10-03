@@ -15,17 +15,34 @@
 set -e
 cd "$(dirname "$0")/.."
 
-if [ -n "$TEAM" ]; then
-  set -- DEVELOPMENT_TEAM="$TEAM" "DEVELOPMENT_TEAM[sdk=macosx*]=$TEAM" CODE_SIGN_STYLE=Automatic "CODE_SIGN_IDENTITY=Apple Development"
-else
-  set -- CODE_SIGN_IDENTITY=- "CODE_SIGN_IDENTITY[sdk=macosx*]=-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= "DEVELOPMENT_TEAM[sdk=macosx*]="
-fi
-
 build="$(mktemp -d)"
 log="$build/build.log"
+signing="$build/Signing.xcconfig"
+
+# The project signs with its author's team. These settings replace that for this
+# build only, through an xcconfig: a setting with an SDK condition cannot be given on
+# the command line.
+if [ -n "$TEAM" ]; then
+  cat > "$signing" <<SETTINGS
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = Apple Development
+CODE_SIGN_IDENTITY[sdk=macosx*] = Apple Development
+DEVELOPMENT_TEAM = $TEAM
+DEVELOPMENT_TEAM[sdk=macosx*] = $TEAM
+SETTINGS
+else
+  cat > "$signing" <<SETTINGS
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_IDENTITY[sdk=macosx*] = -
+DEVELOPMENT_TEAM =
+DEVELOPMENT_TEAM[sdk=macosx*] =
+SETTINGS
+fi
+
 echo "Building Inscribe… (the full log is in $log)"
 if ! xcodebuild -project Inscribe.xcodeproj -scheme Inscribe -configuration Release \
-    -destination 'platform=macOS' -derivedDataPath "$build" "$@" build > "$log" 2>&1; then
+    -destination 'platform=macOS' -derivedDataPath "$build" -xcconfig "$signing" build > "$log" 2>&1; then
   grep -E "error:" "$log" | head -20
   echo "The build failed. The full log is in $log"
   exit 1

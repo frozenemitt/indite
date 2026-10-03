@@ -3,65 +3,87 @@ import SwiftUI
 #if os(macOS)
 import AppKit
 
-/// The window a new user meets first: where the app lives, what the key does, what
-/// macOS will ask for. Shown on the first launch and never again.
+/// The window a new user meets first: where the app lives, what it does, what macOS
+/// will ask for. Shown on the first launch and never again.
 ///
-/// A menu bar app has no window to find after launch. Without this, the first sign
-/// of Inscribe was a ribbon in the menu bar, and the first dictation ran into two
-/// permission prompts and a key that did nothing until Accessibility was granted
-/// in System Settings.
+/// Laid out as Apple's own welcome windows are: the icon, a title, three rows with a
+/// symbol each, the small print, one button. A menu bar app has no window to find
+/// after launch, and without this the first sign of Inscribe was a ribbon in the menu
+/// bar, and the first dictation ran into two permission prompts and a key that did
+/// nothing until Accessibility was granted in System Settings.
 struct WelcomeView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.dismissWindow) private var dismissWindow
 
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
+    /// Continue has the keyboard from the start. With keyboard navigation on, the
+    /// first control in the window took it, and that was a link, which opened with a
+    /// focus ring around it.
+    @FocusState private var continueHasKeyboard: Bool
+
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 10) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .frame(width: 96, height: 96)
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 128, height: 128)
+                .padding(.top, 32)
 
-                Text("Welcome to Inscribe")
-                    .font(.largeTitle.bold())
+            Text("Welcome to Inscribe")
+                .font(.largeTitle.bold())
+                .padding(.top, 16)
 
-                Text("Inscribe lives in the menu bar, as the ribbon.")
-                    .foregroundStyle(.secondary)
+            // The menu bar icon itself, so the ribbon is seen before it is looked for.
+            HStack(spacing: 5) {
+                Text("It lives in the menu bar, as the ribbon")
+                Image(nsImage: MenuBarRibbon.resting)
             }
-            .padding(.top, 36)
-            .padding(.bottom, 32)
+            .foregroundStyle(.secondary)
+            .padding(.top, 6)
 
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 20) {
                 row("globe", "Dictate into any app",
-                    "Hold \(key), speak, and the words appear where your cursor is. In Keyboard settings, set “Press 🌐 key to” to Do Nothing, or macOS switches your input source as well.")
+                    "Hold \(key) and talk. The words are typed where your cursor is.")
                 row("person.2.wave.2", "Record meetings",
-                    "Start Meeting from the menu bar. When it ends, the transcript is split by speaker, titled and summarized.")
-                row("lock.shield", "Nothing leaves your Mac",
-                    "Transcription, rewriting and speaker separation all run on this Mac.")
-                row("hand.raised", "Three permissions",
-                    "macOS asks for the Microphone and Speech Recognition the first time you dictate. The dictation key and typing into other apps need Accessibility, which is granted in System Settings.") {
-                    Button("Open Accessibility Settings…") {
-                        AccessibilityPermission.openSystemSettings()
-                    }
-                    .buttonStyle(.link)
-                    .padding(.top, 4)
-                }
+                    "Start one from the menu bar. It comes back split by speaker, titled and summarized.")
+                row("lock.shield", "Everything stays on your Mac",
+                    "Transcription, rewriting and speaker separation all run here. Nothing is uploaded.")
             }
-            .padding(.horizontal, 44)
+            .frame(width: 400)
+            .padding(.top, 32)
 
             Spacer(minLength: 24)
 
-            Button("Continue") {
+            // The small print, as Apple's welcome windows carry it above the button.
+            VStack(spacing: 6) {
+                Text("macOS will ask for the Microphone and Speech Recognition when you first dictate. The dictation key needs Accessibility, which you grant in System Settings.")
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Accessibility Settings…") {
+                    AccessibilityPermission.openSystemSettings()
+                }
+                .buttonStyle(.link)
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(width: 400)
+
+            Button {
                 hasSeenWelcome = true
                 dismissWindow()
+            } label: {
+                Text("Continue")
+                    .frame(width: 200)
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .controlSize(.extraLarge)
             .keyboardShortcut(.defaultAction)
+            .focused($continueHasKeyboard)
+            .padding(.top, 20)
             .padding(.bottom, 32)
         }
-        .frame(width: 540, height: 640)
+        .frame(width: 520, height: 660)
+        .defaultFocus($continueHasKeyboard, true)
     }
 
     /// The key as Settings names it.
@@ -69,17 +91,13 @@ struct WelcomeView: View {
         settings.useGlobeKey ? "the Globe key" : settings.hotkeyDisplay
     }
 
-    private func row(
-        _ symbol: String,
-        _ title: String,
-        _ detail: String,
-        @ViewBuilder footer: () -> some View = { EmptyView() }
-    ) -> some View {
+    private func row(_ symbol: String, _ title: String, _ detail: String) -> some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: symbol)
-                .font(.title)
+                .font(.system(size: 30))
+                .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.tint)
-                .frame(width: 36)
+                .frame(width: 44, height: 38)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -87,7 +105,6 @@ struct WelcomeView: View {
                 Text(detail)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                footer()
             }
         }
     }
