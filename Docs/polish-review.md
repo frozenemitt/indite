@@ -100,10 +100,15 @@ Seen on screen: the playback bar's strip row and centered transport (1), the Fee
 sliders in the form's columns (6), Vocabulary in the system font and Word
 Replacements as a table (7, 10), the captions gone from the Dictation, Rewriting and
 Meetings tabs (5), the About tagline (11), the History window's toolbar (9), and the
-bold word moving to 0:15 on a skip in the paused page. Not seen: the summary in body
-(2), since the open meeting had no summary; the toolbar holding still on Copy (3);
-the smooth scroll while audio plays (4); an app's icon in its profile (8), since no
-profile exists on this Mac.
+bold word moving to 0:15 on a skip in the paused page. Not seen: the toolbar holding still on
+Copy (3); the smooth scroll while audio plays (4); an app's icon in its profile (8),
+since no profile exists on this Mac.
+
+The summary in body (2) was seen once a meeting had one, and showed a fault older
+than the review: Show all unfolded nine points into the height of three, and every
+point was cut to one line. The header is now hosted at its own height and asks the
+page for a layout pass when that height changes. Seen unfolding and folding on
+screen on 2026-10-03 at 16:04.
 
 In 9 the toolbar first held five buttons and overflowed at the window's width;
 Copy Original and Clear All moved into a More menu.
