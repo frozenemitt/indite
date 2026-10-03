@@ -15,16 +15,18 @@ struct FeedbackSettingsView: View {
 
     @State private var importError: String?
 
-    /// One labelled slider with its value beside it. Two of these read as a pair.
+    /// One labelled slider with its value beside it, in the form's own columns. As a
+    /// row of its own with a label column of a fixed width, it lined up with nothing
+    /// else in the form.
     private func solidityRow(_ label: String, value: Binding<Double>) -> some View {
-        HStack {
-            Text(label)
-                .frame(width: 120, alignment: .leading)
-            Slider(value: value, in: 0.25...1)
-            Text(value.wrappedValue.formatted(.percent.precision(.fractionLength(0))))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .trailing)
+        LabeledContent(label) {
+            HStack(spacing: 8) {
+                Slider(value: value, in: 0.25...1)
+                Text(value.wrappedValue.formatted(.percent.precision(.fractionLength(0))))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 40, alignment: .trailing)
+            }
         }
     }
 
@@ -49,10 +51,7 @@ struct FeedbackSettingsView: View {
                         settings.meetingIndicatorOriginX = nil
                         settings.meetingIndicatorOriginY = nil
                     }
-
-                    Text("The dictation panel and the meeting pill share these. Drag either one anywhere; it comes back where you left it.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .help("Put the dictation panel and the meeting pill back where they start. Drag either one anywhere; it comes back where you left it.")
                 }
             }
 

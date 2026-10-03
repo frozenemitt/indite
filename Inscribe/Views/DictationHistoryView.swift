@@ -4,6 +4,10 @@ import SwiftData
 #if os(macOS)
 
 /// Recent dictations, so one that landed in the wrong window is recoverable.
+///
+/// A list of rows, each the dictation itself. The commands are in the toolbar for
+/// the selected row, in its right-click menu and on a swipe, as a list's commands are
+/// in Notes and Mail. Every row used to carry a bar of four buttons in small type.
 struct DictationHistoryView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(RecordingCoordinator.self) private var coordinator
@@ -14,6 +18,7 @@ struct DictationHistoryView: View {
 
     @Query(sort: \Dictation.createdAt, order: .reverse) private var dictations: [Dictation]
 
+    @State private var selection: PersistentIdentifier?
     @State private var searchText = ""
     @State private var justCopied: CopiedKind?
     @State private var isConfirmingClearAll = false
@@ -32,8 +37,7 @@ struct DictationHistoryView: View {
         let createdAt: Date
     }
 
-    /// Which copy button last completed, so only that button's own label flips —
-    /// not its sibling, which copies a different string for the same dictation.
+    /// Which copy last completed, so only that button's own symbol changes.
     private enum CopiedKind: Equatable {
         case cleaned(PersistentIdentifier)
         case original(PersistentIdentifier)
@@ -48,6 +52,11 @@ struct DictationHistoryView: View {
             $0.text.localizedStandardContains(query)
                 || ($0.rawText?.localizedStandardContains(query) ?? false)
         }
+    }
+
+    /// The selected dictation, when it is in the list as searched.
+    private var selected: Dictation? {
+        filtered.first { $0.persistentModelID == selection }
     }
 
     var body: some View {
@@ -88,8 +97,8 @@ struct DictationHistoryView: View {
                 list
             }
 
-            // The trash deletes at once, as it should for one row among a hundred.
-            // It used to be final as well, while Clear All asked first.
+            // Delete acts at once, as it should for one row among a hundred, and
+            // this is the way back.
             if lastDeleted != nil {
                 HStack {
                     Text("Dictation deleted.")
@@ -103,15 +112,61 @@ struct DictationHistoryView: View {
                 .background(.bar)
             }
         }
-        .frame(minWidth: 480, minHeight: 320)
+        .frame(minWidth: 600, minHeight: 320)
         .navigationTitle("Dictation History")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search dictations")
         .toolbar {
-            ToolbarItem {
-                Button("Clear All", role: .destructive) {
-                    isConfirmingClearAll = true
+            // For the selected dictation. Insert first: it is the reason the window
+            // exists, so it carries its title.
+            ToolbarItemGroup {
+                Button {
+                    if let selected { insert(selected) }
+                } label: {
+                    Label(insertTitle, systemImage: "text.cursor")
+                        .labelStyle(.titleAndIcon)
                 }
-                .disabled(dictations.isEmpty)
+                .disabled(selected == nil)
+                .help("Type the selected dictation where the cursor is in the app you came from")
+
+                Button {
+                    if let selected { copy(selected.text, as: .cleaned(selected.persistentModelID)) }
+                } label: {
+                    Label("Copy", systemImage: copiedCleaned ? "checkmark" : "doc.on.doc")
+                }
+                .disabled(selected == nil)
+                .help("Copy the selected dictation")
+
+                Button(role: .destructive) {
+                    if let selected { delete(selected) }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .disabled(selected == nil)
+                .help("Delete the selected dictation")
+            }
+
+            // The rarer two, behind the toolbar's own More menu as Notes keeps its
+            // own. Laid out as buttons they overflowed the toolbar at the window's
+            // usual width.
+            ToolbarItem {
+                Menu {
+                    Button("Copy Original") {
+                        if let selected, let raw = selected.rawText {
+                            copy(raw, as: .original(selected.persistentModelID))
+                        }
+                    }
+                    .disabled(selected?.wasEditedByAI != true || selected?.rawText == nil)
+
+                    Divider()
+
+                    Button("Clear All\u{2026}", role: .destructive) {
+                        isConfirmingClearAll = true
+                    }
+                    .disabled(dictations.isEmpty)
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
+                }
+                .help("Copy the words as they were heard, or clear the history")
                 .confirmationDialog(
                     dictations.count == 1 ? "Delete 1 dictation?" : "Delete all \(dictations.count) dictations?",
                     isPresented: $isConfirmingClearAll,
@@ -129,7 +184,7 @@ struct DictationHistoryView: View {
     }
 
     private var list: some View {
-        List {
+        List(selection: $selection) {
             ForEach(filtered) { dictation in
                 let isExpanded = expanded.contains(dictation.persistentModelID)
 
@@ -153,11 +208,11 @@ struct DictationHistoryView: View {
                                 .padding(.vertical, 1)
                                 .background(Capsule().fill(Color.secondary.opacity(0.15)))
                         }
-
                     }
 
+                    // Not selectable as text: a click on the words selects the row,
+                    // and Copy is a command.
                     Text(dictation.text)
-                        .textSelection(.enabled)
                         .lineLimit(isExpanded ? nil : 4)
 
                     // A long dictation stopped at four lines with no way to read on.
@@ -172,55 +227,30 @@ struct DictationHistoryView: View {
                         .buttonStyle(.link)
                         .font(.caption)
                     }
-
-                    HStack(spacing: 12) {
-                        Button {
-                            ClipboardService.copy(dictation.text)
-                            confirmCopy(.cleaned(dictation.persistentModelID))
-                        } label: {
-                            Label(
-                                justCopied == .cleaned(dictation.persistentModelID) ? "Copied" : "Copy",
-                                systemImage: justCopied == .cleaned(dictation.persistentModelID)
-                                    ? "checkmark" : "doc.on.doc"
-                            )
-                        }
-
-                        // The reason history exists: put it where it should have gone.
-                        Button {
-                            insert(dictation)
-                        } label: {
-                            Label(insertTitle, systemImage: "text.cursor")
-                        }
-
-                        if dictation.wasEditedByAI, let raw = dictation.rawText {
-                            Button {
-                                ClipboardService.copy(raw)
-                                confirmCopy(.original(dictation.persistentModelID))
-                            } label: {
-                                Label(
-                                    justCopied == .original(dictation.persistentModelID) ? "Copied" : "Copy Original",
-                                    systemImage: justCopied == .original(dictation.persistentModelID)
-                                        ? "checkmark" : "arrow.uturn.backward"
-                                )
-                            }
-                            .help("The transcript before the AI rewrote it")
-                        }
-
-                        Spacer()
-
-                        Button(role: .destructive) {
-                            delete(dictation)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                                .labelStyle(.iconOnly)
-                        }
-                        .help("Delete this dictation")
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
                 }
                 .padding(.vertical, 4)
+                .tag(dictation.persistentModelID)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        delete(dictation)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+                .contextMenu {
+                    Button(insertTitle) { insert(dictation) }
+                    Button("Copy") { copy(dictation.text, as: .cleaned(dictation.persistentModelID)) }
+                    if dictation.wasEditedByAI, let raw = dictation.rawText {
+                        Button("Copy Original") { copy(raw, as: .original(dictation.persistentModelID)) }
+                    }
+                    Divider()
+                    Button("Delete", role: .destructive) { delete(dictation) }
+                }
             }
+        }
+        // The Delete key.
+        .onDeleteCommand {
+            if let selected { delete(selected) }
         }
     }
 
@@ -238,7 +268,30 @@ struct DictationHistoryView: View {
         return "Insert into \(name)"
     }
 
+    /// Whether the selected dictation was just copied, one way or the other.
+    private var copiedCleaned: Bool {
+        selected.map { justCopied == .cleaned($0.persistentModelID) } ?? false
+    }
+
+    private var copiedOriginal: Bool {
+        selected.map { justCopied == .original($0.persistentModelID) } ?? false
+    }
+
+    private func copy(_ text: String, as kind: CopiedKind) {
+        ClipboardService.copy(text)
+        confirmCopy(kind)
+    }
+
+    /// Take the dictation out at once, and select the one below it, or the one above
+    /// when it was last, as Notes and Mail do.
     private func delete(_ dictation: Dictation) {
+        let listed = filtered
+        if selection == dictation.persistentModelID,
+           let index = listed.firstIndex(where: { $0.persistentModelID == dictation.persistentModelID }) {
+            let next = index + 1 < listed.count ? listed[index + 1] : (index > 0 ? listed[index - 1] : nil)
+            selection = next?.persistentModelID
+        }
+
         lastDeleted = DeletedDictation(
             text: dictation.text,
             rawText: dictation.rawText,
@@ -283,8 +336,8 @@ struct DictationHistoryView: View {
 
     /// Show the checkmark, then take it back.
     ///
-    /// Nothing else in the row ever clears it, so a row left showing "Copied" would
-    /// still claim a copy that happened an hour ago.
+    /// Nothing else in the toolbar ever clears it, so a button left showing the
+    /// checkmark would still claim a copy that happened an hour ago.
     private func confirmCopy(_ kind: CopiedKind) {
         justCopied = kind
         Task {

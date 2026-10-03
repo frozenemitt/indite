@@ -218,10 +218,7 @@ private struct RewritingOptionsView: View {
             Section {
                 Toggle("Let the AI see what is already in the field", isOn: $settings.useSurroundingContext)
                     .disabled(!settings.aiEnabled)
-
-                Text("Reads the text around your cursor, so a dictated reply matches the thread it belongs to.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .help("Reads the text around your cursor, so a dictated reply matches the thread it belongs to.")
             }
         }
         .formStyle(.grouped)

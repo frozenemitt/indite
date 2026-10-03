@@ -103,8 +103,10 @@ struct MeetingPageView: View {
                             justCopied = false
                         }
                     } label: {
-                        Label(justCopied ? "Copied" : "Copy as Markdown",
-                              systemImage: justCopied ? "checkmark" : "doc.on.doc")
+                        // The symbol says it was copied; the title stays, so the
+                        // button keeps its width and the Export button beside it
+                        // keeps its place.
+                        Label("Copy as Markdown", systemImage: justCopied ? "checkmark" : "doc.on.doc")
                             .labelStyle(.titleAndIcon)
                     }
                     .help("Copy the title, summary and transcript as Markdown")
@@ -535,13 +537,14 @@ private struct SummaryBlock: View {
                     .foregroundStyle(.red)
             }
 
+            // In body, the transcript's size. Set a size down, in callout, the first
+            // thing wanted on the page was the one block set smaller than the rest.
             if isSummarizing {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Summarizing…")
                         .foregroundStyle(.secondary)
                 }
-                .font(.callout)
             } else if !points.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     ForEach(Array((showsAll ? points : Array(points.prefix(Self.foldedCount))).enumerated()), id: \.offset) { _, point in
@@ -560,7 +563,6 @@ private struct SummaryBlock: View {
                         }
                     }
                 }
-                .font(.callout)
             } else {
                 HStack(spacing: 10) {
                     Text("No summary yet.")
@@ -568,7 +570,6 @@ private struct SummaryBlock: View {
                     Button("Summarize") { summarize() }
                         .controlSize(.small)
                 }
-                .font(.callout)
             }
         }
         .padding(12)
@@ -621,54 +622,75 @@ private struct PlaybackBar: View {
     private static let speeds: [Float] = [1, 1.25, 1.5, 2]
 
     var body: some View {
-        HStack(spacing: 12) {
-            // ⌘Return, not Space: the transcript is text, and Space belongs to text.
-            Button {
-                player.togglePlayback()
-            } label: {
-                Label(player.isPlaying ? "Pause" : "Play",
-                      systemImage: player.isPlaying ? "pause.fill" : "play.fill")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 22, height: 22)
+        VStack(spacing: 6) {
+            // The strip, with the time at one end and the length at the other.
+            HStack(spacing: 10) {
+                Text(MeetingExporter.durationLabel(player.currentTime))
+                    .frame(minWidth: 40, alignment: .trailing)
+
+                SpeakerStrip(
+                    stretches: stretches,
+                    duration: player.duration,
+                    time: player.currentTime
+                ) { player.seek(to: $0) }
+
+                Text(MeetingExporter.durationLabel(player.duration))
+                    .frame(minWidth: 40, alignment: .leading)
             }
-            .keyboardShortcut(.return, modifiers: .command)
-            .help(player.isPlaying ? "Pause (⌘↩)" : "Play from the playhead (⌘↩)")
+            .font(.callout.monospacedDigit())
+            .foregroundStyle(.secondary)
 
-            Button {
-                player.skip(by: -15)
-            } label: {
-                Label("Back 15 Seconds", systemImage: "gobackward.15")
-                    .labelStyle(.iconOnly)
-            }
-            .buttonStyle(.borderless)
-            .help("Back 15 seconds")
-
-            Text(MeetingExporter.durationLabel(player.currentTime))
-                .frame(minWidth: 40, alignment: .trailing)
-
-            SpeakerStrip(
-                stretches: stretches,
-                duration: player.duration,
-                time: player.currentTime
-            ) { player.seek(to: $0) }
-
-            Text(MeetingExporter.durationLabel(player.duration))
-                .frame(minWidth: 40, alignment: .leading)
-
-            Picker("Speed", selection: $player.rate) {
-                ForEach(Self.speeds, id: \.self) { speed in
-                    Text(speed == 1 ? "1×" : "\(speed.formatted())×").tag(speed)
+            // The transport in the middle, as Voice Memos and Podcasts have it: three
+            // glyphs with no border, the play the largest, and the speed at the side.
+            // It was a bordered play button at the far left beside a borderless skip.
+            HStack(spacing: 28) {
+                Button {
+                    player.skip(by: -15)
+                } label: {
+                    Label("Back 15 Seconds", systemImage: "gobackward.15")
+                        .font(.title2)
                 }
+                .help("Back 15 seconds")
+
+                // ⌘Return, not Space: the transcript is text, and Space belongs to text.
+                Button {
+                    player.togglePlayback()
+                } label: {
+                    Label(player.isPlaying ? "Pause" : "Play",
+                          systemImage: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.title)
+                        .frame(width: 30, height: 30)
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .help(player.isPlaying ? "Pause (⌘↩)" : "Play from the playhead (⌘↩)")
+
+                Button {
+                    player.skip(by: 15)
+                } label: {
+                    Label("Forward 15 Seconds", systemImage: "goforward.15")
+                        .font(.title2)
+                }
+                .help("Forward 15 seconds")
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
-            .help("Playback speed")
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .trailing) {
+                Picker("Speed", selection: $player.rate) {
+                    ForEach(Self.speeds, id: \.self) { speed in
+                        Text(speed == 1 ? "1×" : "\(speed.formatted())×").tag(speed)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .help("Playback speed")
+            }
         }
-        .font(.callout.monospacedDigit())
-        .foregroundStyle(.secondary)
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
         .background(.bar)
     }
 }
