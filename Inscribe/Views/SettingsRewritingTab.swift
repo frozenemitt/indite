@@ -323,16 +323,18 @@ struct PromptDetailView: View {
                     .disabled(!canEdit)
             }
 
+            // Instructions to a model are prose, set in the system font as Shortcuts
+            // sets them. Monospaced, they read as code.
             Section("System Prompt") {
                 TextEditor(text: $systemPrompt)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.body)
                     .frame(minHeight: 80)
                     .disabled(!canEdit)
             }
 
             Section("User Template") {
                 TextEditor(text: $userTemplate)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.body)
                     .frame(minHeight: 80)
                     .disabled(!canEdit)
 

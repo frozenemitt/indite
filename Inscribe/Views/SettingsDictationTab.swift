@@ -59,10 +59,7 @@ struct DictationSettingsView: View {
                         Text(mode.displayName).tag(mode.rawValue)
                     }
                 }
-
-                LabeledContent("Escape") {
-                    Text("Discards the dictation")
-                }
+                .help("Escape discards a dictation in progress.")
             }
 
             // How each key works is in its tooltip. A caption stays only where it
@@ -183,7 +180,7 @@ struct DictationSettingsView: View {
                 }
             }
 
-            Section("History") {
+            Section("Recent Dictations") {
                 Toggle("Keep recent dictations", isOn: $settings.keepDictationHistory)
 
                 if settings.keepDictationHistory {

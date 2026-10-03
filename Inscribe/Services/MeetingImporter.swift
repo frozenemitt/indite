@@ -80,7 +80,10 @@ final class MeetingImporter {
             }
 
             enter("Saving…")
-            let meeting = Meeting(title: url.deletingPathExtension().lastPathComponent)
+            // The placeholder, as a recorded meeting starts with, so the title writer
+            // replaces it. Named after its file, an import of a recording called by
+            // a UUID was listed as that UUID, and no writer touched it.
+            let meeting = Meeting(title: Meeting.placeholderTitle)
             context.insert(meeting)
 
             // Dated when the recording was made. It used to be dated now, less its

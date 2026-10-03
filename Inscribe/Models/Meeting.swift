@@ -72,6 +72,8 @@ final class Meeting {
     /// is replaced by a written one. A title the user typed is theirs.
     var hasDefaultTitle: Bool {
         if title == Self.placeholderTitle { return true }
+        // An import once took its file's name, and a recording's file is named by a UUID.
+        if UUID(uuidString: title) != nil { return true }
         guard title.hasPrefix("Meeting ") else { return false }
         return Self.datedTitleFormat.date(from: String(title.dropFirst("Meeting ".count))) != nil
     }

@@ -120,6 +120,8 @@ struct MeetingsView: View {
         .task {
             // A meeting whose thirty days ran out while the window was closed.
             MeetingTrash.eraseExpired(in: modelContext)
+            // Meetings still titled by their date or by a file's name.
+            await recorder.writeMissingTitles(in: modelContext)
         }
         .onAppear {
             listHasKeyboard = true
@@ -580,6 +582,9 @@ struct MeetingsView: View {
             for url in urls {
                 if let meeting = await importer.importRecording(at: url, settings: settings, in: modelContext) {
                     selection = [meeting]
+                    // The same pass a recorded meeting gets when it ends. Not awaited:
+                    // the meeting is listed and open while the model writes.
+                    Task { await recorder.writeTitleAndSummary(for: meeting, in: modelContext) }
                 }
             }
         }
