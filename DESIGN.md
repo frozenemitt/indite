@@ -204,3 +204,14 @@ carried by shape.
   commit count. No Developer ID: people build it from source, free, with
   `Scripts/install.sh`. "Could you go ahead and create those 3 things." "Keep the
   explanation of building it from source and give really clear instructions."
+- 2026-10-04 The app icon is settled: two quotation marks as the uprights of an N,
+  a chisel across them. Each mark is one stroke, rounded at both ends and narrowing
+  toward the tail, leaning twelve degrees; the chisel is a plain bar with its edge
+  cut on a slant, lying at forty-five degrees over the marks as smoked glass, butt
+  at the top-left. The tile is a shade of black, the shapes white. Chosen over
+  stone-cut V-grooves ("the shadows do not work"), ball-and-tail commas ("the
+  bulbous end and the pointed end are exaggerated"), a facet along the chisel's
+  edge ("show me these without the 2 tone"), and the chisel turned the other way.
+  "U2 looks great. I think that's it!" The marks read first, the N second, the
+  chisel as a tool last, which is the order asked for. Drawn by
+  `Design/Icon/draw-icon.swift`; the document is `Inscribe/AppIcon.icon`.
