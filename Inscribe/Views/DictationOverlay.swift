@@ -57,6 +57,10 @@ final class DictationOverlayController {
     private let settings: AppSettings
     /// Held so the desktop-change notifications keep arriving for the life of the app.
     private var spaceObserver: (any NSObjectProtocol)?
+    /// Held so the display-change notifications keep arriving for the life of the app.
+    private var screenObserver: (any NSObjectProtocol)?
+    /// Saves where the user drops the current panel. Replaced with the panel.
+    private var dragWatcher: PanelDragWatcher?
 
     /// Takes an outcome off the screen once it has been up long enough to read.
     private var outcomeTask: Task<Void, Never>?
@@ -137,7 +141,18 @@ final class DictationOverlayController {
             replacePanel()
         }
         watchForStranding()
+        followScreenChanges()
 
+        place()
+        applyOpacity()
+        applyContentOpacity()
+        // orderFrontRegardless, not makeKeyAndOrderFront: taking key status would pull
+        // focus out of the app being dictated into, which is where the text must land.
+        panel?.orderFrontRegardless()
+    }
+
+    /// One line tall, where the user left it.
+    private func place() {
         // Back to one line's worth, so each dictation grows from the same place.
         // `position` below puts it back where the user left it.
         if let panel, panel.frame.height != Self.minimumHeight {
@@ -145,13 +160,31 @@ final class DictationOverlayController {
             frame.size.height = Self.minimumHeight
             panel.setFrame(frame, display: false)
         }
-
         position(panel)
-        applyOpacity()
-        applyContentOpacity()
-        // orderFrontRegardless, not makeKeyAndOrderFront: taking key status would pull
-        // focus out of the app being dictated into, which is where the text must land.
-        panel?.orderFrontRegardless()
+    }
+
+    /// Put an open panel back where it would open whenever a display comes or goes.
+    ///
+    /// macOS carries a window off a removed display to the same distance from the
+    /// bottom of another one, and does not bring it back onto that display's screen.
+    /// Measured: a panel near the top of a 1440-point display landed above the top
+    /// edge of the laptop's 1329-point screen, on no screen at all. Nor does macOS
+    /// return it when the display is plugged back in. A dictation that spans the
+    /// change now lands where the user left the panel, or at the bottom of the screen
+    /// if that spot is gone, and grows back to the words it holds.
+    private func followScreenChanges() {
+        guard screenObserver == nil else { return }
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.panel?.isVisible == true else { return }
+                self.place()
+                self.fitToText()
+            }
+        }
     }
 
     func update(text: String, spectrum: [Double]) {
@@ -383,13 +416,13 @@ final class DictationOverlayController {
         // Remembered only when the user drags it. Every programmatic move used to be
         // saved too, so placing the panel on the screen with the pointer pinned it to
         // that screen for good, and each resize nudged the saved spot upward.
-        container.onDragEnded = { [weak self] in
-            guard let self, let panel = self.panel else { return }
-            self.settings.overlayOriginX = panel.frame.origin.x
+        dragWatcher = PanelDragWatcher(panel: panel) { [weak self] frame in
+            guard let self else { return }
+            self.settings.overlayOriginX = frame.origin.x
             // Saved as the spot a one-line panel would take with the same top edge,
             // since the top is what stays put. A panel dragged while grown tall
             // otherwise came back that much lower.
-            self.settings.overlayOriginY = panel.frame.maxY - Self.minimumHeight
+            self.settings.overlayOriginY = frame.maxY - Self.minimumHeight
             // A drag onto a shorter screen left a tall panel hanging off its bottom
             // edge until the text next changed height. Fitted after the save, so a
             // panel lifted onto the screen still comes back where the user dropped it.
@@ -494,28 +527,16 @@ final class DictationOverlayController {
 }
 
 /// Drags the panel from anywhere inside it.
+///
+/// `performDrag` hands the drag to the window server and returns before the panel has
+/// moved, so the end of the drag is left to `PanelDragWatcher`.
 private final class DragHandleView: NSView {
-    /// Called once a drag the user made has finished.
-    var onDragEnded: (() -> Void)?
-
     override func hitTest(_ point: NSPoint) -> NSView? {
         super.hitTest(point) == nil ? nil : self
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let window else { return }
-
-        // A click that moves nothing is not a drag. Saving on every mouse-up turned a
-        // stray click into a chosen spot and pinned the panel to that screen. The
-        // pointer is compared rather than the frame, because the panel keeps growing
-        // under a held click, and once it reaches the bottom of the screen it grows
-        // upward and moves every corner.
-        let before = NSEvent.mouseLocation
-        // Runs the whole drag before returning.
-        window.performDrag(with: event)
-        if NSEvent.mouseLocation != before {
-            onDragEnded?()
-        }
+        window?.performDrag(with: event)
     }
 }
 

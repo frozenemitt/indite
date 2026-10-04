@@ -20,12 +20,12 @@ final class MeetingIndicatorController {
     private var glassView: NSGlassEffectView?
     private let model = MeetingIndicatorModel()
     private let settings: AppSettings
-    private var moveObserver: (any NSObjectProtocol)?
-    private var dragObserver: (any NSObjectProtocol)?
-    /// True from the start of a drag until the first move made with the mouse button up.
-    private var userIsDragging = false
+    /// Saves where the user drops the current panel. Replaced with the panel.
+    private var dragWatcher: PanelDragWatcher?
     /// Held so the desktop-change notifications keep arriving for the life of the app.
     private var spaceObserver: (any NSObjectProtocol)?
+    /// Held so the display-change notifications keep arriving for the life of the app.
+    private var screenObserver: (any NSObjectProtocol)?
 
     /// What the panel's two buttons do. Set by whoever owns the meeting.
     var onPauseOrResume: (() -> Void)?
@@ -53,9 +53,34 @@ final class MeetingIndicatorController {
             replacePanel()
         }
         watchForStranding()
+        followScreenChanges()
         position(panel)
         applyTint()
         panel?.orderFrontRegardless()
+    }
+
+    /// Put an open panel back where it would open whenever a display comes or goes.
+    ///
+    /// The panel is up for the whole meeting, so a display unplugged mid-call is the
+    /// usual case, not a rare one. macOS carries a window off a removed display to the
+    /// same distance from the bottom of another one, and does not bring it back onto
+    /// that display's screen. Measured: this panel's default spot at the top of a
+    /// 1440-point display landed above the top edge of the laptop's 1329-point screen,
+    /// on no screen at all, for the rest of the meeting. Nor does macOS return it when
+    /// the display is plugged back in. It now goes where the user left it, or to the
+    /// top right if that spot is gone.
+    private func followScreenChanges() {
+        guard screenObserver == nil else { return }
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let panel = self.panel, panel.isVisible else { return }
+                self.position(panel)
+            }
+        }
     }
 
     func update(
@@ -146,31 +171,10 @@ final class MeetingIndicatorController {
 
         // Remembered only when the user drags it. Every move used to be saved, so a
         // spot `position` pulled out from under the menu bar or the Dock was written
-        // over the one the user chose. AppKit announces a move in advance only when the
-        // user starts dragging a window, never for `setFrameOrigin`.
-        dragObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.willMoveNotification,
-            object: panel,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.userIsDragging = true
-            }
-        }
-        moveObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didMoveNotification,
-            object: panel,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.userIsDragging, let panel = self.panel else { return }
-                self.settings.meetingIndicatorOriginX = panel.frame.origin.x
-                self.settings.meetingIndicatorOriginY = panel.frame.origin.y
-                // The drag ends when the button is released. A later move in the same
-                // meeting, such as macOS moving the panel off an unplugged display,
-                // is the system's and must not replace the user's spot.
-                if NSEvent.pressedMouseButtons & 1 == 0 { self.userIsDragging = false }
-            }
+        // over the one the user chose.
+        dragWatcher = PanelDragWatcher(panel: panel) { [weak self] frame in
+            self?.settings.meetingIndicatorOriginX = frame.origin.x
+            self?.settings.meetingIndicatorOriginY = frame.origin.y
         }
 
         return panel
@@ -179,19 +183,9 @@ final class MeetingIndicatorController {
     /// Drop the current panel and build another in its place.
     ///
     /// The old one is ordered out first so it does not linger on whatever desktop it
-    /// was stranded on, and its move observers go with it: `makePanel` registers new
-    /// ones, and the old tokens would otherwise keep firing for a window nobody can
-    /// see.
+    /// was stranded on.
     private func replacePanel() {
         panel?.orderOut(nil)
-        if let moveObserver {
-            NotificationCenter.default.removeObserver(moveObserver)
-            self.moveObserver = nil
-        }
-        if let dragObserver {
-            NotificationCenter.default.removeObserver(dragObserver)
-            self.dragObserver = nil
-        }
         panel = makePanel()
     }
 
@@ -237,8 +231,6 @@ final class MeetingIndicatorController {
     /// neither correction replaces the spot the user chose.
     private func position(_ panel: NSPanel?) {
         guard let panel else { return }
-        // A drag that has already finished must not claim the move made here.
-        userIsDragging = false
 
         if let x = settings.meetingIndicatorOriginX, let y = settings.meetingIndicatorOriginY {
             let saved = NSRect(x: x, y: y, width: Self.width, height: Self.height)
