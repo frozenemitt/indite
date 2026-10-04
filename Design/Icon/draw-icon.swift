@@ -141,6 +141,78 @@ func svgData(_ path: NSBezierPath, height: CGFloat) -> String {
     return d
 }
 
+
+/// A quotation mark as type draws it: a round bulb at the foot and a tail rising
+/// to the upper right, tapering as it goes. `swell` lets the tail breathe.
+func commaMark(bulb c: CGPoint, radius r: CGFloat, height h: CGFloat, lean: CGFloat, swell: CGFloat = 0, heights: [Double] = [], seed: UInt64 = 1) -> NSBezierPath {
+    let n = 40
+    var leftEdge: [CGPoint] = [], rightEdge: [CGPoint] = []
+    func spine(_ t: CGFloat) -> CGPoint { CGPoint(x: c.x + lean * h * t + 0.10 * h * t * t, y: c.y + h * t) }
+    func height(at t: CGFloat) -> CGFloat {
+        guard heights.count > 1 else { return 1 }
+        let position = t * CGFloat(heights.count - 1)
+        let i = min(heights.count - 2, Int(position))
+        let f = position - CGFloat(i)
+        let eased = (1 - cos(f * .pi)) / 2
+        return CGFloat(heights[i]) * (1 - eased) + CGFloat(heights[i + 1]) * eased
+    }
+    for i in 0...n {
+        let t = CGFloat(i) / CGFloat(n)
+        let p = spine(t), q = spine(min(1, t + 0.01))
+        let d = CGPoint(x: q.x - p.x, y: q.y - p.y)
+        let l = max(1e-6, hypot(d.x, d.y))
+        let nx = -d.y / l, ny = d.x / l
+        let w = r * (1 - 0.72 * t) * (1 - swell + swell * height(at: t))
+        leftEdge.append(CGPoint(x: p.x + nx * w, y: p.y + ny * w))
+        rightEdge.append(CGPoint(x: p.x - nx * w, y: p.y - ny * w))
+    }
+    let path = NSBezierPath()
+    path.move(to: leftEdge[0])
+    for p in leftEdge.dropFirst() { path.line(to: p) }
+    let tip = spine(1), tipR = r * 0.28
+    let a0 = atan2(leftEdge[n].y - tip.y, leftEdge[n].x - tip.x) * 180 / .pi
+    let a1 = atan2(rightEdge[n].y - tip.y, rightEdge[n].x - tip.x) * 180 / .pi
+    path.appendArc(withCenter: tip, radius: tipR, startAngle: a0, endAngle: a1, clockwise: true)
+    for p in rightEdge.reversed() { path.line(to: p) }
+    let b0 = atan2(rightEdge[0].y - c.y, rightEdge[0].x - c.x) * 180 / .pi
+    let b1 = atan2(leftEdge[0].y - c.y, leftEdge[0].x - c.x) * 180 / .pi
+    path.appendArc(withCenter: c, radius: r, startAngle: b0, endAngle: b1, clockwise: true)
+    path.close()
+    return path
+}
+
+/// A short straight mark with rounded ends, as a typewriter's quote is.
+func barMark(foot: CGPoint, top: CGPoint, width: CGFloat) -> NSBezierPath {
+    let path = NSBezierPath()
+    path.move(to: foot); path.line(to: top)
+    path.lineWidth = width; path.lineCapStyle = .round
+    return NSBezierPath(cgPath: path.cgPath.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10))
+}
+
+/// Three layers to glass, from any three shapes: left mark, right mark, chisel.
+func composeShapes(_ shapes: [NSBezierPath], scale: CGFloat, corner: CGFloat, in rect: NSRect) -> [NSBezierPath] {
+    let all = NSBezierPath(); for p in shapes { all.append(p) }
+    let bounds = all.bounds
+    let move = NSAffineTransform()
+    move.translateX(by: rect.midX, yBy: rect.midY)
+    move.scale(by: scale)
+    move.translateX(by: -bounds.midX, yBy: -bounds.midY)
+    return shapes.map { softened(move.transform($0), radius: corner) }
+}
+
+func exportShapes(_ shapes: [NSBezierPath], suffix: String) {
+    let k: CGFloat = 1024 / size
+    let scaled = shapes.map { shape -> NSBezierPath in let t = NSAffineTransform(); t.scale(by: k); return t.transform(shape) }
+    func svg(_ paths: [NSBezierPath], name: String) {
+        var body = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1024\" height=\"1024\" viewBox=\"0 0 1024 1024\">\n"
+        for p in paths { body += "  <path d=\"\(svgData(p, height: 1024))\" fill=\"#FFFFFF\"/>\n" }
+        body += "</svg>\n"
+        try! body.write(toFile: name, atomically: true, encoding: .utf8)
+    }
+    svg([scaled[0], scaled[1]], name: "layer-marks-\(suffix).svg")
+    svg([scaled[2]], name: "layer-chisel-\(suffix).svg")
+}
+
 /// A polygon with its edges gently broken, as a cut edge is.
 func rough(_ corners: [CGPoint], step: CGFloat, amplitude: CGFloat, seed: UInt64) -> NSBezierPath {
     var random = Seeded(state: seed)
@@ -322,12 +394,12 @@ func breathingMark(from a: CGPoint, to b: CGPoint, width: CGFloat, swell: CGFloa
 /// Where the marks stand, and the diagonal through their endpoints.
 struct Frame {
     let leftFoot: CGPoint, leftTop: CGPoint, rightFoot: CGPoint, rightTop: CGPoint
-    init(_ rect: NSRect) {
-        let height = rect.height * 0.54
+    init(_ rect: NSRect, height heightFraction: CGFloat = 0.54, left: CGFloat = 0.24, right: CGFloat = 0.17) {
+        let height = rect.height * heightFraction
         let lean: CGFloat = 0.14
         let footY = rect.midY - height * 0.5
-        leftFoot = CGPoint(x: rect.midX - rect.width * 0.24, y: footY)
-        rightFoot = CGPoint(x: rect.midX + rect.width * 0.17, y: footY)
+        leftFoot = CGPoint(x: rect.midX - rect.width * left, y: footY)
+        rightFoot = CGPoint(x: rect.midX + rect.width * right, y: footY)
         leftTop = CGPoint(x: leftFoot.x + lean * height, y: footY + height)
         rightTop = CGPoint(x: rightFoot.x + lean * height, y: footY + height)
     }
@@ -351,6 +423,12 @@ struct Design {
     var cutAngle: CGFloat? = nil
     var scale: CGFloat = 1.0
     var corner: CGFloat = 0
+    /// The chisel's angle below the horizontal, or nil for the line through the
+    /// marks' endpoints.
+    var chiselAngle: CGFloat? = nil
+    var frameHeight: CGFloat = 0.54
+    var frameLeft: CGFloat = 0.24
+    var frameRight: CGFloat = 0.17
 }
 
 struct Finish {
@@ -360,13 +438,21 @@ struct Finish {
 
 func compose(_ d: Design, finish: Finish) -> NSImage {
     tile(size) { rect in
-        let f = Frame(rect)
+        let f = Frame(rect, height: d.frameHeight, left: d.frameLeft, right: d.frameRight)
         let left = breathingMark(from: f.leftFoot, to: f.leftTop, width: d.markWidth, swell: d.swell, heights: d.heights, roughness: d.roughness, seed: 11, endWidth: d.endWidth, cutAngle: d.cutAngle)
         let right = breathingMark(from: f.rightFoot, to: f.rightTop, width: d.markWidth, swell: d.swell, heights: d.heights.reversed(), roughness: d.roughness, seed: 23, endWidth: d.endWidth, cutAngle: d.cutAngle)
-        let dx = f.rightFoot.x - f.leftTop.x, dy = f.rightFoot.y - f.leftTop.y
-        let l = hypot(dx, dy)
-        let butt = CGPoint(x: f.leftTop.x - dx / l * d.reach, y: f.leftTop.y - dy / l * d.reach)
-        let edge = CGPoint(x: f.rightFoot.x + dx / l * d.reach, y: f.rightFoot.y + dy / l * d.reach)
+        var dx = f.rightFoot.x - f.leftTop.x, dy = f.rightFoot.y - f.leftTop.y
+        let endpointLength = hypot(dx, dy)
+        var butt = CGPoint(x: f.leftTop.x - dx / endpointLength * d.reach, y: f.leftTop.y - dy / endpointLength * d.reach)
+        var edge = CGPoint(x: f.rightFoot.x + dx / endpointLength * d.reach, y: f.rightFoot.y + dy / endpointLength * d.reach)
+        if let angle = d.chiselAngle {
+            // Pivoted about the N's middle, at the asked angle, keeping its length.
+            let centre = CGPoint(x: (f.leftTop.x + f.rightFoot.x) / 2, y: (f.leftTop.y + f.rightFoot.y) / 2)
+            let half = (endpointLength + 2 * d.reach) / 2
+            dx = cos(angle * .pi / 180); dy = -sin(angle * .pi / 180)
+            butt = CGPoint(x: centre.x - dx * half, y: centre.y - dy * half)
+            edge = CGPoint(x: centre.x + dx * half, y: centre.y + dy * half)
+        }
         let tool = chiselPath(from: butt, to: edge, width: d.chiselWidth, headWidth: d.headWidth)
         let all = NSBezierPath(); all.append(left); all.append(right); all.append(tool)
         let bounds = all.bounds
@@ -388,52 +474,90 @@ base.heights = swellsThree; base.swell = 0.36
 base.chiselWidth = size * 0.12; base.reach = size * 0.10
 base.roughness = 1.2
 
-base.roughness = 0.7
-var soft = base; soft.corner = 6
-var softer = base; softer.corner = 10
-let finish = Finish(marks: Glass(alpha: 0.80, shadow: 0.38, shadowRadius: 10, shadowOffset: 8), chisel: Glass(alpha: 0.56, shadow: 0.38, shadowRadius: 10, shadowOffset: 8))
+base.roughness = 0.5
+var soft = base; soft.corner = 6; soft.scale = 0.84
+let rect = NSRect(x: 0, y: 0, width: size, height: size)
+let chiselW = size * 0.11
+func chiselBetween(_ from: CGPoint, _ to: CGPoint, reach: CGFloat) -> NSBezierPath {
+    let dx = to.x - from.x, dy = to.y - from.y
+    let l = hypot(dx, dy)
+    return chiselPath(from: CGPoint(x: from.x - dx / l * reach, y: from.y - dy / l * reach),
+                      to: CGPoint(x: to.x + dx / l * reach, y: to.y + dy / l * reach), width: chiselW, headWidth: 1.0)
+}
 
-let sheet = NSImage(size: NSSize(width: 1800, height: 700))
-sheet.lockFocus()
-NSColor(white: 0.97, alpha: 1).setFill()
-NSRect(x: 0, y: 0, width: 1800, height: 700).fill()
-let labels = ["Q0  As before", "Q1  Corners softened by 6", "Q2  Corners softened by 10"]
-for (index, design) in [base, soft, softer].enumerated() {
-    let icon = compose(design, finish: finish)
-    let x = CGFloat(index) * 600 + 44
-    icon.draw(in: NSRect(x: x, y: 150, width: 512, height: 512))
-    icon.draw(in: NSRect(x: x + 380, y: 40, width: 96, height: 96))
-    icon.draw(in: NSRect(x: x + 490, y: 60, width: 48, height: 48))
-    NSAttributedString(string: labels[index], attributes: [.font: NSFont.systemFont(ofSize: 26, weight: .semibold), .foregroundColor: NSColor.black]).draw(at: NSPoint(x: x, y: 70))
+// R1. Type's own quotation marks: bulb at the foot, tail rising, the chisel from the
+// first tail's tip to the second bulb.
+do {
+    let r = size * 0.085, h = size * 0.40, lean: CGFloat = 0.14
+    let footY = rect.midY - size * 0.12
+    let left = commaMark(bulb: CGPoint(x: rect.midX - size * 0.20, y: footY), radius: r, height: h, lean: lean)
+    let right = commaMark(bulb: CGPoint(x: rect.midX + size * 0.17, y: footY), radius: r, height: h, lean: lean)
+    let tipL = CGPoint(x: left.bounds.maxX - r * 0.5, y: left.bounds.maxY - r * 0.4)
+    let bulbR = CGPoint(x: right.bounds.minX + r, y: footY)
+    let shapes = composeShapes([left, right, chiselBetween(tipL, bulbR, reach: size * 0.10)], scale: 0.84, corner: 4, in: rect)
+    exportShapes(shapes, suffix: "r1")
 }
-sheet.unlockFocus()
-let rep = NSBitmapImageRep(data: sheet.tiffRepresentation!)!
-try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "soft.png"))
-
-// The layers for Icon Composer, drawn at 1024 from the softened shapes: the marks
-// as one SVG, the chisel as another, white on nothing.
-_ = compose(soft, finish: finish)
-let k: CGFloat = 1024 / size
-let scaled = lastShapes.map { shape -> NSBezierPath in
-    let t = NSAffineTransform(); t.scale(by: k); return t.transform(shape)
+// R2. The same marks, their tails breathing with the voice.
+do {
+    let r = size * 0.085, h = size * 0.40, lean: CGFloat = 0.14
+    let footY = rect.midY - size * 0.12
+    let left = commaMark(bulb: CGPoint(x: rect.midX - size * 0.20, y: footY), radius: r, height: h, lean: lean, swell: 0.4, heights: swellsThree)
+    let right = commaMark(bulb: CGPoint(x: rect.midX + size * 0.17, y: footY), radius: r, height: h, lean: lean, swell: 0.4, heights: swellsThree.reversed())
+    let tipL = CGPoint(x: left.bounds.maxX - r * 0.5, y: left.bounds.maxY - r * 0.4)
+    let bulbR = CGPoint(x: right.bounds.minX + r, y: footY)
+    let shapes = composeShapes([left, right, chiselBetween(tipL, bulbR, reach: size * 0.10)], scale: 0.84, corner: 4, in: rect)
+    exportShapes(shapes, suffix: "r2")
 }
-func svg(_ paths: [NSBezierPath], name: String) {
-    var body = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1024\" height=\"1024\" viewBox=\"0 0 1024 1024\">\n"
-    for p in paths { body += "  <path d=\"\(svgData(p, height: 1024))\" fill=\"#FFFFFF\"/>\n" }
-    body += "</svg>\n"
-    try! body.write(toFile: name, atomically: true, encoding: .utf8)
+// R3. Straight quotes: two short bars, set high, the chisel long and shallow beneath.
+do {
+    let w = size * 0.10, h = size * 0.30, lean: CGFloat = 0.14
+    let footY = rect.midY + size * 0.02
+    let lf = CGPoint(x: rect.midX - size * 0.20, y: footY), lt = CGPoint(x: lf.x + lean * h, y: footY + h)
+    let rf = CGPoint(x: rect.midX + size * 0.17, y: footY), rt = CGPoint(x: rf.x + lean * h, y: footY + h)
+    let left = barMark(foot: lf, top: lt, width: w), right = barMark(foot: rf, top: rt, width: w)
+    let shapes = composeShapes([left, right, chiselBetween(lt, rf, reach: size * 0.13)], scale: 0.84, corner: 4, in: rect)
+    exportShapes(shapes, suffix: "r3")
 }
-svg([scaled[0], scaled[1]], name: "layer-marks.svg")
-svg([scaled[2]], name: "layer-chisel.svg")
-func png(_ paths: [NSBezierPath], name: String) {
-    let image = NSImage(size: NSSize(width: 1024, height: 1024))
-    image.lockFocus()
-    NSColor.white.setFill()
-    for p in paths { p.fill() }
-    image.unlockFocus()
-    let rep = NSBitmapImageRep(data: image.tiffRepresentation!)!
-    try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: name))
+// R4. The marks as they are, but heavy at the top and fine at the foot, as a quote's
+// stroke is, keeping the swells.
+do {
+    var d = soft
+    d.endWidth = 0.3
+    // Rebuild with a top-heavy taper: scale the lower half's width down.
+    let f = Frame(rect, height: d.frameHeight, left: d.frameLeft, right: d.frameRight)
+    func wedge(from a: CGPoint, to b: CGPoint, heights: [Double], seed: UInt64) -> NSBezierPath {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let length = hypot(dx, dy)
+        let ux = dx / length, uy = dy / length, nx = -uy, ny = ux
+        let n = 44
+        var top: [CGPoint] = [], bottom: [CGPoint] = []
+        var random = Seeded(state: seed)
+        for k in 0...n {
+            let t = CGFloat(k) / CGFloat(n)
+            let position = t * CGFloat(heights.count - 1)
+            let i = min(heights.count - 2, Int(position)); let fr = position - CGFloat(i)
+            let eased = (1 - cos(fr * .pi)) / 2
+            let hgt = CGFloat(heights[i]) * (1 - eased) + CGFloat(heights[i + 1]) * eased
+            let taper: CGFloat = 0.25 + 0.75 * t
+            let breath: CGFloat = 0.64 + 0.36 * hgt
+            let w: CGFloat = d.markWidth / 2 * taper * breath
+            let j = CGFloat.random(in: -0.5...0.5, using: &random)
+            let p = CGPoint(x: a.x + ux * length * t, y: a.y + uy * length * t)
+            top.append(CGPoint(x: p.x + nx * (w + j), y: p.y + ny * (w + j)))
+            bottom.append(CGPoint(x: p.x - nx * (w - j), y: p.y - ny * (w - j)))
+        }
+        let path = NSBezierPath()
+        path.move(to: top[0]); for p in top.dropFirst() { path.line(to: p) }
+        let angle = atan2(uy, ux) * 180 / .pi
+        path.appendArc(withCenter: b, radius: hypot(top[n].x - b.x, top[n].y - b.y), startAngle: angle + 90, endAngle: angle - 90, clockwise: true)
+        for p in bottom.reversed() { path.line(to: p) }
+        path.appendArc(withCenter: a, radius: hypot(top[0].x - a.x, top[0].y - a.y), startAngle: angle - 90, endAngle: angle + 90, clockwise: true)
+        path.close()
+        return path
+    }
+    let left = wedge(from: f.leftFoot, to: f.leftTop, heights: swellsThree, seed: 11)
+    let right = wedge(from: f.rightFoot, to: f.rightTop, heights: swellsThree.reversed(), seed: 23)
+    let shapes = composeShapes([left, right, chiselBetween(f.leftTop, f.rightFoot, reach: size * 0.10)], scale: 0.84, corner: 4, in: rect)
+    exportShapes(shapes, suffix: "r4")
 }
-png([scaled[0], scaled[1]], name: "layer-marks.png")
-png([scaled[2]], name: "layer-chisel.png")
 print("drawn")

@@ -1,26 +1,56 @@
 {
-  "fill-specializations" : [
-    {
-      "value" : {
-        "linear-gradient" : [
-          "extended-gray:0.20000,1.00000",
-          "extended-gray:0.10000,1.00000"
-        ]
-      }
-    }
-  ],
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill" : {
+    "linear-gradient" : [
+      "extended-gray:0.20000,1.00000",
+      "extended-gray:0.10000,1.00000"
+    ]
+  },
   "groups" : [
     {
       "blur-material" : 0.1,
       "layers" : [
         {
-          "fill" : {
-            "solid" : "extended-gray:1.00000,1.00000"
-          },
+          "blend-mode-specializations" : [
+            {
+              "value" : "normal"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "normal"
+            }
+          ],
+          "fill-specializations" : [
+            {
+              "value" : "system-light"
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "extended-gray:1.00000,1.00000"
+              }
+            }
+          ],
           "glass" : true,
+          "hidden" : false,
           "image-name" : "chisel.svg",
           "name" : "chisel",
-          "opacity" : 0.56
+          "opacity-specializations" : [
+            {
+              "value" : 0.5
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.57
+            }
+          ],
+          "position" : {
+            "scale" : 0.85,
+            "translation-in-points" : [
+              10,
+              -20
+            ]
+          }
         }
       ],
       "lighting" : "individual",
@@ -38,13 +68,45 @@
       "blur-material" : 0.1,
       "layers" : [
         {
-          "fill" : {
-            "solid" : "extended-gray:1.00000,1.00000"
-          },
+          "blend-mode-specializations" : [
+            {
+              "value" : "lighten"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "normal"
+            }
+          ],
+          "fill-specializations" : [
+            {
+              "value" : "system-light"
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
           "glass" : true,
           "image-name" : "marks.svg",
           "name" : "marks",
-          "opacity" : 0.8
+          "opacity-specializations" : [
+            {
+              "value" : 0.8
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.95
+            }
+          ],
+          "position" : {
+            "scale" : 1.2,
+            "translation-in-points" : [
+              20,
+              0
+            ]
+          }
         }
       ],
       "lighting" : "individual",
