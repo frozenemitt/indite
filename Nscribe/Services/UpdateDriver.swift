@@ -87,6 +87,12 @@ final class UpdateDriver: NSObject {
         finish()
     }
 
+    /// Close the window and leave what is under way to carry on: a restart waiting for
+    /// a recording to end still happens when it ends.
+    func closeWindow() {
+        FamilyWindows.close(FamilyWindows.softwareUpdate)
+    }
+
     func openInfoPage(_ url: URL) {
         NSWorkspace.shared.open(url)
         reply(.dismiss)
@@ -123,7 +129,8 @@ final class UpdateDriver: NSObject {
     private func closedByPerson() {
         switch phase {
         case .checking, .downloading: cancel()
-        case .available, .ready, .waitingForRecording: notNow()
+        case .available, .ready: notNow()
+        case .waitingForRecording: break
         case .upToDate, .failed: acknowledge()
         case .idle, .preparing, .installing: break
         }

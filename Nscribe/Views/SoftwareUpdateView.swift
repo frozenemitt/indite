@@ -18,15 +18,16 @@ struct SoftwareUpdateView: View {
         VStack(spacing: 0) {
             WindowHeader(title: title, subtitle: subtitle)
                 .padding(.top, 30)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, FamilyMetrics.headerMargin)
 
+            // The same margins as the buttons, so the bar ends where Cancel does.
             middle
-                .padding(.horizontal, 32)
+                .padding(.horizontal, FamilyMetrics.margin)
                 .padding(.top, 20)
 
             buttons
         }
-        .frame(width: 500)
+        .frame(width: FamilyMetrics.width)
         .fixedSize(horizontal: false, vertical: true)
         .defaultFocus($primaryHasKeyboard, true)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
@@ -134,10 +135,17 @@ struct SoftwareUpdateView: View {
                     primary("Update Now") { driver.installNow() }
                 }
 
-            case .ready, .waitingForRecording:
+            case .ready:
                 Button("Later") { driver.notNow() }
                     .keyboardShortcut(.cancelAction)
                 primary("Restart Now") { driver.installNow() }
+
+            case .waitingForRecording:
+                // The restart is already set for when the recording ends, so the
+                // window only closes; the other button says what it will cost.
+                Button("Close") { driver.closeWindow() }
+                    .keyboardShortcut(.cancelAction)
+                primary("Stop Recording and Restart") { driver.installNow() }
 
             case .preparing, .installing:
                 // Past the point where the update can be stopped. The hidden button

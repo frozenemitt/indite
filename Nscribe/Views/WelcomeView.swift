@@ -62,7 +62,7 @@ struct WelcomeView: View {
             case .setup: setupPage
             }
         }
-        .frame(width: 540, height: 740)
+        .frame(width: FamilyMetrics.width, height: 740)
         .defaultFocus($focus, .continueButton)
         // Asked for again once the window is key. A menu bar app's window appears
         // before it becomes key, 3.4 s before on the first try, and by then AppKit had
@@ -82,10 +82,11 @@ struct WelcomeView: View {
 
     private var welcomePage: some View {
         VStack(spacing: 0) {
+            Spacer(minLength: 0)
+
             WindowHeader(title: "Welcome to Nscribe",
                          subtitle: "Dictation and meeting transcripts, made on your Mac.")
-                .padding(.top, 72)
-                .padding(.horizontal, 48)
+                .padding(.horizontal, FamilyMetrics.headerMargin)
 
             VStack(alignment: .leading, spacing: 24) {
                 feature("waveform", "Dictate anywhere",
@@ -98,6 +99,9 @@ struct WelcomeView: View {
             .frame(width: 400)
             .padding(.top, 44)
 
+            // A little more room below than above, so the content sits at the eye's
+            // center rather than the window's.
+            Spacer(minLength: 0)
             Spacer(minLength: 0)
 
             WindowButtonBar {
@@ -158,7 +162,7 @@ struct WelcomeView: View {
             WindowHeader(title: "Set Up Nscribe",
                          subtitle: "Allow two permissions, then try your first dictation.")
                 .padding(.top, 30)
-                .padding(.horizontal, 40)
+                .padding(.horizontal, FamilyMetrics.headerMargin)
 
             Form {
                 Section {
@@ -188,15 +192,18 @@ struct WelcomeView: View {
 
                 Section {
                     menuBarRow
-                    Toggle("Update Nscribe automatically", isOn: Binding(
-                        get: { updater.updatesAutomatically },
-                        set: { updater.setUpdatesAutomatically($0) }
-                    ))
+                    row(symbol: "arrow.down.circle") {
+                        Toggle("Update Nscribe automatically", isOn: Binding(
+                            get: { updater.updatesAutomatically },
+                            set: { updater.setUpdatesAutomatically($0) }
+                        ))
+                    }
                 }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
             .scrollDisabled(true)
+            .contentMargins(.horizontal, FamilyMetrics.margin, for: .scrollContent)
 
             WindowButtonBar {
                 Button("Back") {
@@ -238,7 +245,7 @@ struct WelcomeView: View {
     /// the next step's button is prominent.
     private func step(_ number: Int, done: Bool, title: String, detail: String,
                       button: String, isNext: Bool, action: @escaping () -> Void) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: FamilyMetrics.iconSpacing) {
             ZStack {
                 if done {
                     Image(systemName: "checkmark.circle.fill")
@@ -253,7 +260,7 @@ struct WelcomeView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 24)
+            .frame(width: FamilyMetrics.iconColumn)
             .accessibilityLabel(done ? "Done" : "Step \(number)")
 
             VStack(alignment: .leading, spacing: 2) {
@@ -263,7 +270,6 @@ struct WelcomeView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .opacity(done ? 0.6 : 1)
 
             Spacer(minLength: 8)
 
@@ -283,32 +289,51 @@ struct WelcomeView: View {
     }
 
     private var keyRow: some View {
-        HStack(spacing: 10) {
-            Text("Dictation key")
-            Spacer()
-            KeyCap(key: settings.hotkeyDisplay, showsGlobe: settings.useGlobeKey)
-            Button(action: chooseKey) { Text("Change…").frame(maxWidth: .infinity) }
-                .frame(width: Self.rowButtonWidth)
+        row(symbol: "keyboard") {
+            HStack(spacing: 10) {
+                Text("Dictation key")
+                Spacer()
+                KeyCap(key: settings.hotkeyDisplay, showsGlobe: settings.useGlobeKey)
+                Button(action: chooseKey) { Text("Change…").frame(maxWidth: .infinity) }
+                    .frame(width: Self.rowButtonWidth)
+            }
+        }
+    }
+
+    /// A row whose symbol sits in the shared column, so its label starts on the same
+    /// edge as every other row's.
+    private func row<Content: View>(symbol: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: FamilyMetrics.iconSpacing) {
+            Image(systemName: symbol)
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+                .frame(width: FamilyMetrics.iconColumn)
+            content()
         }
     }
 
     /// macOS's own use of the Globe key, shown only when it gets in the way.
     private var globeKeyRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: FamilyMetrics.iconSpacing) {
             Image(systemName: globeKeyIsFree ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 15))
                 .foregroundStyle(globeKeyIsFree ? AnyShapeStyle(.green) : AnyShapeStyle(.orange))
+                .frame(width: FamilyMetrics.iconColumn)
             Text(globeKeyIsFree
-                 ? "macOS no longer uses the Globe key."
-                 : "In Keyboard settings, set “Press \(Image(systemName: "globe")) key to” to Do Nothing.")
+                 ? "The Globe key is free for Nscribe."
+                 : "macOS also uses the Globe key. Set “Press \(Image(systemName: "globe")) key to” to Do Nothing.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            if !globeKeyIsFree {
-                Button(action: openKeyboardSettings) { Text("Open Settings…").frame(maxWidth: .infinity) }
-                    .frame(width: Self.rowButtonWidth)
-            }
+            // Kept in place, unseen, once the key is free, so the row keeps its height
+            // and nothing below it moves.
+            Button(action: openKeyboardSettings) { Text("Open Settings…").frame(maxWidth: .infinity) }
+                .frame(width: Self.rowButtonWidth)
+                .opacity(globeKeyIsFree ? 0 : 1)
+                .disabled(globeKeyIsFree)
         }
+        .frame(minHeight: 36)
     }
 
     /// The place to try the key before the window closes. The words arrive as they
@@ -325,6 +350,7 @@ struct WelcomeView: View {
                     Text(live)
                 } else if !practiceText.isEmpty {
                     Text(practiceText)
+                        .lineLimit(4)
                         .textSelection(.enabled)
                 } else if !hasAccessibility {
                     Text("Allow Accessibility above, then try the dictation key here.")
@@ -347,20 +373,22 @@ struct WelcomeView: View {
             }
         }
         .padding(10)
-        .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: 96)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+        .padding(.leading, FamilyMetrics.iconColumn + FamilyMetrics.iconSpacing)
     }
 
     /// The last thing to know: where Nscribe is once this window has gone.
     private var menuBarRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: FamilyMetrics.iconSpacing) {
             Image("MenuBarIcon")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 22, height: 20)
+                .frame(width: 20, height: 18)
                 .foregroundStyle(.primary)
-                .frame(width: 24)
+                .frame(width: FamilyMetrics.iconColumn)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Nscribe lives in the menu bar")
                 Text("Meetings, Settings and recent dictations are all in its menu.")
@@ -438,7 +466,7 @@ struct WelcomeView: View {
             case .toggle:
                 Text("Press")
                 key
-                Text("say a sentence, then press it again.")
+                Text("to start, say a sentence, then press it again.")
             }
         }
     }

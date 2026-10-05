@@ -9,6 +9,20 @@ import AppKit
 // and one line of explanation at the top, the content in the system's grouped style,
 // the buttons along the bottom with the one that moves forward on the right.
 
+/// The measures every window in the family shares.
+enum FamilyMetrics {
+    static let width: CGFloat = 520
+    /// From the window's edge to its boxes, its rules and its buttons.
+    static let margin: CGFloat = 24
+    /// From the window's edge to the header's text, which is centered and reads
+    /// better a little narrower.
+    static let headerMargin: CGFloat = 40
+    /// The column at the left of a row that holds its number, check or symbol, so
+    /// every label in a box starts on the same edge.
+    static let iconColumn: CGFloat = 24
+    static let iconSpacing: CGFloat = 12
+}
+
 /// The top of every window in the family: one icon size and one title style in all
 /// of them, so moving from page to page or from state to state never jumps.
 struct WindowHeader: View {
@@ -55,7 +69,7 @@ struct WindowButtonBar<Leading: View, Trailing: View>: View {
             trailing
         }
         .controlSize(.large)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, FamilyMetrics.margin)
         .padding(.top, 14)
         .padding(.bottom, 20)
     }

@@ -279,3 +279,9 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   as one family. "Be sure to include all windows, like the update window and the
   what's new in this version window as you're designing so that everything is
   coherent."
+- 2026-10-05 After two critic rounds (5/10 both), the critic loop stops; the second
+  critic mostly reversed the first and the decisions above. The remaining craft fixes
+  are: one left edge inside every box with icons in a fixed column, nothing moving
+  when a permission is granted, finished steps at full contrast, the restart-wait
+  buttons named for what they do, and one width and one margin across the windows.
+  "Keep going with the five fixes."

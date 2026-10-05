@@ -28,7 +28,7 @@ struct WhatsNewView: View {
         VStack(spacing: 0) {
             WindowHeader(title: "What’s New in Nscribe", subtitle: "Version \(version)")
                 .padding(.top, 30)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, FamilyMetrics.headerMargin)
 
             VStack(spacing: 0) {
                 Divider()
@@ -36,7 +36,7 @@ struct WhatsNewView: View {
                     .padding(.vertical, 16)
                 Divider()
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, FamilyMetrics.margin)
             .padding(.top, 20)
 
             WindowButtonBar {
@@ -48,7 +48,7 @@ struct WhatsNewView: View {
                     .focusEffectDisabled()
             }
         }
-        .frame(width: 500)
+        .frame(width: FamilyMetrics.width)
         .fixedSize(horizontal: false, vertical: true)
         .defaultFocus($continueHasKeyboard, true)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
