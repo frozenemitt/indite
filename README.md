@@ -12,13 +12,26 @@ the menu bar as an N made of two quotation marks. Transcription runs on Apple's
 speech recognizer, rewriting and summaries on Apple's on-device model, and speaker
 separation on CoreML models that run locally.
 
-## Build and run
+## Install
 
-There is no download. You build the app on your own Mac, which takes a few minutes
-and costs nothing: no Apple Developer Program membership is needed.
+Download **Nscribe-x.y.dmg** from [Releases](https://github.com/frozenemitt/nscribe/releases/latest),
+open it, and drag Nscribe into Applications. It needs **macOS 27**.
 
-You need **macOS 27** and **Xcode 26**, free from the App Store. Open Xcode once after
-installing it, so it can finish setting up its tools.
+The first time you open it, macOS says it cannot check Nscribe for malware, and
+offers only Done and Move to Trash. Nscribe is free and is not signed through
+Apple's paid developer program, which is what that check looks for. Click Done,
+open **System Settings → Privacy & Security**, and click **Open Anyway** next to
+the line about Nscribe. macOS asks for your password once.
+
+Later versions install from inside the app: **Check for Updates…** in the menu, or
+automatically if you allow it when Nscribe asks. They keep your permissions, and
+macOS does not ask about malware again.
+
+### Build it yourself
+
+You need **Xcode 26**, free from the App Store. Open Xcode once after installing it,
+so it can finish setting up its tools. No Apple Developer Program membership is
+needed.
 
 ```bash
 git clone https://github.com/frozenemitt/nscribe.git
@@ -27,8 +40,8 @@ Scripts/install.sh
 ```
 
 The script builds Nscribe, puts it in `/Applications`, and launches it. The first
-build downloads one package, FluidAudio, and takes a few minutes; later builds are
-faster.
+build downloads two packages, FluidAudio and Sparkle, and takes a few minutes; later
+builds are faster.
 
 To build in Xcode instead, open `Nscribe.xcodeproj`, choose your own team under
 Signing & Capabilities for the Nscribe target (a free Apple ID works), and press Run.
@@ -49,8 +62,10 @@ Set **System Settings → Keyboard → "Press 🌐 key to"** to *Do Nothing*, or
 also switch your input source each time you dictate. The key can be changed in
 Settings → Dictation.
 
-If you rebuild the app, macOS treats it as a new app and forgets the Accessibility
-grant: remove Nscribe from the Accessibility list and add it again.
+If you build the app yourself, each rebuild is a new app to macOS, and it forgets
+the Accessibility grant: remove Nscribe from the Accessibility list and add it
+again. The downloaded app keeps one signature from version to version, so its
+grants carry over.
 
 ## Dictation
 
@@ -90,9 +105,13 @@ grant: remove Nscribe from the Accessibility list and add it again.
 
 Everything runs on this Mac. Audio and text are never uploaded.
 
-Nscribe reaches the network for two things only, and never with your data:
+Nscribe reaches the network for three things only, and never with your data:
 
 - Apple downloads its speech model on first use.
+- Check for Updates… reads a small file attached to the latest GitHub release,
+  and so does the daily check if you switch it on. The request names the app and
+  its version, and nothing else. The update it finds is signed, and Nscribe checks
+  that signature before installing it.
 - The speaker models (pyannote community-1, through FluidAudio) download from
   HuggingFace only when you press Install Models in Settings → Meetings. Check for
   Updates reads the repository's public metadata, and the installed files are
@@ -112,6 +131,10 @@ Releases are tagged `v1.0`, `v1.1` and so on, and listed under
 a tenth when something new ships and by a hundredth when only fixes do. The build
 number beside it, in Settings → About, is the number of commits the app was built
 from, so any two builds can be told apart.
+
+`Scripts/release.sh` makes a release: it builds and signs the app, puts it in the
+disk image, and writes the appcast that tells installed copies about it. The release
+notes are in [Docs/Releases](Docs/Releases).
 
 ## Design
 
@@ -152,6 +175,7 @@ Nscribe/
 | Dependency | For |
 |---|---|
 | [FluidAudio](https://github.com/FluidInference/FluidAudio) | Speaker separation, with pyannote's CoreML models |
+| [Sparkle](https://sparkle-project.org) | Updates from inside the app |
 
 Everything else is Apple's: SwiftUI, SwiftData, Speech, FoundationModels,
 AVFoundation, CoreAudio, ApplicationServices and AppIntents.

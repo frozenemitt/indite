@@ -23,6 +23,7 @@ struct MenuBarView: View {
     @Environment(MeetingRecorder.self) private var meetingRecorder
     @Environment(GlobalHotkeyMonitor.self) private var hotkeyMonitor
     @Environment(AudioInputList.self) private var inputs
+    @Environment(AppUpdater.self) private var updater
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @Environment(\.modelContext) private var modelContext
@@ -80,6 +81,9 @@ struct MenuBarView: View {
             WindowFronting.bringForward("com_apple_SwiftUI_Settings")
         }
         .keyboardShortcut(",")
+
+        Button("Check for Updates…") { updater.checkForUpdates() }
+            .disabled(!updater.canCheckForUpdates)
 
         Button("Quit Nscribe") {
             NSApplication.shared.terminate(nil)
