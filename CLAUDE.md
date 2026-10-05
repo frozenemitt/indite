@@ -8,10 +8,10 @@ Never commit directly to `main`. Always use feature branches, then merge locally
 
 ```bash
 # Build for macOS
-xcodebuild -project Inscribe.xcodeproj -scheme Inscribe -destination 'platform=macOS' build
+xcodebuild -project Nscribe.xcodeproj -scheme Nscribe -destination 'platform=macOS' build
 
 # Clean build
-xcodebuild clean -project Inscribe.xcodeproj -scheme Inscribe
+xcodebuild clean -project Nscribe.xcodeproj -scheme Nscribe
 ```
 
 ## Constraints
