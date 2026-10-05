@@ -129,11 +129,12 @@ apps. That also rules out the Mac App Store.
 
 ## Versions
 
-Releases are tagged `v1.0`, `v1.1` and so on, and listed under
-[Releases](https://github.com/frozenemitt/nscribe/releases). The version goes up by
-a tenth when something new ships and by a hundredth when only fixes do. The build
-number beside it, in Settings → About, is the number of commits the app was built
-from, so any two builds can be told apart.
+Versions read like 1.0.352. The first two parts are raised by hand: the second when
+something new ships, the first for a change big enough to say so. The third is the
+number of commits the app was built from, so it rises with every build, fixes
+included, and any two builds can be told apart. Settings → About shows it. Releases
+are tagged with the whole version, such as `v1.0.352`, and listed under
+[Releases](https://github.com/frozenemitt/nscribe/releases).
 
 `Scripts/release.sh` makes a release: it builds and signs the app, puts it in the
 disk image, and writes the appcast that tells installed copies about it. The release

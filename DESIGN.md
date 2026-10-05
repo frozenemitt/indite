@@ -244,3 +244,11 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   some way of prompting them to restart."
 - 2026-10-05 Simple Clean is built in. It began as Jonathan's own prompt: "I really
   like it. It's working very well for me."
+- 2026-10-05 The version's third part is the build number: 1.0.352, not 1.0 (352).
+  "The build number should be shown as a second dot. … It's much easier to read
+  than putting something in parentheses." This replaces the tenth-and-hundredth
+  rule: fixes no longer get a number of their own, since every build raises the
+  third part. Releases are tagged with the whole version.
+- 2026-10-05 The welcome window says the Globe key can be changed, with a link to
+  Settings → Dictation. "We should make it clear in the welcome screen that that is
+  a customization that can be made."

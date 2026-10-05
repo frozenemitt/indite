@@ -15,6 +15,7 @@ struct WelcomeView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AppUpdater.self) private var updater
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openSettings) private var openSettings
 
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
@@ -43,8 +44,11 @@ struct WelcomeView: View {
             .padding(.top, 6)
 
             VStack(alignment: .leading, spacing: 20) {
+                // The Globe key is only where Nscribe starts, and a new user had no way
+                // to know another key could be chosen.
                 row("globe", "Dictate into any app",
-                    "Hold \(key) and talk. The words are typed where your cursor is.")
+                    "Hold \(key) and talk. The words are typed where your cursor is.",
+                    link: ("Choose a different key…", chooseKey))
                 row("person.2.wave.2", "Record meetings",
                     "Start one from the menu bar. It comes back split by speaker, titled and summarized.")
                 row("lock.shield", "Everything stays on your Mac",
@@ -114,7 +118,14 @@ struct WelcomeView: View {
         settings.useGlobeKey ? "the Globe key" : settings.hotkeyDisplay
     }
 
-    private func row(_ symbol: String, _ title: String, _ detail: String) -> some View {
+    private func chooseKey() {
+        SettingsTab.open(.dictation)
+        openSettings()
+        WindowFronting.bringForward("com_apple_SwiftUI_Settings")
+    }
+
+    private func row(_ symbol: String, _ title: String, _ detail: String,
+                     link: (title: String, action: () -> Void)? = nil) -> some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: symbol)
                 .font(.system(size: 30))
@@ -128,6 +139,10 @@ struct WelcomeView: View {
                 Text(detail)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let link {
+                    Button(link.title, action: link.action)
+                        .buttonStyle(.link)
+                }
             }
         }
     }
