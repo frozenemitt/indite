@@ -13,6 +13,11 @@ the menu bar as an N made of two quotation marks. Transcription runs on Apple's
 speech recognizer, rewriting and summaries on Apple's on-device model, and speaker
 separation on CoreML models that run locally.
 
+<p align="center">
+  <img src="Docs/Images/meeting.png" width="760"
+       alt="A meeting in Nscribe: its title, the three speakers, a summary, and the transcript by speaker, with the word being played set in bold">
+</p>
+
 ## Install
 
 **[Download Nscribe](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)**,
