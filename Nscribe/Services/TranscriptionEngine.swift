@@ -606,8 +606,12 @@ final class TranscriptionEngine {
         case .authorized:
             return true
         case .notDetermined:
+            // `@Sendable` keeps the reply off the main actor. macOS delivers it on a
+            // background queue, and a closure written in this class would otherwise
+            // inherit `@MainActor`, whose check stops the app the first time a user
+            // answers the prompt.
             return await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { status in
+                SFSpeechRecognizer.requestAuthorization { @Sendable status in
                     continuation.resume(returning: status == .authorized)
                 }
             }
