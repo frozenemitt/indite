@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.app.notice("App finished launching")
+        DockPresence.start()
         onReady?()
     }
 
@@ -232,6 +233,7 @@ struct NscribeApp: App {
         Window("Welcome to Nscribe", id: Self.welcomeWindowID) {
             WelcomeView()
                 .environment(settings)
+                .environment(updater)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)

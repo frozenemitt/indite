@@ -38,6 +38,13 @@ struct MenuBarView: View {
     }
 
     var body: some View {
+        // At the top until it is taken. The notification that announced the update
+        // is gone after a glance, and Nscribe is rarely restarted on its own.
+        if let version = updater.readyVersion {
+            Button("Restart to Install Nscribe \(version)") { updater.restartToUpdate() }
+            Divider()
+        }
+
         if meetingRecorder.hasActiveMeeting {
             meetingSection
             Divider()
