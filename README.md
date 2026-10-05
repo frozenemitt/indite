@@ -8,7 +8,7 @@
 read it back by speaker. Nothing leaves your Mac.**
 
 Inscribe is a dictation and meeting app for the Mac, free and open source. It lives in
-the menu bar as a ribbon that moves with your voice. Transcription runs on Apple's
+the menu bar as an N made of two quotation marks. Transcription runs on Apple's
 speech recognizer, rewriting and summaries on Apple's on-device model, and speaker
 separation on CoreML models that run locally.
 
@@ -35,7 +35,7 @@ Signing & Capabilities for the Inscribe target (a free Apple ID works), and pres
 
 ### The first launch
 
-Inscribe appears in the menu bar as a ribbon. A welcome window says what the key does
+Inscribe appears in the menu bar as its N. A welcome window says what the key does
 and what macOS will ask for.
 
 | Permission | Needed for | Asked |

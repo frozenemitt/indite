@@ -55,4 +55,4 @@ ditto "$app" /Applications/Inscribe.app
 touch /Applications/Inscribe.app
 open -a /Applications/Inscribe.app
 
-echo "Inscribe is in /Applications and running. Look for the ribbon in the menu bar."
+echo "Inscribe is in /Applications and running. Look for its N in the menu bar."

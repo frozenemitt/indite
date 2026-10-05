@@ -475,9 +475,9 @@ private enum MenuGlyph {
 /// One shape per state. A dictation and a meeting used to share the filled microphone,
 /// and a paused meeting showed the idle one.
 ///
-/// At rest the icon is the ribbon, the shape that moves with the voice in the
-/// dictation panel. Most dictation apps sit in the menu bar as a microphone; the
-/// ribbon is the one shape that is Inscribe's own.
+/// At rest the icon is the app icon's N: the two quotation marks and the chisel.
+/// While a dictation is heard, the same N is knocked out of a filled tile. Both are
+/// drawn by `Design/Icon/draw-icon.swift`, from the shapes the app icon is made of.
 struct MenuBarIcon: View {
     let isDictating: Bool
     let isRewriting: Bool
@@ -501,7 +501,7 @@ struct MenuBarIcon: View {
     private var icon: Image {
         // The dictation first: it is what the user is doing this second, and during a
         // paused meeting it is what holds the microphone.
-        if isDictating { return Image(nsImage: MenuBarRibbon.speaking) }
+        if isDictating { return Image("MenuBarIconSpeaking") }
         if isRewriting { return Image(systemName: "brain") }
         switch meeting {
         case .recording, .preparing, .finishing: return Image(systemName: "record.circle")
@@ -509,39 +509,8 @@ struct MenuBarIcon: View {
         case .idle:
             return keyHasFailed
                 ? Image(systemName: "exclamationmark.triangle")
-                : Image(nsImage: MenuBarRibbon.resting)
+                : Image("MenuBarIcon")
         }
-    }
-}
-
-/// The ribbon drawn as a menu bar icon: slim at rest, swollen while a dictation is
-/// being heard.
-///
-/// The same outline the dictation panel draws, from a fixed set of heights, so the
-/// icon does not move. A template image, which the menu bar tints for light and dark.
-/// The welcome window shows it too, so the ribbon is seen before it is looked for.
-enum MenuBarRibbon {
-    static let resting = image(swell: 0.5)
-    static let speaking = image(swell: 1)
-
-    /// Heights picked to read as a voice at sixteen points: three rises of different
-    /// sizes, none of them centered.
-    private static let profile: [Double] = [
-        0.30, 0.50, 0.75, 0.95, 0.80, 0.55, 0.40, 0.55, 0.80, 1.00, 0.85, 0.60,
-        0.45, 0.60, 0.80, 0.70, 0.50, 0.35, 0.50, 0.65, 0.50, 0.35, 0.25, 0.20
-    ]
-
-    private static func image(swell: Double) -> NSImage {
-        let amplitudes = profile.map { $0 * swell }
-        let image = NSImage(size: NSSize(width: 22, height: 14), flipped: false) { rect in
-            guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            context.addPath(RibbonShape(amplitudes: amplitudes).path(in: rect).cgPath)
-            context.setFillColor(NSColor.black.cgColor)
-            context.fillPath()
-            return true
-        }
-        image.isTemplate = true
-        return image
     }
 }
 

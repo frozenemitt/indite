@@ -73,8 +73,9 @@ rewriting ribbon still. No animation on menus or frequent actions.
 
 ## Imagery
 
-SF Symbols. The menu bar icon is the ribbon, drawn as a template image, so state is
-carried by shape.
+SF Symbols. The menu bar icon is the app icon's N, drawn as a template image, so
+state is carried by shape: the N at rest, the N knocked out of a filled tile while a
+dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 
 ## Do's and Don'ts
 
@@ -215,3 +216,9 @@ carried by shape.
   "U2 looks great. I think that's it!" The marks read first, the N second, the
   chisel as a tool last, which is the order asked for. Drawn by
   `Design/Icon/draw-icon.swift`; the document is `Inscribe/AppIcon.icon`.
+- 2026-10-04 The menu bar icon is the app icon's N, not the ribbon. "Let's change
+  the menu bar icon to the actual AppIcon instead of using the audio waveform." The
+  N is drawn from the icon's own shapes as a template image, the chisel lighter than
+  the marks with a gap where it crosses them; while a dictation is heard the N is
+  knocked out of a filled tile, which replaces the swollen ribbon. The ribbon stays
+  in the dictation panel.

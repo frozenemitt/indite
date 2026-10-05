@@ -8,7 +8,7 @@ import AppKit
 ///
 /// Laid out as Apple's own welcome windows are: the icon, a title, three rows with a
 /// symbol each, the small print, one button. A menu bar app has no window to find
-/// after launch, and without this the first sign of Inscribe was a ribbon in the menu
+/// after launch, and without this the first sign of Inscribe was an icon in the menu
 /// bar, and the first dictation ran into two permission prompts and a key that did
 /// nothing until Accessibility was granted in System Settings.
 struct WelcomeView: View {
@@ -33,10 +33,10 @@ struct WelcomeView: View {
                 .font(.largeTitle.bold())
                 .padding(.top, 16)
 
-            // The menu bar icon itself, so the ribbon is seen before it is looked for.
+            // The menu bar icon itself, so it is seen before it is looked for.
             HStack(spacing: 5) {
-                Text("It lives in the menu bar, as the ribbon")
-                Image(nsImage: MenuBarRibbon.resting)
+                Text("It lives in the menu bar as")
+                Image("MenuBarIcon")
             }
             .foregroundStyle(.secondary)
             .padding(.top, 6)

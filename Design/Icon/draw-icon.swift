@@ -1,14 +1,16 @@
-// The app icon's shapes.
+// The app icon's shapes, and the menu bar's.
 //
 // Two quotation marks stand as the uprights of an N, and a carver's chisel lies
 // across them as its diagonal. This draws the three shapes and writes them as the
-// SVG layers of the Icon Composer document. The tile, the glass, the opacities and
-// the order of the layers live in the document's icon.json, which Icon Composer
-// edits; nothing here touches them.
+// SVG layers of the Icon Composer document, and draws the same N small for the
+// menu bar. The tile, the glass, the opacities and the order of the icon's layers
+// live in the document's icon.json, which Icon Composer edits; nothing here
+// touches them.
 //
-//     swift Design/Icon/draw-icon.swift [Inscribe/AppIcon.icon/Assets]
+//     swift Design/Icon/draw-icon.swift
 //
-// from the repository's root writes marks.svg and chisel.svg into that folder.
+// from the repository's root writes marks.svg and chisel.svg into
+// Inscribe/AppIcon.icon/Assets, and the two menu bar images into the asset catalog.
 
 import AppKit
 
@@ -30,6 +32,13 @@ let chiselProfile: [(CGFloat, CGFloat)] = [(0, 0.4), (0.02, 0.5), (0.74, 0.5), (
 let chiselSkew: CGFloat = 0.8       // the edge cut on a slant, by this many widths
 let drawingScale: CGFloat = 0.84    // the whole drawing, about the tile's centre
 let cornerRadius: CGFloat = 2       // a little off every sharp corner
+
+// The menu bar's N, in points.
+let menuHeight: CGFloat = 16
+let menuGap: CGFloat = 1            // cut between the chisel and the marks it crosses
+let menuChiselAlpha: CGFloat = 0.55 // the chisel lighter than the marks, as on the icon
+let menuTileGlyph: CGFloat = 0.70   // the N's height in the filled tile, as a share of it
+let menuTileRadius: CGFloat = 0.225 // the tile's corner radius, as a share of its side
 
 // MARK: - A mark
 
@@ -154,31 +163,40 @@ func composed(_ shapes: [NSBezierPath], in rect: NSRect) -> [NSBezierPath] {
 }
 
 /// A path as SVG path data, in a `height`-tall box with y running down.
-func svgData(_ path: NSBezierPath, height: CGFloat) -> String {
+func svgData(_ path: CGPath, height: CGFloat, digits: Int) -> String {
     var d = ""
-    for i in 0..<path.elementCount {
-        var p = [NSPoint](repeating: .zero, count: 3)
-        let kind = path.element(at: i, associatedPoints: &p)
-        func f(_ q: NSPoint) -> String { String(format: "%.2f %.2f", q.x, height - q.y) }
-        switch kind {
-        case .moveTo: d += "M \(f(p[0])) "
-        case .lineTo: d += "L \(f(p[0])) "
-        case .curveTo, .cubicCurveTo: d += "C \(f(p[0])) \(f(p[1])) \(f(p[2])) "
-        case .quadraticCurveTo: d += "Q \(f(p[0])) \(f(p[1])) "
-        case .closePath: d += "Z "
+    let format = "%.\(digits)f %.\(digits)f"
+    path.applyWithBlock { element in
+        let p = element.pointee.points
+        func f(_ q: CGPoint) -> String { String(format: format, q.x, height - q.y) }
+        switch element.pointee.type {
+        case .moveToPoint: d += "M \(f(p[0])) "
+        case .addLineToPoint: d += "L \(f(p[0])) "
+        case .addQuadCurveToPoint: d += "Q \(f(p[0])) \(f(p[1])) "
+        case .addCurveToPoint: d += "C \(f(p[0])) \(f(p[1])) \(f(p[2])) "
+        case .closeSubpath: d += "Z "
         @unknown default: break
         }
     }
     return d
 }
 
-/// The paths as one white SVG layer, 1024 to a side.
-func writeSVG(_ paths: [NSBezierPath], to file: String) {
-    let k: CGFloat = 1024 / size
-    var body = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1024\" height=\"1024\" viewBox=\"0 0 1024 1024\">\n"
-    for p in paths { let t = NSAffineTransform(); t.scale(by: k); body += "  <path d=\"\(svgData(t.transform(p), height: 1024))\" fill=\"#FFFFFF\"/>\n" }
+/// Paths as one SVG `width` by `height`, each filled with `fill` at its own opacity.
+func writeSVG(_ layers: [(path: CGPath, alpha: CGFloat)], width: CGFloat, height: CGFloat, fill: String, digits: Int, to file: String) {
+    func g(_ v: CGFloat) -> String { String(format: "%g", v) }
+    var body = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(g(width))\" height=\"\(g(height))\" viewBox=\"0 0 \(g(width)) \(g(height))\">\n"
+    for layer in layers {
+        let opacity = layer.alpha < 1 ? " fill-opacity=\"\(g(layer.alpha))\"" : ""
+        body += "  <path d=\"\(svgData(layer.path, height: height, digits: digits))\" fill=\"\(fill)\"\(opacity)/>\n"
+    }
     body += "</svg>\n"
     try! body.write(toFile: file, atomically: true, encoding: .utf8)
+}
+
+/// The paths as one white layer of the icon document, 1024 to a side.
+func writeIconLayer(_ paths: [NSBezierPath], to file: String) {
+    var k = CGAffineTransform(scaleX: 1024 / size, y: 1024 / size)
+    writeSVG(paths.map { (path: $0.cgPath.copy(using: &k)!, alpha: 1) }, width: 1024, height: 1024, fill: "#FFFFFF", digits: 2, to: file)
 }
 
 // MARK: - The drawing
@@ -200,7 +218,54 @@ let edge = CGPoint(x: centre.x + dx * half, y: centre.y + dy * half)
 let chisel = profiledChisel(from: butt, to: edge, width: chiselWidth, profile: chiselProfile, skew: chiselSkew)
 
 let shapes = composed([left, right, chisel], in: rect)
-let folder = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "Inscribe/AppIcon.icon/Assets"
-writeSVG([shapes[0], shapes[1]], to: "\(folder)/marks.svg")
-writeSVG([shapes[2]], to: "\(folder)/chisel.svg")
-print("Wrote marks.svg and chisel.svg to \(folder)")
+writeIconLayer([shapes[0], shapes[1]], to: "Inscribe/AppIcon.icon/Assets/marks.svg")
+writeIconLayer([shapes[2]], to: "Inscribe/AppIcon.icon/Assets/chisel.svg")
+
+// MARK: - The menu bar
+
+// Template images, which the menu bar tints for light and dark, so only the alpha
+// counts. At rest the marks are solid and the chisel lighter, with a gap cut where
+// it crosses them so it reads as lying over them. While a dictation is heard, the
+// same N is knocked out of a filled tile: the app icon in miniature.
+
+let marksPath = CGMutablePath()
+marksPath.addPath(shapes[0].cgPath)
+marksPath.addPath(shapes[1].cgPath)
+let chiselShape = shapes[2].cgPath
+let glyphBox = marksPath.boundingBoxOfPath.union(chiselShape.boundingBoxOfPath)
+
+/// The N's `path` scaled so the whole N is `height` tall, centred on `centre`.
+func placed(_ path: CGPath, height: CGFloat, centre: CGPoint) -> CGPath {
+    let s = height / glyphBox.height
+    var t = CGAffineTransform(translationX: centre.x, y: centre.y)
+        .scaledBy(x: s, y: s)
+        .translatedBy(x: -glyphBox.midX, y: -glyphBox.midY)
+    return path.copy(using: &t)!
+}
+
+/// The marks with a `gap` cut around the chisel.
+func cut(_ marks: CGPath, around chisel: CGPath, gap: CGFloat) -> CGPath {
+    let clearance = chisel.copy(strokingWithWidth: gap * 2, lineCap: .round, lineJoin: .round, miterLimit: 10).union(chisel)
+    return marks.subtracting(clearance)
+}
+
+let menuWidth = max((glyphBox.width * menuHeight / glyphBox.height).rounded(.up), menuHeight)
+let menuCentre = CGPoint(x: menuWidth / 2, y: menuHeight / 2)
+let catalog = "Inscribe/Helpers/Assets.xcassets"
+
+let restingMarks = placed(marksPath, height: menuHeight, centre: menuCentre)
+let restingChisel = placed(chiselShape, height: menuHeight, centre: menuCentre)
+writeSVG([(cut(restingMarks, around: restingChisel, gap: menuGap), 1), (restingChisel, menuChiselAlpha)],
+         width: menuWidth, height: menuHeight, fill: "#000000", digits: 3,
+         to: "\(catalog)/MenuBarIcon.imageset/MenuBarIcon.svg")
+
+let tile = CGPath(roundedRect: CGRect(x: menuCentre.x - menuHeight / 2, y: 0, width: menuHeight, height: menuHeight),
+                  cornerWidth: menuHeight * menuTileRadius, cornerHeight: menuHeight * menuTileRadius, transform: nil)
+let tileMarks = placed(marksPath, height: menuHeight * menuTileGlyph, centre: menuCentre)
+let tileChisel = placed(chiselShape, height: menuHeight * menuTileGlyph, centre: menuCentre)
+let tileFilled = tile.subtracting(cut(tileMarks, around: tileChisel, gap: menuGap * menuTileGlyph)).subtracting(tileChisel)
+writeSVG([(tileFilled, 1), (tileChisel, 1 - menuChiselAlpha)],
+         width: menuWidth, height: menuHeight, fill: "#000000", digits: 3,
+         to: "\(catalog)/MenuBarIconSpeaking.imageset/MenuBarIconSpeaking.svg")
+
+print("Wrote the icon's layers and the menu bar images")
