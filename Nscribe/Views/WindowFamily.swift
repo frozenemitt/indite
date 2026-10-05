@@ -12,8 +12,10 @@ import AppKit
 /// The measures every window in the family shares.
 enum FamilyMetrics {
     static let width: CGFloat = 520
-    /// From the window's edge to its boxes, its rules and its buttons.
-    static let margin: CGFloat = 24
+    /// From the window's edge to its boxes, its rules and its buttons: the inset a
+    /// grouped form gives its boxes, so the setup page's boxes line up with every
+    /// other window's buttons and rules.
+    static let margin: CGFloat = 20
     /// From the window's edge to the header's text, which is centered and reads
     /// better a little narrower.
     static let headerMargin: CGFloat = 40

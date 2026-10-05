@@ -203,7 +203,6 @@ struct WelcomeView: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
             .scrollDisabled(true)
-            .contentMargins(.horizontal, FamilyMetrics.margin, for: .scrollContent)
 
             WindowButtonBar {
                 Button("Back") {
