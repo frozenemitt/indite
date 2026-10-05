@@ -269,3 +269,13 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-05 Don't narrate the interface. "Saying each item ticks itself once it's
   done is obvious and very amateur. Make sure this is written and drawn as a
   professional app."
+- 2026-10-05 The welcome window follows Apple's own first-run windows: a quiet first
+  page in the manner of Freeform's or Journal's welcome, and a setup page laid out
+  like a System Settings pane, with the icon and the name at the top and numbered
+  steps in a grouped list. System font, the azure accent; the ribbon appears only in
+  Try it, while the user speaks. Chosen over a dark glass band across the top of
+  both pages. "I like your recommendation."
+- 2026-10-05 Every window a user meets around installing and updating is designed
+  as one family. "Be sure to include all windows, like the update window and the
+  what's new in this version window as you're designing so that everything is
+  coherent."
