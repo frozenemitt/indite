@@ -22,26 +22,38 @@ struct WhatsNewView: View {
     let notes: String
     let onContinue: () -> Void
 
+    @FocusState private var continueHasKeyboard: Bool
+
     var body: some View {
         VStack(spacing: 0) {
             WindowHeader(title: "What’s New in Nscribe", subtitle: "Version \(version)")
-                .padding(.top, 34)
+                .padding(.top, 30)
                 .padding(.horizontal, 32)
 
-            ReleaseNotesView(markdown: notes)
-                .frame(height: 260)
-                .padding(.horizontal, 24)
-                .padding(.top, 18)
+            VStack(spacing: 0) {
+                Divider()
+                ReleaseNotesView(markdown: notes, maxHeight: 320)
+                    .padding(.vertical, 16)
+                Divider()
+            }
+            .padding(.horizontal, 32)
+            .padding(.top, 20)
 
             WindowButtonBar {
                 EmptyView()
             } trailing: {
                 Button("Continue", action: onContinue)
                     .keyboardShortcut(.defaultAction)
+                    .focused($continueHasKeyboard)
+                    .focusEffectDisabled()
             }
         }
         .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)
+        .defaultFocus($continueHasKeyboard, true)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            DispatchQueue.main.async { continueHasKeyboard = true }
+        }
     }
 }
 #endif

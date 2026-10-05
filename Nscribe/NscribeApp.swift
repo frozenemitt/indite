@@ -136,6 +136,9 @@ struct NscribeApp: App {
         )
         appDelegate.onReady = { launch.run() }
 
+        // An update waits for a meeting or dictation to end before it restarts the app.
+        AppUpdater.shared.driver.isRecording = { recorder.hasActiveMeeting || coordinator.isRecording }
+
         // Quitting mid-meeting or mid-dictation must not discard it. The dictation is
         // kept in the history, not pasted: during a logout or restart the app in front
         // is not one the words were meant for.

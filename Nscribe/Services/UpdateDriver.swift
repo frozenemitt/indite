@@ -28,6 +28,9 @@ final class UpdateDriver: NSObject {
         case downloading(version: String, received: UInt64, expected: UInt64)
         case preparing(version: String)
         case ready(version: String)
+        /// Downloaded and verified, holding the restart until a meeting or a
+        /// dictation is over.
+        case waitingForRecording(version: String)
         case installing(version: String)
         case failed(title: String, message: String)
     }
@@ -40,6 +43,21 @@ final class UpdateDriver: NSObject {
 
     /// Told when an update found by the daily check is waiting for the person.
     @ObservationIgnored var onUpdateWaiting: ((String) -> Void)?
+
+    /// Whether a meeting or a dictation is under way, which a restart would end.
+    @ObservationIgnored var isRecording: () -> Bool = { false }
+
+    /// When the download began, for the time it has left.
+    @ObservationIgnored private var downloadStarted: Date?
+
+    /// Seconds the download has left, once enough has arrived to say.
+    var secondsRemaining: Double? {
+        guard case .downloading(_, let received, let expected) = phase,
+              let downloadStarted, received > 0, expected > received else { return nil }
+        let elapsed = Date().timeIntervalSince(downloadStarted)
+        guard elapsed > 1 else { return nil }
+        return Double(expected - received) / (Double(received) / elapsed)
+    }
 
     @ObservationIgnored private var choiceReply: ((SPUUserUpdateChoice) -> Void)?
     @ObservationIgnored private var cancellation: (() -> Void)?
@@ -105,7 +123,7 @@ final class UpdateDriver: NSObject {
     private func closedByPerson() {
         switch phase {
         case .checking, .downloading: cancel()
-        case .available, .ready: notNow()
+        case .available, .ready, .waitingForRecording: notNow()
         case .upToDate, .failed: acknowledge()
         case .idle, .preparing, .installing: break
         }
@@ -114,7 +132,8 @@ final class UpdateDriver: NSObject {
     private var currentlyOfferedVersion: String {
         switch phase {
         case .available(let version, _, _), .downloading(let version, _, _),
-             .preparing(let version), .ready(let version), .installing(let version):
+             .preparing(let version), .ready(let version), .waitingForRecording(let version),
+             .installing(let version):
             version
         default:
             "the update"
@@ -183,6 +202,7 @@ extension UpdateDriver: SPUUserDriver {
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
         self.cancellation = cancellation
+        downloadStarted = Date()
         phase = .downloading(version: currentlyOfferedVersion, received: 0, expected: 0)
     }
 
@@ -203,10 +223,29 @@ extension UpdateDriver: SPUUserDriver {
 
     func showExtractionReceivedProgress(_ progress: Double) {}
 
+    /// The person already chose Update Now, so the restart follows without asking
+    /// again, unless it would end a meeting or a dictation. Then it waits for the
+    /// recording to end, and says so.
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
         choiceReply = reply
-        phase = .ready(version: currentlyOfferedVersion)
+        let version = currentlyOfferedVersion
+        guard isRecording() else {
+            phase = .installing(version: version)
+            reply(.install)
+            choiceReply = nil
+            return
+        }
+        phase = .waitingForRecording(version: version)
         present()
+        Task { [weak self] in
+            while let self, case .waitingForRecording = self.phase {
+                if !self.isRecording() {
+                    self.installNow()
+                    return
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
     }
 
     func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {
