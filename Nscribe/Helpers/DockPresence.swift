@@ -15,18 +15,22 @@ enum DockPresence {
     static func start() {
         let center = NotificationCenter.default
         center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { update(closing: nil) }
+            MainActor.assumeIsolated { update() }
         }
-        center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { notification in
-            let closing = notification.object as? NSWindow
-            MainActor.assumeIsolated { update(closing: closing) }
+        // Decided a moment after the close, not at it. Sparkle closes its "Checking…"
+        // window and opens the update window 18 ms later. Deciding at the close made
+        // Nscribe a menu bar app for those 18 ms, macOS moved it out of the front, and
+        // the update window opened behind the app the user was in.
+        center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                MainActor.assumeIsolated { update() }
+            }
         }
     }
 
-    /// - Parameter closing: A window that is about to close and still counts as open.
-    private static func update(closing: NSWindow?) {
+    private static func update() {
         let hasWindow = NSApp.windows.contains { window in
-            window !== closing && window.isVisible && window.styleMask.contains(.titled) && !(window is NSPanel)
+            window.isVisible && window.styleMask.contains(.titled) && !(window is NSPanel)
         }
         let policy: NSApplication.ActivationPolicy = hasWindow ? .regular : .accessory
         guard NSApp.activationPolicy() != policy else { return }
