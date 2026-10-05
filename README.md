@@ -78,7 +78,8 @@ grants carry over.
 - **The ribbon panel** shows the words as they arrive, and says how the dictation
   ended.
 - **Rewriting**, with Apple's on-device model: clean up, summarize, make formal, or a
-  prompt of your own. It can read the text already in the field, so a dictated reply
+  prompt of your own. Simple Clean fixes only what the recognizer got wrong and keeps
+  every other word as you said it. It can read the text already in the field, so a dictated reply
   matches the thread above it.
 - **Words you use**: vocabulary the recognizer should prefer, and replacements for
   words it mishears.
