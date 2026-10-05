@@ -252,3 +252,11 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-05 The welcome window says the Globe key can be changed, with a link to
   Settings → Dictation. "We should make it clear in the welcome screen that that is
   a customization that can be made."
+- 2026-10-05 The welcome window has a second page, Get Set Up: a checklist that
+  ticks itself off (Accessibility, the microphone and speech recognition, and the
+  Globe key's own macOS setting when it is not Do Nothing), a box to try a
+  dictation in, a line saying where everything lives, and the update switch. "I
+  love the ideas for the welcome screen. I want you to incorporate all 3 of them."
+  The reason: "If it's hard to understand how to use it to start out with, then
+  people will give up very quickly." macOS's Accessibility prompt no longer opens
+  over the window at launch; the checklist asks instead.

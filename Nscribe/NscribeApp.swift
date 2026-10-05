@@ -234,6 +234,7 @@ struct NscribeApp: App {
             WelcomeView()
                 .environment(settings)
                 .environment(updater)
+                .environment(coordinator)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -394,10 +395,13 @@ struct NscribeApp: App {
                 // than at launch: the check can read false while launch is finishing,
                 // and asking then showed the prompt to people who had already granted it.
                 var askedForTrust = false
+                // Not while the welcome window is up on a first launch: its checklist
+                // asks, and macOS's prompt used to cover the window two seconds in.
                 while !AccessibilityPermission.isTrusted {
                     try? await Task.sleep(for: .seconds(2))
                     guard !hotkeyMonitor.isRunning else { return }
-                    if !askedForTrust, !AccessibilityPermission.isTrusted {
+                    if !askedForTrust, !AccessibilityPermission.isTrusted,
+                       UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
                         askedForTrust = true
                         AccessibilityPermission.requestTrust()
                     }

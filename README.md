@@ -51,7 +51,8 @@ Signing & Capabilities for the Nscribe target (a free Apple ID works), and press
 
 Nscribe appears in the menu bar as its N, and nowhere else: it joins the Dock and
 Command-Tab only while one of its windows is open. A welcome window says what the
-key does and what macOS will ask for.
+key does, then lists what macOS needs to allow, ticking each item off as it is done,
+and has a box to try a dictation in before it closes.
 
 | Permission | Needed for | Asked |
 |---|---|---|
@@ -61,7 +62,8 @@ key does and what macOS will ask for.
 | **Screen & System Audio Recording** | hearing the other side of a call, in meetings | by you, in System Settings, only if you switch it on |
 
 Set **System Settings → Keyboard → "Press 🌐 key to"** to *Do Nothing*, or macOS will
-also switch your input source each time you dictate. The key can be changed in
+also show emoji or switch your input source each time you dictate. The welcome
+window checks this setting and says so when it needs changing. The key can be changed in
 Settings → Dictation.
 
 If you build the app yourself, each rebuild is a new app to macOS, and it forgets
