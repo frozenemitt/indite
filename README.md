@@ -1,4 +1,4 @@
-# Inscribe
+# Nscribe
 
 [![macOS 27](https://img.shields.io/badge/macOS-27-blue.svg)](https://www.apple.com/macos/)
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
@@ -7,7 +7,7 @@
 **Hold a key, talk, and the words appear where your cursor is. Record a meeting and
 read it back by speaker. Nothing leaves your Mac.**
 
-Inscribe is a dictation and meeting app for the Mac, free and open source. It lives in
+Nscribe is a dictation and meeting app for the Mac, free and open source. It lives in
 the menu bar as an N made of two quotation marks. Transcription runs on Apple's
 speech recognizer, rewriting and summaries on Apple's on-device model, and speaker
 separation on CoreML models that run locally.
@@ -21,21 +21,21 @@ You need **macOS 27** and **Xcode 26**, free from the App Store. Open Xcode once
 installing it, so it can finish setting up its tools.
 
 ```bash
-git clone https://github.com/frozenemitt/inscribe.git
-cd inscribe
+git clone https://github.com/frozenemitt/nscribe.git
+cd nscribe
 Scripts/install.sh
 ```
 
-The script builds Inscribe, puts it in `/Applications`, and launches it. The first
+The script builds Nscribe, puts it in `/Applications`, and launches it. The first
 build downloads one package, FluidAudio, and takes a few minutes; later builds are
 faster.
 
-To build in Xcode instead, open `Inscribe.xcodeproj`, choose your own team under
-Signing & Capabilities for the Inscribe target (a free Apple ID works), and press Run.
+To build in Xcode instead, open `Nscribe.xcodeproj`, choose your own team under
+Signing & Capabilities for the Nscribe target (a free Apple ID works), and press Run.
 
 ### The first launch
 
-Inscribe appears in the menu bar as its N. A welcome window says what the key does
+Nscribe appears in the menu bar as its N. A welcome window says what the key does
 and what macOS will ask for.
 
 | Permission | Needed for | Asked |
@@ -50,7 +50,7 @@ also switch your input source each time you dictate. The key can be changed in
 Settings → Dictation.
 
 If you rebuild the app, macOS treats it as a new app and forgets the Accessibility
-grant: remove Inscribe from the Accessibility list and add it again.
+grant: remove Nscribe from the Accessibility list and add it again.
 
 ## Dictation
 
@@ -90,7 +90,7 @@ grant: remove Inscribe from the Accessibility list and add it again.
 
 Everything runs on this Mac. Audio and text are never uploaded.
 
-Inscribe reaches the network for two things only, and never with your data:
+Nscribe reaches the network for two things only, and never with your data:
 
 - Apple downloads its speech model on first use.
 - The speaker models (pyannote community-1, through FluidAudio) download from
@@ -108,7 +108,7 @@ apps. That also rules out the Mac App Store.
 ## Versions
 
 Releases are tagged `v1.0`, `v1.1` and so on, and listed under
-[Releases](https://github.com/frozenemitt/inscribe/releases). The version goes up by
+[Releases](https://github.com/frozenemitt/nscribe/releases). The version goes up by
 a tenth when something new ships and by a hundredth when only fixes do. The build
 number beside it, in Settings → About, is the number of commits the app was built
 from, so any two builds can be told apart.
@@ -122,8 +122,8 @@ are built.
 ## Project layout
 
 ```
-Inscribe/
-├── ScribeApp.swift          Entry point, the store, the scenes
+Nscribe/
+├── NscribeApp.swift          Entry point, the store, the scenes
 ├── Models/                  SwiftData: meetings, speakers, lines, dictations, the schema
 ├── Services/
 │   ├── GlobalHotkeyMonitor  The dictation key, through a CGEvent tap

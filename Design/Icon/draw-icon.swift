@@ -10,7 +10,7 @@
 //     swift Design/Icon/draw-icon.swift
 //
 // from the repository's root writes marks.svg and chisel.svg into
-// Inscribe/AppIcon.icon/Assets, and the two menu bar images into the asset catalog.
+// Nscribe/AppIcon.icon/Assets, and the two menu bar images into the asset catalog.
 
 import AppKit
 
@@ -218,8 +218,8 @@ let edge = CGPoint(x: centre.x + dx * half, y: centre.y + dy * half)
 let chisel = profiledChisel(from: butt, to: edge, width: chiselWidth, profile: chiselProfile, skew: chiselSkew)
 
 let shapes = composed([left, right, chisel], in: rect)
-writeIconLayer([shapes[0], shapes[1]], to: "Inscribe/AppIcon.icon/Assets/marks.svg")
-writeIconLayer([shapes[2]], to: "Inscribe/AppIcon.icon/Assets/chisel.svg")
+writeIconLayer([shapes[0], shapes[1]], to: "Nscribe/AppIcon.icon/Assets/marks.svg")
+writeIconLayer([shapes[2]], to: "Nscribe/AppIcon.icon/Assets/chisel.svg")
 
 // MARK: - The menu bar
 
@@ -251,7 +251,7 @@ func cut(_ marks: CGPath, around chisel: CGPath, gap: CGFloat) -> CGPath {
 
 let menuWidth = max((glyphBox.width * menuHeight / glyphBox.height).rounded(.up), menuHeight)
 let menuCentre = CGPoint(x: menuWidth / 2, y: menuHeight / 2)
-let catalog = "Inscribe/Helpers/Assets.xcassets"
+let catalog = "Nscribe/Helpers/Assets.xcassets"
 
 let restingMarks = placed(marksPath, height: menuHeight, centre: menuCentre)
 let restingChisel = placed(chiselShape, height: menuHeight, centre: menuCentre)

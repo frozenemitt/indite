@@ -1,11 +1,11 @@
 ---
-name: Inscribe
+name: Nscribe
 version: 1
 ---
 
 ## Overview
 
-Inscribe turns speech into text on the Mac: dictation into any app, and recorded
+Nscribe turns speech into text on the Mac: dictation into any app, and recorded
 meetings kept as transcripts. It is open source and meant for a wide public, not one
 user. It should feel like part of macOS: you notice your words, not the app.
 
@@ -23,7 +23,7 @@ System colors throughout, so light and dark and the user's accent color work.
 The app's own accent color is the ribbon's azure, `#3D99FF`. It colors the selected
 meeting, the default button, switches, and the block behind the line being played.
 The word being said carries no color: it is set in bold.
-The ribbon has the only colors of Inscribe's own, defined in `ListeningBar.swift`:
+The ribbon has the only colors of Nscribe's own, defined in `ListeningBar.swift`:
 
 - Azure `(0.24, 0.60, 1.00)` and violet `(0.62, 0.38, 1.00)` while listening.
 - Amber `(1.00, 0.70, 0.32)` while the AI rewrites.
@@ -87,7 +87,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   it's actually more distracting during a meeting."
 - 2026-10-01 No Skip AI. "I never used the Skip AI button. I always just turn it off
   or on."
-- 2026-10-01 Design for the public. "Ideally Inscribe will be used by millions of
+- 2026-10-01 Design for the public. "Ideally Nscribe will be used by millions of
   people through its open source, sharing on GitHub."
 
 ## Decisions log
@@ -132,7 +132,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-01 Words in a transcript can be corrected. "If we could just be able to
   overwrite what's in the transcript with a correction, that would be an excellent
   addition."
-- 2026-10-01 A window Inscribe opens comes to the front. Of windows opened from the
+- 2026-10-01 A window Nscribe opens comes to the front. Of windows opened from the
   new menu landing behind other apps: "That's very difficult because I don't know
   how to find them. So they need to be surfaced to the front when I open them."
 - 2026-10-01 Space does not play or pause a meeting's audio. "Maybe we don't use the
@@ -165,7 +165,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   the app's green at full strength with white text. "I don't love the green
   highlight of the conversation that's active. Could you propose a more Apple
   aligned view?" Options shown; none chosen yet.
-- 2026-10-01 Green is not Inscribe's color. It is the accent color the project was
+- 2026-10-01 Green is not Nscribe's color. It is the accent color the project was
   created with (#00AB83, in the first commit) and nobody chose it. "I don't know
   where you got this idea of green being our app color, but I don't think that is
   our app color."
@@ -174,7 +174,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   note. Neutral gray for the meeting was offered and turned down. "I think the
   active meeting should be highlighted in an app color, and the green is definitely
   not it." Which color is the app's is not chosen yet.
-- 2026-10-01 Inscribe's color is azure, the ribbon's. Chosen over coral from the app
+- 2026-10-01 Nscribe's color is azure, the ribbon's. Chosen over coral from the app
   icon, which was recommended, and violet: "Azure". Installed the same hour. The
   selected meeting is the system's own highlight, azure at full strength under white
   text. The soft tint under dark text that the mockup showed is not built: the list
@@ -215,7 +215,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   edge ("show me these without the 2 tone"), and the chisel turned the other way.
   "U2 looks great. I think that's it!" The marks read first, the N second, the
   chisel as a tool last, which is the order asked for. Drawn by
-  `Design/Icon/draw-icon.swift`; the document is `Inscribe/AppIcon.icon`.
+  `Design/Icon/draw-icon.swift`; the document is `Nscribe/AppIcon.icon`.
 - 2026-10-04 The menu bar icon is the app icon's N, not the ribbon. "Let's change
   the menu bar icon to the actual AppIcon instead of using the audio waveform." The
   N is drawn from the icon's own shapes as a template image, the chisel lighter than

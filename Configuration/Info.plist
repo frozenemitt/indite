@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Inscribe records system audio during meetings so remote participants are transcribed, not just your microphone.</string>
+	<string>Nscribe records system audio during meetings so remote participants are transcribed, not just your microphone.</string>
 </dict>
 </plist>
