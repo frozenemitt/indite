@@ -101,6 +101,12 @@ struct WelcomeView: View {
         }
         .frame(width: 520, height: 730)
         .defaultFocus($continueHasKeyboard, true)
+        // Asked for again once the window is key. A menu bar app's window appears
+        // before it becomes key, 3.4 s before on the first try, and by then AppKit had
+        // given the keyboard to the first control, the link.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            DispatchQueue.main.async { continueHasKeyboard = true }
+        }
     }
 
     /// The key as Settings names it.
