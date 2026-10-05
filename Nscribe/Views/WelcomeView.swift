@@ -62,7 +62,7 @@ struct WelcomeView: View {
             case .setup: setupPage
             }
         }
-        .frame(width: FamilyMetrics.width, height: 740)
+        .frame(width: FamilyMetrics.width, height: 760)
         .defaultFocus($focus, .continueButton)
         // Asked for again once the window is key. A menu bar app's window appears
         // before it becomes key, 3.4 s before on the first try, and by then AppKit had
@@ -168,7 +168,7 @@ struct WelcomeView: View {
                 Section {
                     step(1, done: hasAccessibility,
                          title: "Accessibility",
-                         detail: "Lets the dictation key work in every app and type for you.",
+                         detail: "Lets the dictation key work, and type, in any app.",
                          button: "Allow…", isNext: !hasAccessibility,
                          action: allowAccessibility)
 
@@ -176,7 +176,7 @@ struct WelcomeView: View {
                          title: "Microphone and Speech Recognition",
                          detail: microphoneAndSpeech == .denied
                             ? "Turned off in System Settings. Dictation needs both."
-                            : "Lets Nscribe hear you and transcribe on this Mac.",
+                            : "Lets Nscribe hear and transcribe you, on this Mac.",
                          button: microphoneAndSpeech == .denied ? "Open Settings…" : "Allow…",
                          isNext: hasAccessibility && microphoneAndSpeech != .granted,
                          action: allowMicrophoneAndSpeech)
@@ -373,7 +373,7 @@ struct WelcomeView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: 96)
+        .frame(height: 84)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
         .padding(.leading, FamilyMetrics.iconColumn + FamilyMetrics.iconSpacing)
