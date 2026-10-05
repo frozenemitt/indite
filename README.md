@@ -1,19 +1,21 @@
 <p align="center">
-  <img src="Docs/Images/icon.png" width="128" height="128" alt="The Nscribe icon: two quotation marks standing as the uprights of an N">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Docs/Images/wordmark-dark.png">
+    <img src="Docs/Images/wordmark-light.png" width="320" height="186" alt="Nscribe">
+  </picture>
 </p>
 
-<h1 align="center">Nscribe</h1>
+<h3 align="center">Hold a key, talk, and the words appear where your cursor is.</h3>
 
-<p align="center">
-  <b>Hold a key, talk, and the words appear where your cursor is.</b><br>
-  Record a meeting and read it back by speaker. Nothing leaves your Mac.
-</p>
+<p align="center">Record a meeting and read it back by speaker. Nothing leaves your Mac.</p>
+
+<br>
 
 <p align="center">
   <a href="https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/github/v/release/frozenemitt/nscribe?style=for-the-badge&label=Download%20for%20macOS&logo=apple&logoColor=1d1d1f&labelColor=f5f5f7&color=d2d2d7">
-      <img alt="Download for macOS" src="https://img.shields.io/github/v/release/frozenemitt/nscribe?style=for-the-badge&label=Download%20for%20macOS&logo=apple&logoColor=white&labelColor=1d1d1f&color=48484a">
+      <source media="(prefers-color-scheme: dark)" srcset="Docs/Images/download-dark.png">
+      <img src="Docs/Images/download-light.png" width="200" height="46" alt="Download for Mac">
     </picture>
   </a>
   <br>
@@ -34,85 +36,19 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
 </p>
 
+<br>
+
 <p align="center">
   <img src="Docs/Images/meeting.png" width="760"
        alt="A meeting in Nscribe: its title, the three speakers, a summary, and the transcript by speaker, with the word being played set in bold">
+  <br>
+  <sub>A meeting, read back by speaker. The word being played is set in bold.</sub>
 </p>
 
 Nscribe is a dictation and meeting app for the Mac, free and open source. It lives in
 the menu bar as an N made of two quotation marks. Transcription runs on Apple's
 speech recognizer, rewriting and summaries on Apple's on-device model, and speaker
 separation on CoreML models that run locally.
-
-## Install
-
-**[Download Nscribe](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)**,
-the latest version, for **macOS 27**. Open the disk image and drag Nscribe into
-Applications. Earlier versions and the notes for each are under
-[Releases](https://github.com/frozenemitt/nscribe/releases).
-
-Dictation and meetings work on any Mac that runs macOS 27. Rewriting, titles and
-summaries also need Apple Intelligence, which is switched on in **System Settings →
-Apple Intelligence & Siri**; Settings → Dictation in Nscribe says whether it is ready.
-
-The first time you open it, macOS says it cannot check Nscribe for malware, and
-offers only Done and Move to Trash. Nscribe is free and is not signed through
-Apple's paid developer program, which is what that check looks for. Click Done,
-open **System Settings → Privacy & Security**, and click **Open Anyway** next to
-the line about Nscribe. macOS asks for your password once.
-
-Nscribe keeps itself up to date. It checks once a day, downloads a new version when
-there is one, and asks you to restart it to finish. Updates keep your permissions,
-and macOS does not ask about malware again. The switch is in the welcome window and
-in Settings → About; **Check for Updates…** in the menu checks at once.
-
-### Build it yourself
-
-You need **Xcode 27**, free from the App Store. Open Xcode once after installing it,
-so it can finish setting up its tools. No Apple Developer Program membership is
-needed.
-
-```bash
-git clone https://github.com/frozenemitt/nscribe.git
-cd nscribe
-Scripts/install.sh
-```
-
-The script builds Nscribe, puts it in `/Applications`, and launches it. The first
-build downloads two packages, FluidAudio and Sparkle, and takes a few minutes; later
-builds are faster.
-
-To build in Xcode instead, open `Nscribe.xcodeproj`, choose your own team under
-Signing & Capabilities for the Nscribe target (a free Apple ID works), and press Run.
-
-### The first launch
-
-Nscribe appears in the menu bar as its N, and nowhere else: it joins the Dock and
-Command-Tab only while one of its windows is open. A welcome window says what the
-key does, then lists what macOS needs to allow, ticking each item off as it is done,
-and has a box to try a dictation in before it closes.
-
-<p align="center">
-  <img src="Docs/Images/menu.png" width="363"
-       alt="Nscribe's menu: Start Dictation, Start Meeting, the rewrite style, the microphone, Meetings, Recent Dictations, Settings and Check for Updates">
-</p>
-
-| Permission | Needed for | Asked |
-|---|---|---|
-| **Microphone** | hearing you | by macOS, the first time you dictate |
-| **Speech Recognition** | turning speech into text | by macOS, the first time you dictate |
-| **Accessibility** | the dictation key, and typing into other apps | by you, in System Settings → Privacy & Security → Accessibility |
-| **Screen & System Audio Recording** | hearing the other side of a call, in meetings | by you, in System Settings, only if you switch it on |
-
-Set **System Settings → Keyboard → "Press 🌐 key to"** to *Do Nothing*, or macOS will
-also show emoji or switch your input source each time you dictate. The welcome
-window checks this setting and says so when it needs changing. The key can be changed in
-Settings → Dictation.
-
-If you build the app yourself, each rebuild is a new app to macOS, and it forgets
-the Accessibility grant: remove Nscribe from the Accessibility list and add it
-again. The downloaded app keeps one signature from version to version, so its
-grants carry over.
 
 ## Dictation
 
@@ -161,13 +97,13 @@ Everything runs on this Mac. Audio and text are never uploaded.
 Nscribe reaches the network for three things only, and never with your data:
 
 - Apple downloads its speech model on first use.
-- Once a day, and when you choose Check for Updates…, Nscribe reads a small file
+- Once a day, and when you choose **Check for Updates…**, Nscribe reads a small file
   attached to the latest GitHub release. The request names the app and its version,
   and nothing else. The update it finds is signed, and Nscribe checks that signature
-  before installing it. The daily check can be switched off in Settings → About.
+  before installing it. The daily check can be switched off in **Settings → About**.
 - The speaker models (pyannote community-1, through FluidAudio) download from
-  HuggingFace only when you press Install Models in Settings → Meetings. Check for
-  Updates reads the repository's public metadata, and the installed files are
+  HuggingFace only when you press **Install Models** in **Settings → Meetings**. **Check for
+  Updates** reads the repository's public metadata, and the installed files are
   verified against the hashes HuggingFace publishes.
 
 Recent dictations are kept in plain text on this Mac. That is a setting, and it can be
@@ -177,12 +113,82 @@ The Mac app is not sandboxed, on purpose: macOS never grants Accessibility to a
 sandboxed process, and without it there is no dictation key and no typing into other
 apps. That also rules out the Mac App Store.
 
+## Install
+
+1. **Download [Nscribe.dmg](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)**,
+   open it, and drag Nscribe into Applications. Earlier versions and the notes for
+   each are under [Releases](https://github.com/frozenemitt/nscribe/releases).
+2. **Open Nscribe.** The first time, macOS says it cannot check Nscribe for malware,
+   and offers only Done and Move to Trash. Nscribe is free and is not signed through
+   Apple's paid developer program, which is what that check looks for. Click Done,
+   open **System Settings → Privacy & Security**, and click **Open Anyway** next to
+   the line about Nscribe. macOS asks for your password once.
+3. **Allow what it asks for.** The welcome window lists each permission and ticks it
+   off as it is done; [The first launch](#the-first-launch) has the details.
+
+Dictation and meetings work on any Mac that runs macOS 27. Rewriting, titles and
+summaries also need Apple Intelligence, which is switched on in **System Settings →
+Apple Intelligence & Siri**; **Settings → Dictation** in Nscribe says whether it is ready.
+
+Nscribe keeps itself up to date. It checks once a day, downloads a new version when
+there is one, and asks you to restart it to finish. Updates keep your permissions,
+and macOS does not ask about malware again. The switch is in the welcome window and
+in **Settings → About**; **Check for Updates…** in the menu checks at once.
+
+### The first launch
+
+Nscribe appears in the menu bar as its N, and nowhere else: it joins the Dock and
+Command-Tab only while one of its windows is open. A welcome window says what the
+key does, then lists what macOS needs to allow, ticking each item off as it is done,
+and has a box to try a dictation in before it closes.
+
+<p align="center">
+  <img src="Docs/Images/menu.png" width="363"
+       alt="Nscribe's menu: Start Dictation, Start Meeting, the rewrite style, the microphone, Meetings, Recent Dictations, Settings and Check for Updates">
+</p>
+
+| Permission | Needed for | Asked |
+|---|---|---|
+| **Microphone** | hearing you | by macOS, the first time you dictate |
+| **Speech Recognition** | turning speech into text | by macOS, the first time you dictate |
+| **Accessibility** | the dictation key, and typing into other apps | by you, in **System Settings → Privacy & Security → Accessibility** |
+| **Screen & System Audio Recording** | hearing the other side of a call, in meetings | by you, in System Settings, only if you switch it on |
+
+Set **System Settings → Keyboard → "Press 🌐 key to"** to *Do Nothing*, or macOS will
+also show emoji or switch your input source each time you dictate. The welcome
+window checks this setting and says so when it needs changing. The key can be changed in
+**Settings → Dictation**.
+
+## Build it yourself
+
+You need **Xcode 27**, free from the App Store. Open Xcode once after installing it,
+so it can finish setting up its tools. No Apple Developer Program membership is
+needed.
+
+```bash
+git clone https://github.com/frozenemitt/nscribe.git
+cd nscribe
+Scripts/install.sh
+```
+
+The script builds Nscribe, puts it in `/Applications`, and launches it. The first
+build downloads two packages, FluidAudio and Sparkle, and takes a few minutes; later
+builds are faster.
+
+To build in Xcode instead, open `Nscribe.xcodeproj`, choose your own team under
+Signing & Capabilities for the Nscribe target (a free Apple ID works), and press Run.
+
+Each rebuild is a new app to macOS, and it forgets
+the Accessibility grant: remove Nscribe from the Accessibility list and add it
+again. The downloaded app keeps one signature from version to version, so its
+grants carry over.
+
 ## Versions
 
 Versions read like 1.0.352. The first two parts are raised by hand: the second when
 something new ships, the first for a change big enough to say so. The third is the
 number of commits the app was built from, so it rises with every build, fixes
-included, and any two builds can be told apart. Settings → About shows it. Releases
+included, and any two builds can be told apart. **Settings → About** shows it. Releases
 are tagged with the whole version, such as `v1.0.352`, and listed under
 [Releases](https://github.com/frozenemitt/nscribe/releases).
 
