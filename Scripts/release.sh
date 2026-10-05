@@ -79,16 +79,18 @@ codesign -d --entitlements - --xml "$app" > "$entitlements" 2>/dev/null
 codesign --force --options runtime --timestamp --entitlements "$entitlements" --sign "$identity" "$app"
 codesign --verify --deep --strict "$app"
 
-# The disk image: the app beside a shortcut to Applications.
+# The disk image: the app beside a shortcut to Applications. Its name carries no
+# version, so releases/latest/download/Nscribe.dmg, the README's download link,
+# always fetches the newest one.
 staging="$build/dmg"
 mkdir -p "$staging"
 ditto "$app" "$staging/Nscribe.app"
 ln -s /Applications "$staging/Applications"
-hdiutil create -volname Nscribe -srcfolder "$staging" -format UDZO -quiet "$out/Nscribe-$version.dmg"
+hdiutil create -volname Nscribe -srcfolder "$staging" -format UDZO -quiet "$out/Nscribe.dmg"
 
 # The appcast names this release alone, which is all Sparkle needs. The notes beside
 # the image become the text of the Software Update and What's New windows.
-cp "$whats_new" "$out/Nscribe-$version.md"
+cp "$whats_new" "$out/Nscribe.md"
 "$build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast" --account nscribe \
   --download-url-prefix "https://github.com/frozenemitt/nscribe/releases/download/v$version/" \
   --embed-release-notes -o "$out/appcast.xml" "$out"
@@ -105,4 +107,4 @@ echo
   cat "$about"
 } > "$out/release-notes.md"
 
-echo "  gh release create v$version --draft --title 'Nscribe $version' --notes-file $out/release-notes.md $out/Nscribe-$version.dmg $out/appcast.xml"
+echo "  gh release create v$version --draft --title 'Nscribe $version' --notes-file $out/release-notes.md $out/Nscribe.dmg $out/appcast.xml"

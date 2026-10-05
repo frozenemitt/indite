@@ -3,6 +3,7 @@
 [![macOS 27](https://img.shields.io/badge/macOS-27-blue.svg)](https://www.apple.com/macos/)
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/frozenemitt/nscribe?label=download)](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)
 
 **Hold a key, talk, and the words appear where your cursor is. Record a meeting and
 read it back by speaker. Nothing leaves your Mac.**
@@ -14,8 +15,10 @@ separation on CoreML models that run locally.
 
 ## Install
 
-Download the disk image, **Nscribe-1.0.*n*.dmg**, from [Releases](https://github.com/frozenemitt/nscribe/releases/latest),
-open it, and drag Nscribe into Applications. It needs **macOS 27**.
+**[Download Nscribe](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)**,
+the latest version, for **macOS 27**. Open the disk image and drag Nscribe into
+Applications. Earlier versions and the notes for each are under
+[Releases](https://github.com/frozenemitt/nscribe/releases).
 
 The first time you open it, macOS says it cannot check Nscribe for malware, and
 offers only Done and Move to Trash. Nscribe is free and is not signed through
