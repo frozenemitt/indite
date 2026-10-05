@@ -77,11 +77,10 @@ struct AboutSettingsView: View {
     }
 
     /// Read from the bundle rather than hard-coded, so this stops matching
-    /// reality the moment the app ships a new version.
+    /// reality the moment the app ships a new version. Its third part is the build
+    /// number: 1.0.352.
     private var appVersionText: String {
-        let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-        return "Version \(shortVersion) (\(build))"
+        "Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")"
     }
 
     @Environment(AppSettings.self) private var settings

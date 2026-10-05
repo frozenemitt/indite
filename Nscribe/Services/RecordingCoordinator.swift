@@ -223,6 +223,16 @@ final class RecordingCoordinator {
     }
 
     #if os(macOS)
+    /// Set while the welcome window's practice box is showing. A dictation made with
+    /// Nscribe in front lands there; otherwise Nscribe is never its own target, and the
+    /// practice words would be typed into the app behind the welcome window.
+    var practiceReceiver: ((String) -> Void)?
+
+    private var practiceIsInFront: Bool {
+        practiceReceiver != nil
+            && NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+    }
+
     /// The app in front, or the one before it when that is Nscribe itself: a click on
     /// Nscribe's menu brings Nscribe forward, and the text is never meant for it.
     /// Dictation History's Insert button uses it too, because Nscribe is frontmost
@@ -293,7 +303,7 @@ final class RecordingCoordinator {
         // does not redirect the text to Nscribe itself. This app decides the prompt
         // and the text around the cursor, both readied while the user talks; the text
         // itself goes to whichever app is in front when it is ready.
-        targetApp = appInFront
+        targetApp = practiceIsInFront ? nil : appInFront
         activeProfile = settings.profile(forBundleIdentifier: targetApp?.bundleIdentifier)
 
         if let activeProfile {
@@ -681,6 +691,13 @@ final class RecordingCoordinator {
         // Dismissed before insertion: the panel is borderless and non-activating, but
         // leaving it up while text lands is visual noise at the wrong moment.
         overlay.hide()
+
+        if practiceIsInFront, let practiceReceiver {
+            practiceReceiver(text)
+            lastDestination = "Nscribe"
+            if let problem { report(.problem(problem)) }
+            return
+        }
 
         // The app in front now, not the one the dictation began in: switching to the
         // app the text is for while still talking is normal. Its profile decides how

@@ -5,9 +5,10 @@
 #
 #   Scripts/release.sh
 #
-# The version is MARKETING_VERSION in the project. Raise it and commit before running.
-# The release notes are Docs/Releases/<version>.md. The tree must be clean, because
-# the build number is the commit count and has to name exactly what shipped.
+# The version is MARKETING_VERSION in the project followed by the build number, which
+# is the commit count: 1.0.352. Raise MARKETING_VERSION by hand for something new. The
+# release notes are Docs/Releases/<MARKETING_VERSION>.md, one file for every 1.0.x.
+# The tree must be clean, because the build number has to name exactly what shipped.
 #
 # The app is signed with the Apple Development certificate the project already uses,
 # so every release keeps one identity and macOS keeps each user's permissions across
@@ -22,11 +23,11 @@
 set -e
 cd "$(dirname "$0")/.."
 
-version=$(xcodebuild -project Nscribe.xcodeproj -scheme Nscribe -configuration Release \
+marketing=$(xcodebuild -project Nscribe.xcodeproj -scheme Nscribe -configuration Release \
   -showBuildSettings 2>/dev/null | sed -n 's/^ *MARKETING_VERSION = //p' | head -1)
-notes="Docs/Releases/$version.md"
+notes="Docs/Releases/$marketing.md"
 if [ ! -f "$notes" ]; then
-  echo "Write the release notes for $version in $notes first."
+  echo "Write the release notes for $marketing in $notes first."
   exit 1
 fi
 if [ -n "$(git status --porcelain)" ]; then
@@ -38,7 +39,7 @@ build="$(mktemp -d)"
 out="$build/release"
 mkdir -p "$out"
 
-echo "Building Nscribe $version… (the full log is in $build/build.log)"
+echo "Building Nscribe $marketing… (the full log is in $build/build.log)"
 if ! xcodebuild -project Nscribe.xcodeproj -scheme Nscribe -configuration Release \
     -destination 'platform=macOS' -derivedDataPath "$build" build > "$build/build.log" 2>&1; then
   grep -E "error:" "$build/build.log" | head -20
@@ -46,6 +47,7 @@ if ! xcodebuild -project Nscribe.xcodeproj -scheme Nscribe -configuration Releas
   exit 1
 fi
 app="$build/Build/Products/Release/Nscribe.app"
+version=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$app/Contents/Info.plist")
 
 identity=$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)
 
