@@ -23,9 +23,10 @@ Apple's paid developer program, which is what that check looks for. Click Done,
 open **System Settings → Privacy & Security**, and click **Open Anyway** next to
 the line about Nscribe. macOS asks for your password once.
 
-Later versions install from inside the app: **Check for Updates…** in the menu, or
-automatically if you allow it when Nscribe asks. They keep your permissions, and
-macOS does not ask about malware again.
+Nscribe keeps itself up to date. It checks once a day, downloads a new version when
+there is one, and asks you to restart it to finish. Updates keep your permissions,
+and macOS does not ask about malware again. The switch is in the welcome window and
+in Settings → About; **Check for Updates…** in the menu checks at once.
 
 ### Build it yourself
 
@@ -48,8 +49,9 @@ Signing & Capabilities for the Nscribe target (a free Apple ID works), and press
 
 ### The first launch
 
-Nscribe appears in the menu bar as its N. A welcome window says what the key does
-and what macOS will ask for.
+Nscribe appears in the menu bar as its N, and nowhere else: it joins the Dock and
+Command-Tab only while one of its windows is open. A welcome window says what the
+key does and what macOS will ask for.
 
 | Permission | Needed for | Asked |
 |---|---|---|
@@ -108,10 +110,10 @@ Everything runs on this Mac. Audio and text are never uploaded.
 Nscribe reaches the network for three things only, and never with your data:
 
 - Apple downloads its speech model on first use.
-- Check for Updates… reads a small file attached to the latest GitHub release,
-  and so does the daily check if you switch it on. The request names the app and
-  its version, and nothing else. The update it finds is signed, and Nscribe checks
-  that signature before installing it.
+- Once a day, and when you choose Check for Updates…, Nscribe reads a small file
+  attached to the latest GitHub release. The request names the app and its version,
+  and nothing else. The update it finds is signed, and Nscribe checks that signature
+  before installing it. The daily check can be switched off in Settings → About.
 - The speaker models (pyannote community-1, through FluidAudio) download from
   HuggingFace only when you press Install Models in Settings → Meetings. Check for
   Updates reads the repository's public metadata, and the installed files are

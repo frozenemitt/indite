@@ -232,3 +232,15 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   unasked, and Sparkle asks on the second launch before making it on a schedule.
   This replaces "people build it from source"; `Scripts/install.sh` stays for those
   who want to.
+- 2026-10-05 Nscribe is a menu bar app. "I definitely want to make this a menu bar
+  only app." It joins the Dock and Command-Tab while any of its windows is open, so
+  the Meetings window can be switched back to and every window has the Edit menu.
+  "When the meetings window is open, I do want it to show in the command tab."
+- 2026-10-05 Updates are on by default, chosen by one switch in the welcome window
+  and kept in Settings → About; Sparkle's own question is gone. "The default should
+  be on." A downloaded update is announced by a notification and a line at the top
+  of the menu that restarts the app to install it. "For most people, they're
+  probably gonna be using this all of the time and never restart it … so we need
+  some way of prompting them to restart."
+- 2026-10-05 Simple Clean is built in. It began as Jonathan's own prompt: "I really
+  like it. It's working very well for me."
