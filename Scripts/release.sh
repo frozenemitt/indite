@@ -47,10 +47,22 @@ if ! xcodebuild -project Nscribe.xcodeproj -scheme Nscribe -configuration Releas
 fi
 app="$build/Build/Products/Release/Nscribe.app"
 
+identity=$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)
+
+# Sparkle's helpers arrive signed without a certificate. Signed with the app's
+# identity, as Sparkle's documentation asks, its installer can trust the update it
+# installs and swap the app in one step; otherwise it moves the old app out and the
+# new one in, with a moment where neither is there.
+sparkle="$app/Contents/Frameworks/Sparkle.framework"
+for helper in XPCServices/Installer.xpc XPCServices/Downloader.xpc Autoupdate Updater.app; do
+  codesign --force --options runtime --timestamp --preserve-metadata=entitlements \
+    --sign "$identity" "$sparkle/Versions/B/$helper"
+done
+codesign --force --options runtime --timestamp --sign "$identity" "$sparkle"
+
 # Xcode signs every build as debuggable. That lets any process the user runs attach
 # to Nscribe and act with its microphone and Accessibility permissions, so the
 # released app is signed again without that one entitlement.
-identity=$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)
 entitlements="$build/entitlements.plist"
 codesign -d --entitlements - --xml "$app" > "$entitlements" 2>/dev/null
 /usr/libexec/PlistBuddy -c "Delete :com.apple.security.get-task-allow" "$entitlements"

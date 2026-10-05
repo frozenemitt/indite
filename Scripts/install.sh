@@ -10,7 +10,7 @@
 #
 #   TEAM=ABCDE12345 Scripts/install.sh
 #
-# The first build downloads the FluidAudio package and takes a few minutes.
+# The first build downloads the FluidAudio and Sparkle packages and takes a few minutes.
 
 set -e
 cd "$(dirname "$0")/.."
@@ -31,12 +31,17 @@ DEVELOPMENT_TEAM = $TEAM
 DEVELOPMENT_TEAM[sdk=macosx*] = $TEAM
 SETTINGS
 else
+  # Without a certificate the app has no team, and the hardened runtime then refuses
+  # to load the Sparkle framework inside it: dyld stops the app at launch with
+  # "different Team IDs". The hardened runtime only matters for Apple's notarization,
+  # which an app built here never goes through.
   cat > "$signing" <<SETTINGS
 CODE_SIGN_STYLE = Manual
 CODE_SIGN_IDENTITY = -
 CODE_SIGN_IDENTITY[sdk=macosx*] = -
 DEVELOPMENT_TEAM =
 DEVELOPMENT_TEAM[sdk=macosx*] =
+ENABLE_HARDENED_RUNTIME = NO
 SETTINGS
 fi
 
