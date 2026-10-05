@@ -86,6 +86,7 @@ struct AboutSettingsView: View {
 
     @Environment(AppSettings.self) private var settings
     @Environment(GlobalHotkeyMonitor.self) private var hotkeyMonitor
+    @Environment(AppUpdater.self) private var updater
 
     /// The last read of the log, kept whole so a failed read shows as one rather
     /// than as an empty log. Nil until the first read returns.
@@ -128,6 +129,10 @@ struct AboutSettingsView: View {
                 Text(appVersionText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                // Sparkle asks this once, on the second launch; here it can be changed.
+                Toggle("Check for updates automatically", isOn: Bindable(updater).automaticallyChecksForUpdates)
+                    .font(.subheadline)
 
                 // Where the app comes from, for an open source app's About.
                 HStack(spacing: 6) {

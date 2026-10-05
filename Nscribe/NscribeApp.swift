@@ -93,6 +93,10 @@ struct NscribeApp: App {
 
     #if os(macOS)
     @State private var hotkeyMonitor = GlobalHotkeyMonitor.shared
+
+    /// Made here, at launch, so Sparkle's scheduled checks start with the app rather
+    /// than when the menu is first opened.
+    @State private var updater = AppUpdater.shared
     #endif
 
     // MARK: - Initialization
@@ -172,6 +176,7 @@ struct NscribeApp: App {
                 .environment(hotkeyMonitor)
                 .environment(meetingRecorder)
                 .environment(AudioInputList.shared)
+                .environment(updater)
                 .modelContainer(Self.modelContainer)
         } label: {
             // The dictation's own AI rewrite, not its whole delivery and not every AI
@@ -195,6 +200,7 @@ struct NscribeApp: App {
                 .environment(coordinator)
                 .environment(hotkeyMonitor)
                 .environment(SoundCatalog.shared)
+                .environment(updater)
                 // The store, as every other scene has it. Changing the history limit
                 // prunes history from here, and without a container the view's model
                 // context has nothing behind it.
