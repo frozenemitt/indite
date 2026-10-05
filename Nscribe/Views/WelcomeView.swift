@@ -161,7 +161,7 @@ struct WelcomeView: View {
                          title: "Microphone and Speech Recognition",
                          detail: microphoneAndSpeech == .denied
                             ? "Turned off in System Settings. Dictation needs both."
-                            : "Lets Nscribe hear and transcribe you, on this Mac.",
+                            : "Lets Nscribe hear and transcribe you.",
                          button: microphoneAndSpeech == .denied ? "Open Settings…" : "Allow…",
                          isNext: hasAccessibility && microphoneAndSpeech != .granted,
                          action: allowMicrophoneAndSpeech)
@@ -267,6 +267,9 @@ struct WelcomeView: View {
                     .frame(width: Self.rowButtonWidth)
             }
         }
+        // The button's height whether or not it is there, so finishing a step never
+        // moves the rows below it.
+        .frame(minHeight: 28)
     }
 
     private var keyRow: some View {
