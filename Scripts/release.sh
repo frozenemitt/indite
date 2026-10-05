@@ -50,7 +50,7 @@ app="$build/Build/Products/Release/Nscribe.app"
 # Xcode signs every build as debuggable. That lets any process the user runs attach
 # to Nscribe and act with its microphone and Accessibility permissions, so the
 # released app is signed again without that one entitlement.
-identity=$(codesign -dv "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)
+identity=$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)
 entitlements="$build/entitlements.plist"
 codesign -d --entitlements - --xml "$app" > "$entitlements" 2>/dev/null
 /usr/libexec/PlistBuddy -c "Delete :com.apple.security.get-task-allow" "$entitlements"
