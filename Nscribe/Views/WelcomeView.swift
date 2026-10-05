@@ -13,6 +13,7 @@ import AppKit
 /// nothing until Accessibility was granted in System Settings.
 struct WelcomeView: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(AppUpdater.self) private var updater
     @Environment(\.dismissWindow) private var dismissWindow
 
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
@@ -68,6 +69,22 @@ struct WelcomeView: View {
             .foregroundStyle(.secondary)
             .frame(width: 400)
 
+            // On unless the user turns it off: a fix that waits for someone to look for
+            // it rarely arrives.
+            VStack(spacing: 4) {
+                Toggle("Update automatically", isOn: Binding(
+                    get: { updater.updatesAutomatically },
+                    set: { updater.setUpdatesAutomatically($0) }
+                ))
+                Text("Nscribe checks GitHub once a day and asks you to restart when an update is ready.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: 400)
+            .padding(.top, 20)
+
             Button {
                 hasSeenWelcome = true
                 dismissWindow()
@@ -82,7 +99,7 @@ struct WelcomeView: View {
             .padding(.top, 20)
             .padding(.bottom, 32)
         }
-        .frame(width: 520, height: 660)
+        .frame(width: 520, height: 730)
         .defaultFocus($continueHasKeyboard, true)
     }
 

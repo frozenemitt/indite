@@ -4,6 +4,12 @@
 <dict>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Nscribe records system audio during meetings so remote participants are transcribed, not just your microphone.</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/frozenemitt/nscribe/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>

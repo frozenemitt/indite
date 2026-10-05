@@ -130,9 +130,12 @@ struct AboutSettingsView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                // Sparkle asks this once, on the second launch; here it can be changed.
-                Toggle("Check for updates automatically", isOn: Bindable(updater).automaticallyChecksForUpdates)
-                    .font(.subheadline)
+                // The welcome window asks this first; here it can be changed.
+                Toggle("Update automatically", isOn: Binding(
+                    get: { updater.updatesAutomatically },
+                    set: { updater.setUpdatesAutomatically($0) }
+                ))
+                .font(.subheadline)
 
                 // Where the app comes from, for an open source app's About.
                 HStack(spacing: 6) {
