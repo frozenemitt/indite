@@ -1,8 +1,9 @@
 # Nscribe
 
 [![macOS 27](https://img.shields.io/badge/macOS-27-blue.svg)](https://www.apple.com/macos/)
-[![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
+[![Swift 6](https://img.shields.io/badge/Swift-6-orange.svg)](https://swift.org)
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/frozenemitt/nscribe?label=download)](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)
 
 **Hold a key, talk, and the words appear where your cursor is. Record a meeting and
 read it back by speaker. Nothing leaves your Mac.**
@@ -14,8 +15,14 @@ separation on CoreML models that run locally.
 
 ## Install
 
-Download the disk image, **Nscribe-1.0.*n*.dmg**, from [Releases](https://github.com/frozenemitt/nscribe/releases/latest),
-open it, and drag Nscribe into Applications. It needs **macOS 27**.
+**[Download Nscribe](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)**,
+the latest version, for **macOS 27**. Open the disk image and drag Nscribe into
+Applications. Earlier versions and the notes for each are under
+[Releases](https://github.com/frozenemitt/nscribe/releases).
+
+Dictation and meetings work on any Mac that runs macOS 27. Rewriting, titles and
+summaries also need Apple Intelligence, which is switched on in **System Settings →
+Apple Intelligence & Siri**; Settings → Dictation in Nscribe says whether it is ready.
 
 The first time you open it, macOS says it cannot check Nscribe for malware, and
 offers only Done and Move to Trash. Nscribe is free and is not signed through
@@ -30,7 +37,7 @@ in Settings → About; **Check for Updates…** in the menu checks at once.
 
 ### Build it yourself
 
-You need **Xcode 26**, free from the App Store. Open Xcode once after installing it,
+You need **Xcode 27**, free from the App Store. Open Xcode once after installing it,
 so it can finish setting up its tools. No Apple Developer Program membership is
 needed.
 
