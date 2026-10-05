@@ -193,6 +193,29 @@ final class PromptConfiguration {
             """,
             isBuiltIn: true
         ),
+        // Began as a custom prompt and became built-in on 2026-10-05. It keeps that
+        // prompt's id, so a selection or app profile that pointed at it still does,
+        // and `loadPrompts` drops the stored custom copy.
+        Prompt(
+            id: UUID(uuidString: "E21F58B2-BF22-4CD2-9E28-61815D574548")!,
+            name: "Simple Clean",
+            systemPrompt: "You correct transcription errors and change nothing else.",
+            userTemplate: """
+            Fix only what the transcriber got wrong:
+            - A misheard word: a sound-alike that makes the sentence wrong (there/their, to/too). Replace only that word.
+            - A word repeated by accident ("the the").
+            - Punctuation and sentence breaks that don't fit how the words are meant.
+            - An ellipsis (…) at a pause: replace it with the punctuation the sentence needs, or remove it.
+
+            Keep every other word exactly as spoken, in the same order, including filler.
+            Do not rephrase, add, drop or reorder words, and do not change the tone.
+            When unsure, leave the text as it is.
+            """,
+            isBuiltIn: true,
+            temperature: 0.3,
+            samplingMode: .greedy,
+            keepsWords: true
+        ),
         Prompt(
             id: summarizePromptId,
             name: "Summarize",
@@ -401,7 +424,10 @@ final class PromptConfiguration {
 
         if let data = UserDefaults.standard.data(forKey: localKey) {
             let customPrompts = Self.decodePromptsSkippingFailures(from: data)
-            loadedPrompts.append(contentsOf: customPrompts.filter { !$0.isBuiltIn })
+            // A custom prompt that has since become built-in is kept under its old id,
+            // and the built-in copy wins.
+            let builtInIds = Set(Self.builtInPrompts.map(\.id))
+            loadedPrompts.append(contentsOf: customPrompts.filter { !$0.isBuiltIn && !builtInIds.contains($0.id) })
             Log.prompts.notice("Loaded \(customPrompts.count, privacy: .public) custom prompts")
         }
 
