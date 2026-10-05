@@ -61,6 +61,9 @@ Signing & Capabilities for the Nscribe target (a free Apple ID works), and press
 
 ### The first launch
 
+<img src="Docs/Images/menu.png" width="363" align="right"
+     alt="Nscribe's menu: Start Dictation, Start Meeting, the rewrite style, the microphone, Meetings, Recent Dictations, Settings and Check for Updates">
+
 Nscribe appears in the menu bar as its N, and nowhere else: it joins the Dock and
 Command-Tab only while one of its windows is open. A welcome window says what the
 key does, then lists what macOS needs to allow, ticking each item off as it is done,
@@ -84,6 +87,11 @@ again. The downloaded app keeps one signature from version to version, so its
 grants carry over.
 
 ## Dictation
+
+<p align="center">
+  <img src="Docs/Images/dictation.png" width="510"
+       alt="The ribbon panel during a dictation, showing the words as they arrive">
+</p>
 
 - **Hold the Globe key and talk**, or press once to start and again to stop. Escape
   discards a dictation.
