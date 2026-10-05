@@ -222,3 +222,13 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   the marks with a gap where it crosses them; while a dictation is heard the N is
   knocked out of a filled tile, which replaces the swollen ribbon. The ribbon stays
   in the dictation panel.
+- 2026-10-05 Nscribe is downloaded as a disk image from GitHub Releases and updates
+  itself through Sparkle. "I'm not paying Apple for sharing free software." "Add the
+  in-app updater." Without a Developer ID, the first open goes through Open Anyway
+  in System Settings; updates installed by Sparkle are not marked as downloaded, so
+  they open without asking. Releases are signed with the Apple Development
+  certificate the project already uses, so every version has one identity and keeps
+  each user's permissions. The update check is the one network call Nscribe makes
+  unasked, and Sparkle asks on the second launch before making it on a schedule.
+  This replaces "people build it from source"; `Scripts/install.sh` stays for those
+  who want to.
