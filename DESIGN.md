@@ -260,3 +260,12 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   The reason: "If it's hard to understand how to use it to start out with, then
   people will give up very quickly." macOS's Accessibility prompt no longer opens
   over the window at launch; the checklist asks instead.
+- 2026-10-05 The welcome window's first page is only a welcome and a short summary
+  of what Nscribe does; everything practical, the key choice included, moves to the
+  second page, a guided setup. Both pages carry the icon and the name. "The 1st page
+  should just be a very generic welcome and quick summary of what the app does. The
+  second page should be a very helpful, guided setup page." "Make sure the 2nd page
+  is also branded with the logo and the name."
+- 2026-10-05 Don't narrate the interface. "Saying each item ticks itself once it's
+  done is obvious and very amateur. Make sure this is written and drawn as a
+  professional app."
