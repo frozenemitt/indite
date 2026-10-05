@@ -30,13 +30,8 @@ struct WhatsNewView: View {
                 .padding(.top, 30)
                 .padding(.horizontal, FamilyMetrics.headerMargin)
 
-            VStack(spacing: 0) {
-                Divider()
-                ReleaseNotesView(markdown: notes, maxHeight: 320)
-                    .padding(.vertical, 16)
-                Divider()
-            }
-            .padding(.horizontal, FamilyMetrics.margin)
+            ReleaseNotesView(markdown: notes, maxHeight: 320)
+                .padding(.horizontal, FamilyMetrics.margin)
             .padding(.top, 20)
 
             WindowButtonBar {

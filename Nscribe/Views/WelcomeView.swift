@@ -85,7 +85,7 @@ struct WelcomeView: View {
             Spacer(minLength: 0)
 
             WindowHeader(title: "Welcome to Nscribe",
-                         subtitle: "Dictation and meeting transcripts, made on your Mac.")
+                         subtitle: "Dictation and meeting transcripts.")
                 .padding(.horizontal, FamilyMetrics.headerMargin)
 
             VStack(alignment: .leading, spacing: 24) {
@@ -115,7 +115,6 @@ struct WelcomeView: View {
                 .focused($focus, equals: .continueButton)
                 .focusEffectDisabled()
             }
-            .overlay { pageDots(current: 0) }
         }
     }
 
@@ -135,20 +134,6 @@ struct WelcomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    /// Two dots under the window, the current page filled: Continue leads somewhere.
-    private func pageDots(current: Int) -> some View {
-        HStack(spacing: 7) {
-            ForEach(0..<2) { index in
-                Circle()
-                    .fill(index == current ? Color.primary.opacity(0.55) : Color.primary.opacity(0.18))
-                    .frame(width: 6, height: 6)
-            }
-        }
-        .padding(.top, 2)
-        .accessibilityElement()
-        .accessibilityLabel("Page \(current + 1) of 2")
     }
 
     // MARK: - Setup
@@ -192,7 +177,7 @@ struct WelcomeView: View {
 
                 Section {
                     menuBarRow
-                    row(symbol: "arrow.down.circle") {
+                    row {
                         Toggle("Update Nscribe automatically", isOn: Binding(
                             get: { updater.updatesAutomatically },
                             set: { updater.setUpdatesAutomatically($0) }
@@ -223,7 +208,6 @@ struct WelcomeView: View {
                         .focusEffectDisabled()
                 }
             }
-            .overlay { pageDots(current: 1) }
         }
         .task {
             showsGlobeKeySetting = settings.useGlobeKey && !Self.globeKeyDoesNothing
@@ -273,9 +257,7 @@ struct WelcomeView: View {
             Spacer(minLength: 8)
 
             if done {
-                Text("Allowed")
-                    .foregroundStyle(.secondary)
-                    .frame(width: Self.rowButtonWidth, alignment: .trailing)
+                EmptyView()
             } else if isNext {
                 Button(action: action) { Text(button).frame(maxWidth: .infinity) }
                     .buttonStyle(.borderedProminent)
@@ -288,7 +270,7 @@ struct WelcomeView: View {
     }
 
     private var keyRow: some View {
-        row(symbol: "keyboard") {
+        row {
             HStack(spacing: 10) {
                 Text("Dictation key")
                 Spacer()
@@ -299,14 +281,12 @@ struct WelcomeView: View {
         }
     }
 
-    /// A row whose symbol sits in the shared column, so its label starts on the same
+    /// A row with nothing in the shared column, so its label still starts on the same
     /// edge as every other row's.
-    private func row<Content: View>(symbol: String, @ViewBuilder content: () -> Content) -> some View {
+    private func row<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         HStack(spacing: FamilyMetrics.iconSpacing) {
-            Image(systemName: symbol)
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-                .frame(width: FamilyMetrics.iconColumn)
+            Color.clear
+                .frame(width: FamilyMetrics.iconColumn, height: 1)
             content()
         }
     }

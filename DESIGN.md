@@ -285,3 +285,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   when a permission is granted, finished steps at full contrast, the restart-wait
   buttons named for what they do, and one width and one margin across the windows.
   "Keep going with the five fixes."
+- 2026-10-05 Removed from the window family: the "Allowed" labels beside the checks,
+  the page dots, "made on your Mac" in the welcome subtitle, the symbols that only
+  filled the alignment column, the rules around release notes, and the lines under
+  "Checking for Updates…" and "Preparing…". "Remove all seven."

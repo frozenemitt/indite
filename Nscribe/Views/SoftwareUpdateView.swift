@@ -53,14 +53,14 @@ struct SoftwareUpdateView: View {
 
     private var subtitle: String? {
         switch driver.phase {
-        case .idle, .checking: "Looking for a newer version on GitHub."
+        case .idle, .checking: nil
         case .upToDate: "Version \(UpdateDriver.currentVersion) is the newest version."
         case .available(_, _, let infoURL):
             infoURL == nil
                 ? "You have version \(UpdateDriver.currentVersion)."
                 : "This version is described on the Nscribe website."
         case .downloading: "Nscribe will restart when the download finishes."
-        case .preparing: "Checking the download’s signature."
+        case .preparing: nil
         case .ready: "Restart Nscribe to finish updating."
         case .waitingForRecording: "Nscribe will restart when your recording ends."
         case .installing: "Nscribe will open again in a moment."
@@ -99,12 +99,7 @@ struct SoftwareUpdateView: View {
             .progressViewStyle(.linear)
 
         case .available(_, let notes, _) where !notes.isEmpty:
-            VStack(spacing: 0) {
-                Divider()
-                ReleaseNotesView(markdown: notes)
-                    .padding(.vertical, 16)
-                Divider()
-            }
+            ReleaseNotesView(markdown: notes)
 
         default:
             EmptyView()
