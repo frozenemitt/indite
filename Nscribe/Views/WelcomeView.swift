@@ -7,50 +7,53 @@ import AppKit
 
 /// The window a new user meets first. Shown on the first launch and never again.
 ///
-/// Two pages. The first is laid out as Apple's own welcome windows are: the icon, a
-/// title, three rows with a symbol each, one button. The second gets the user to a
-/// dictation that works before the window closes.
+/// Two pages, drawn like the rest of the family in `WindowFamily.swift`. The first is
+/// a welcome in the manner of Apple's own: the icon, the name, what Nscribe does. The
+/// second is a setup pane in the manner of System Settings, and it gets the person to
+/// a dictation that works before the window closes.
 ///
-/// It used to end at the first page, with the permissions in small print. A menu bar
-/// app has no window to find after launch, and the first dictation then ran into a key
-/// that did nothing until Accessibility was granted, two permission prompts that ate
-/// the first try, and, on most Macs, the emoji picker opening with every press of the
-/// Globe key. Each of those failed with nothing to say why, and a new user gives up
-/// at the first one.
+/// It used to stop at a single page, with the permissions in small print. The first
+/// dictation then ran into a key that did nothing until Accessibility was granted, two
+/// permission prompts that used up the first try, and, on most Macs, the emoji picker
+/// opening with every press of the Globe key. Each failed with nothing to say why.
 struct WelcomeView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AppUpdater.self) private var updater
     @Environment(RecordingCoordinator.self) private var coordinator
+    @Environment(TranscriptionEngine.self) private var engine
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openSettings) private var openSettings
 
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
-    /// Whether the checklist has shown macOS's Accessibility prompt. macOS shows it
-    /// once; after that the button opens System Settings instead.
+    /// Whether setup has shown macOS's Accessibility prompt. macOS shows it once;
+    /// after that the button opens System Settings instead.
     @AppStorage("askedForAccessibility") private var askedForAccessibility = false
 
     private enum Page { case welcome, setup }
     @State private var page = Page.welcome
 
-    /// The page's main button has the keyboard. With keyboard navigation on, the first
-    /// control in the window took it, and that was a link, which opened with a focus
-    /// ring around it.
+    /// The page's main button has the keyboard, without a focus ring of its own beside
+    /// the blue it already has. With keyboard navigation on, the first control in the
+    /// window took the keyboard, and that was a link, which opened ringed.
     private enum Focus { case continueButton, doneButton }
     @FocusState private var focus: Focus?
 
-    // The checklist, read again every second while the setup page shows, since each
-    // item is finished in System Settings or in a macOS prompt, not here.
+    // Read again every second while setup shows, since each step is finished in System
+    // Settings or in a macOS prompt, not here.
     @State private var hasAccessibility = false
     @State private var microphoneAndSpeech = PermissionState.notAsked
     @State private var globeKeyIsFree = true
-    /// Decided once, as the page opens, so the row stays and turns green when fixed
+    /// Decided once, as setup opens, so the line stays and turns green when fixed
     /// rather than disappearing.
-    @State private var showsGlobeKeyRow = false
+    @State private var showsGlobeKeySetting = false
 
     @State private var practiceText = ""
 
     private enum PermissionState { case notAsked, granted, denied }
+
+    /// Every row's button is as wide as the widest, so their edges line up.
+    private static let rowButtonWidth: CGFloat = 112
 
     var body: some View {
         ZStack {
@@ -59,11 +62,11 @@ struct WelcomeView: View {
             case .setup: setupPage
             }
         }
-        .frame(width: 520, height: 700)
+        .frame(width: FamilyMetrics.width, height: 760)
         .defaultFocus($focus, .continueButton)
         // Asked for again once the window is key. A menu bar app's window appears
         // before it becomes key, 3.4 s before on the first try, and by then AppKit had
-        // given the keyboard to the first control, the link.
+        // given the keyboard to the first control.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             DispatchQueue.main.async { focus = page == .welcome ? .continueButton : .doneButton }
         }
@@ -79,150 +82,135 @@ struct WelcomeView: View {
 
     private var welcomePage: some View {
         VStack(spacing: 0) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 128, height: 128)
-                .padding(.top, 40)
+            Spacer(minLength: 0)
 
-            Text("Welcome to Nscribe")
-                .font(.largeTitle.bold())
-                .padding(.top, 16)
+            WindowHeader(title: "Welcome to Nscribe",
+                         subtitle: "Dictation and meeting transcripts.")
+                .padding(.horizontal, FamilyMetrics.headerMargin)
 
-            // The menu bar icon itself, so it is seen before it is looked for.
-            HStack(spacing: 5) {
-                Text("It lives in the menu bar as")
-                Image("MenuBarIcon")
-            }
-            .foregroundStyle(.secondary)
-            .padding(.top, 6)
-
-            VStack(alignment: .leading, spacing: 20) {
-                // The Globe key is only where Nscribe starts, and a new user had no way
-                // to know another key could be chosen.
-                row("globe", "Dictate into any app",
-                    "\(howToDictate("talk")) The words are typed where your cursor is.",
-                    link: ("Choose a different key…", chooseKey))
-                row("person.2.wave.2", "Record meetings",
-                    "Start one from the menu bar. It comes back split by speaker, titled and summarized.")
-                row("lock.shield", "Everything stays on your Mac",
-                    "Transcription, rewriting and speaker separation all run here. Nothing is uploaded.")
+            VStack(alignment: .leading, spacing: 24) {
+                feature("waveform", "Dictate anywhere",
+                        "Talk instead of typing. Your words appear at the cursor, in any app.")
+                feature("person.2.wave.2", "Meetings, written down",
+                        "Record a call or a conversation. Nscribe separates the speakers and writes a title and a summary.")
+                feature("lock.shield", "Private by design",
+                        "Speech recognition, rewriting and speaker separation all run on this Mac. Nothing is uploaded.")
             }
             .frame(width: 400)
-            .padding(.top, 36)
+            .padding(.top, 44)
 
-            Spacer(minLength: 24)
+            // A little more room below than above, so the content sits at the eye's
+            // center rather than the window's.
+            Spacer(minLength: 0)
+            Spacer(minLength: 0)
 
-            Button {
-                page = .setup
-                focus = .doneButton
-            } label: {
-                Text("Continue")
-                    .frame(width: 200)
+            WindowButtonBar {
+                EmptyView()
+            } trailing: {
+                Button("Continue") {
+                    page = .setup
+                    focus = .doneButton
+                }
+                .keyboardShortcut(.defaultAction)
+                .focused($focus, equals: .continueButton)
+                .focusEffectDisabled()
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.extraLarge)
-            .keyboardShortcut(.defaultAction)
-            .focused($focus, equals: .continueButton)
-            .padding(.bottom, 32)
+        }
+    }
+
+    private func feature(_ symbol: String, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            // Gray: on this page only the button is for pressing.
+            Image(systemName: symbol)
+                .font(.system(size: 24, weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(width: 36, height: 30)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
     // MARK: - Setup
 
+    private var setupIsComplete: Bool {
+        hasAccessibility && microphoneAndSpeech == .granted
+    }
+
     private var setupPage: some View {
         VStack(spacing: 0) {
-            Text("Get Set Up")
-                .font(.largeTitle.bold())
-                .padding(.top, 36)
+            WindowHeader(title: "Set Up Nscribe",
+                         subtitle: "Allow two permissions, then try your first dictation.")
+                .padding(.top, 30)
+                .padding(.horizontal, FamilyMetrics.headerMargin)
 
-            Text("Each item ticks itself off once it is done.")
-                .foregroundStyle(.secondary)
-                .padding(.top, 6)
+            Form {
+                Section {
+                    step(1, done: hasAccessibility,
+                         title: "Accessibility",
+                         detail: "Lets the dictation key work, and type, in any app.",
+                         button: "Allow…", isNext: !hasAccessibility,
+                         action: allowAccessibility)
 
-            VStack(alignment: .leading, spacing: 16) {
-                checklistItem(
-                    done: hasAccessibility,
-                    title: "Allow the dictation key",
-                    detail: "Accessibility lets Nscribe hear the key and type into other apps.",
-                    button: "Allow…", action: allowAccessibility)
+                    step(2, done: microphoneAndSpeech == .granted,
+                         title: "Microphone and Speech Recognition",
+                         detail: microphoneAndSpeech == .denied
+                            ? "Turned off in System Settings. Dictation needs both."
+                            : "Lets Nscribe hear and transcribe you.",
+                         button: microphoneAndSpeech == .denied ? "Open Settings…" : "Allow…",
+                         isNext: hasAccessibility && microphoneAndSpeech != .granted,
+                         action: allowMicrophoneAndSpeech)
+                }
 
-                checklistItem(
-                    done: microphoneAndSpeech == .granted,
-                    title: "Allow the microphone and speech recognition",
-                    detail: microphoneAndSpeech == .denied
-                        ? "One of them was turned down. Turn it on in System Settings."
-                        : "macOS asks once for each.",
-                    button: microphoneAndSpeech == .denied ? "Open Settings…" : "Allow…",
-                    action: allowMicrophoneAndSpeech)
+                Section("Try It") {
+                    keyRow
+                    if showsGlobeKeySetting {
+                        globeKeyRow
+                    }
+                    practiceBox
+                }
 
-                if showsGlobeKeyRow {
-                    checklistItem(
-                        done: globeKeyIsFree,
-                        title: "Free up the Globe key",
-                        detail: "macOS also uses it to show emoji or switch input. In Keyboard settings, set “Press 🌐 key to” to Do Nothing.",
-                        button: "Open Keyboard Settings…", action: openKeyboardSettings)
+                Section {
+                    menuBarRow
+                    row {
+                        Toggle("Update Nscribe automatically", isOn: Binding(
+                            get: { updater.updatesAutomatically },
+                            set: { updater.setUpdatesAutomatically($0) }
+                        ))
+                    }
                 }
             }
-            .frame(width: 440)
-            .padding(.top, 24)
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .scrollDisabled(true)
 
-            practiceBox
-                .frame(width: 440)
-                .padding(.top, 22)
-
-            // Where everything is found once this window has gone.
-            HStack(spacing: 5) {
-                Text("Meetings, Settings and recent dictations are in the")
-                Image("MenuBarIcon")
-                Text("menu.")
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .padding(.top, 18)
-
-            Spacer(minLength: 16)
-
-            // On unless the user turns it off: a fix that waits for someone to look for
-            // it rarely arrives.
-            VStack(spacing: 4) {
-                Toggle("Update automatically", isOn: Binding(
-                    get: { updater.updatesAutomatically },
-                    set: { updater.setUpdatesAutomatically($0) }
-                ))
-                Text("Nscribe checks GitHub once a day and asks you to restart when an update is ready.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(width: 400)
-
-            HStack {
+            WindowButtonBar {
                 Button("Back") {
                     page = .welcome
                     focus = .continueButton
                 }
-                .controlSize(.large)
-
-                Spacer()
-
-                Button {
-                    dismissWindow()
-                } label: {
-                    Text("Done")
-                        .frame(width: 120)
+            } trailing: {
+                // Prominent only once Nscribe can work. Before that, Done still closes
+                // the window, and the steps above stay the way forward.
+                if setupIsComplete {
+                    Button("Done") { dismissWindow() }
+                        .keyboardShortcut(.defaultAction)
+                        .focused($focus, equals: .doneButton)
+                        .focusEffectDisabled()
+                } else {
+                    Button("Done") { dismissWindow() }
+                        .focused($focus, equals: .doneButton)
+                        .focusEffectDisabled()
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.extraLarge)
-                .keyboardShortcut(.defaultAction)
-                .focused($focus, equals: .doneButton)
             }
-            .frame(width: 440)
-            .padding(.top, 18)
-            .padding(.bottom, 28)
         }
         .task {
-            showsGlobeKeyRow = settings.useGlobeKey && !Self.globeKeyDoesNothing
+            showsGlobeKeySetting = settings.useGlobeKey && !Self.globeKeyDoesNothing
             while !Task.isCancelled {
                 refresh()
                 try? await Task.sleep(for: .seconds(1))
@@ -236,40 +224,30 @@ struct WelcomeView: View {
         .onDisappear { coordinator.practiceReceiver = nil }
     }
 
-    /// The place to try the key before the window closes. Read only: the words arrive
-    /// the way they will in any app, from the key and the microphone.
-    private var practiceBox: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Try it")
-                .font(.headline)
-
-            Text(practiceText.isEmpty ? practicePrompt : practiceText)
-                .foregroundStyle(practiceText.isEmpty ? .secondary : .primary)
-                .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading)
-                .padding(10)
-                .background(.background, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
-                .textSelection(.enabled)
-        }
-    }
-
-    private var practicePrompt: String {
-        hasAccessibility
-            ? "\(howToDictate("say something")) The words appear here."
-            : "Allow the dictation key first, then try it here."
-    }
-
-    private func checklistItem(done: Bool, title: String, detail: String,
-                               button: String, action: @escaping () -> Void) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 20))
-                .foregroundStyle(done ? Color.green : Color.secondary)
-                .frame(width: 24)
+    /// One numbered step: a gray number until it is done, a green check after. Only
+    /// the next step's button is prominent.
+    private func step(_ number: Int, done: Bool, title: String, detail: String,
+                      button: String, isNext: Bool, action: @escaping () -> Void) -> some View {
+        HStack(spacing: FamilyMetrics.iconSpacing) {
+            ZStack {
+                if done {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white, .green)
+                } else {
+                    Circle()
+                        .strokeBorder(.tertiary, lineWidth: 1.5)
+                        .frame(width: 20, height: 20)
+                    Text("\(number)")
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: FamilyMetrics.iconColumn)
+            .accessibilityLabel(done ? "Done" : "Step \(number)")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.headline)
                 Text(detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -278,11 +256,131 @@ struct WelcomeView: View {
 
             Spacer(minLength: 8)
 
-            if !done {
-                Button(button, action: action)
+            if done {
+                EmptyView()
+            } else if isNext {
+                Button(action: action) { Text(button).frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent)
+                    .frame(width: Self.rowButtonWidth)
+            } else {
+                Button(action: action) { Text(button).frame(maxWidth: .infinity) }
+                    .frame(width: Self.rowButtonWidth)
+            }
+        }
+        // The button's height whether or not it is there, so finishing a step never
+        // moves the rows below it.
+        .frame(minHeight: 28)
+    }
+
+    private var keyRow: some View {
+        row {
+            HStack(spacing: 10) {
+                Text("Dictation key")
+                Spacer()
+                KeyCap(key: settings.hotkeyDisplay, showsGlobe: settings.useGlobeKey)
+                Button(action: chooseKey) { Text("Change…").frame(maxWidth: .infinity) }
+                    .frame(width: Self.rowButtonWidth)
             }
         }
     }
+
+    /// A row with nothing in the shared column, so its label still starts on the same
+    /// edge as every other row's.
+    private func row<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: FamilyMetrics.iconSpacing) {
+            Color.clear
+                .frame(width: FamilyMetrics.iconColumn, height: 1)
+            content()
+        }
+    }
+
+    /// macOS's own use of the Globe key, shown only when it gets in the way.
+    private var globeKeyRow: some View {
+        HStack(spacing: FamilyMetrics.iconSpacing) {
+            Image(systemName: globeKeyIsFree ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(globeKeyIsFree ? AnyShapeStyle(.green) : AnyShapeStyle(.orange))
+                .frame(width: FamilyMetrics.iconColumn)
+            Text(globeKeyIsFree
+                 ? "The Globe key is free for Nscribe."
+                 : "macOS also uses the Globe key. Set “Press \(Image(systemName: "globe")) key to” to Do Nothing.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            // Kept in place, unseen, once the key is free, so the row keeps its height
+            // and nothing below it moves.
+            Button(action: openKeyboardSettings) { Text("Open Settings…").frame(maxWidth: .infinity) }
+                .frame(width: Self.rowButtonWidth)
+                .opacity(globeKeyIsFree ? 0 : 1)
+                .disabled(globeKeyIsFree)
+        }
+        .frame(minHeight: 36)
+    }
+
+    /// The place to try the key before the window closes. The words arrive as they
+    /// will in any app, live while the person talks, under the ribbon that moves with
+    /// their voice.
+    private var practiceBox: some View {
+        let listening = coordinator.isCancellable && coordinator.practiceReceiver != nil && NSApp.isActive
+        let live = (engine.currentTranscript + " " + engine.volatileText)
+            .trimmingCharacters(in: .whitespaces)
+
+        return VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if listening && !live.isEmpty {
+                    Text(live)
+                } else if !practiceText.isEmpty {
+                    Text(practiceText)
+                        .lineLimit(4)
+                        .textSelection(.enabled)
+                } else if !hasAccessibility {
+                    Text("Allow Accessibility above, then try the dictation key here.")
+                        .foregroundStyle(.secondary)
+                } else if listening {
+                    Text("Listening…")
+                        .foregroundStyle(.secondary)
+                } else {
+                    practicePrompt
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+
+            Spacer(minLength: 0)
+
+            if listening {
+                ListeningBar(spectrum: engine.spectrum, isProcessing: coordinator.isRewriting)
+                    .frame(height: 22)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: 84)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+        .padding(.leading, FamilyMetrics.iconColumn + FamilyMetrics.iconSpacing)
+    }
+
+    /// The last thing to know: where Nscribe is once this window has gone.
+    private var menuBarRow: some View {
+        HStack(spacing: FamilyMetrics.iconSpacing) {
+            Image("MenuBarIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 20, height: 18)
+                .foregroundStyle(.primary)
+                .frame(width: FamilyMetrics.iconColumn)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Nscribe lives in the menu bar")
+                Text("Meetings, Settings and recent dictations are all in its menu.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - State
 
     private func refresh() {
         hasAccessibility = AccessibilityPermission.isTrusted
@@ -338,16 +436,20 @@ struct WelcomeView: View {
 
     // MARK: - Words
 
-    /// The key as Settings names it.
-    private var key: String {
-        settings.useGlobeKey ? "the Globe key" : settings.hotkeyDisplay
-    }
-
-    /// How the key is used, in the mode it is set to: "Hold the Globe key and talk."
-    private func howToDictate(_ speaking: String) -> String {
-        switch settings.hotkeyActivationMode {
-        case .pushToTalk: "Hold \(key) and \(speaking)."
-        case .toggle: "Press \(key), \(speaking), and press it again."
+    /// What to do with the key, with the key drawn as a keycap.
+    private var practicePrompt: some View {
+        let key = KeyCap(key: settings.hotkeyDisplay, showsGlobe: settings.useGlobeKey)
+        return HStack(spacing: 5) {
+            switch settings.hotkeyActivationMode {
+            case .pushToTalk:
+                Text("Hold")
+                key
+                Text("and say a sentence, then let go.")
+            case .toggle:
+                Text("Press")
+                key
+                Text("to start, say a sentence, then press it again.")
+            }
         }
     }
 
@@ -359,29 +461,6 @@ struct WelcomeView: View {
         let domain = "com.apple.HIToolbox" as CFString
         CFPreferencesAppSynchronize(domain)
         return (CFPreferencesCopyAppValue("AppleFnUsageType" as CFString, domain) as? Int) == 0
-    }
-
-    private func row(_ symbol: String, _ title: String, _ detail: String,
-                     link: (title: String, action: () -> Void)? = nil) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: symbol)
-                .font(.system(size: 30))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.tint)
-                .frame(width: 44, height: 38)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.headline)
-                Text(detail)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let link {
-                    Button(link.title, action: link.action)
-                        .buttonStyle(.link)
-                }
-            }
-        }
     }
 }
 #endif

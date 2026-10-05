@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.app.notice("App finished launching")
         DockPresence.start()
         onReady?()
+        AppUpdater.shared.showWhatsNewIfDue()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -135,6 +136,9 @@ struct NscribeApp: App {
         )
         appDelegate.onReady = { launch.run() }
 
+        // An update waits for a meeting or dictation to end before it restarts the app.
+        AppUpdater.shared.driver.isRecording = { recorder.hasActiveMeeting || coordinator.isRecording }
+
         // Quitting mid-meeting or mid-dictation must not discard it. The dictation is
         // kept in the history, not pasted: during a logout or restart the app in front
         // is not one the words were meant for.
@@ -235,11 +239,31 @@ struct NscribeApp: App {
                 .environment(settings)
                 .environment(updater)
                 .environment(coordinator)
+                .environment(transcriptionEngine)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(hasSeenWelcome ? .suppressed : .presented)
+        // Software Update and What's New, opened by `FamilyWindows` when Sparkle or the
+        // launch asks for them.
+        Window("Software Update", id: FamilyWindows.softwareUpdate) {
+            SoftwareUpdateView(driver: updater.driver)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
+
+        Window("What’s New", id: FamilyWindows.whatsNew) {
+            WhatsNewWindow()
+                .environment(updater)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
+
         // The Help menu offered nothing. Help is the README, on GitHub.
         .commands {
             CommandGroup(replacing: .help) {

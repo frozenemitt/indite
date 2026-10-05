@@ -260,3 +260,32 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   The reason: "If it's hard to understand how to use it to start out with, then
   people will give up very quickly." macOS's Accessibility prompt no longer opens
   over the window at launch; the checklist asks instead.
+- 2026-10-05 The welcome window's first page is only a welcome and a short summary
+  of what Nscribe does; everything practical, the key choice included, moves to the
+  second page, a guided setup. Both pages carry the icon and the name. "The 1st page
+  should just be a very generic welcome and quick summary of what the app does. The
+  second page should be a very helpful, guided setup page." "Make sure the 2nd page
+  is also branded with the logo and the name."
+- 2026-10-05 Don't narrate the interface. "Saying each item ticks itself once it's
+  done is obvious and very amateur. Make sure this is written and drawn as a
+  professional app."
+- 2026-10-05 The welcome window follows Apple's own first-run windows: a quiet first
+  page in the manner of Freeform's or Journal's welcome, and a setup page laid out
+  like a System Settings pane, with the icon and the name at the top and numbered
+  steps in a grouped list. System font, the azure accent; the ribbon appears only in
+  Try it, while the user speaks. Chosen over a dark glass band across the top of
+  both pages. "I like your recommendation."
+- 2026-10-05 Every window a user meets around installing and updating is designed
+  as one family. "Be sure to include all windows, like the update window and the
+  what's new in this version window as you're designing so that everything is
+  coherent."
+- 2026-10-05 After two critic rounds (5/10 both), the critic loop stops; the second
+  critic mostly reversed the first and the decisions above. The remaining craft fixes
+  are: one left edge inside every box with icons in a fixed column, nothing moving
+  when a permission is granted, finished steps at full contrast, the restart-wait
+  buttons named for what they do, and one width and one margin across the windows.
+  "Keep going with the five fixes."
+- 2026-10-05 Removed from the window family: the "Allowed" labels beside the checks,
+  the page dots, "made on your Mac" in the welcome subtitle, the symbols that only
+  filled the alignment column, the rules around release notes, and the lines under
+  "Checking for Updates…" and "Preparing…". "Remove all seven."

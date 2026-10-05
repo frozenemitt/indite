@@ -2,10 +2,12 @@ import AppKit
 import Foundation
 import Observation
 import Sparkle
+import SwiftUI
+import os
 import UserNotifications
 
 /// Finds a newer Nscribe on GitHub, downloads it, and asks for a restart to install it,
-/// through Sparkle.
+/// through Sparkle. Every step is drawn by `UpdateDriver` in Nscribe's own windows.
 ///
 /// Every GitHub release carries an appcast, a small XML file that names the newest
 /// build and the EdDSA signature of its disk image. `SUFeedURL` in Info.plist points
@@ -35,7 +37,19 @@ final class AppUpdater: NSObject {
     /// The version downloaded and waiting for a restart.
     private(set) var readyVersion: String?
 
-    @ObservationIgnored private var controller: SPUStandardUpdaterController!
+    /// Draws the updates; also holds an update the daily check found and could not
+    /// download by itself, until the person looks at it.
+    let driver = UpdateDriver()
+
+    /// The notes for What's New, on the first launch of a new version.
+    private(set) var whatsNew: WhatsNew?
+
+    struct WhatsNew: Equatable {
+        let version: String
+        let notes: String
+    }
+
+    @ObservationIgnored private var updater: SPUUpdater!
     @ObservationIgnored private var canCheckObservation: NSKeyValueObservation?
     @ObservationIgnored private var installReadyUpdate: (() -> Void)?
 
@@ -45,8 +59,17 @@ final class AppUpdater: NSObject {
 
     private override init() {
         super.init()
-        controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
-        let updater = controller.updater
+        let updater = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: driver, delegate: self)
+        self.updater = updater
+        do {
+            try updater.start()
+        } catch {
+            Log.app.error("The updater would not start: \(error, privacy: .public)")
+        }
+        driver.onUpdateWaiting = { [weak self] version in
+            self?.notify(title: "Nscribe \(version) is available",
+                         body: "Click to see what’s new and install it.")
+        }
         updatesAutomatically = updater.automaticallyChecksForUpdates && updater.automaticallyDownloadsUpdates
         UNUserNotificationCenter.current().delegate = self
 
@@ -59,13 +82,17 @@ final class AppUpdater: NSObject {
 
     func setUpdatesAutomatically(_ on: Bool) {
         updatesAutomatically = on
-        controller.updater.automaticallyChecksForUpdates = on
-        controller.updater.automaticallyDownloadsUpdates = on
+        updater.automaticallyChecksForUpdates = on
+        updater.automaticallyDownloadsUpdates = on
     }
 
     /// Check now, and show the result whatever it is, "You're up to date" included.
     func checkForUpdates() {
-        controller.checkForUpdates(nil)
+        if driver.waitingVersion != nil {
+            driver.present()
+        } else {
+            updater.checkForUpdates()
+        }
     }
 
     /// Install the downloaded update and open the new version.
@@ -78,6 +105,23 @@ final class AppUpdater: NSObject {
         } else {
             checkForUpdates()
         }
+        // The notification and the menu line come here for an update still waiting to
+        // be looked at, too: `checkForUpdates` opens it.
+    }
+
+    // MARK: - What's New
+
+    private static let whatsNewKey = "whatsNew"
+
+    /// Open What's New if this is the first launch of a version Sparkle installed.
+    func showWhatsNewIfDue() {
+        guard let saved = UserDefaults.standard.dictionary(forKey: Self.whatsNewKey) as? [String: String],
+              saved["version"] == UpdateDriver.currentVersion else { return }
+        UserDefaults.standard.removeObject(forKey: Self.whatsNewKey)
+        let notes = saved["notes"] ?? ""
+        guard !notes.isEmpty else { return }
+        whatsNew = WhatsNew(version: UpdateDriver.currentVersion, notes: notes)
+        FamilyWindows.show(FamilyWindows.whatsNew)
     }
 
     private func notify(title: String, body: String) {
@@ -104,20 +148,15 @@ extension AppUpdater: SPUUpdaterDelegate {
                body: "Click to restart Nscribe and finish updating.")
         return true
     }
-}
 
-extension AppUpdater: SPUStandardUserDriverDelegate {
-    /// Sparkle opens the window for an update found by the daily check behind other
-    /// apps, since a menu bar app is rarely the one in front. That happens only for an
-    /// update it could not download by itself, and the notification says it is there.
-    var supportsGentleScheduledUpdateReminders: Bool { true }
-
-    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
-        guard !state.userInitiated else { return }
-        notify(title: "Nscribe \(update.displayVersionString) is available",
-               body: "Click to see what is new and install it.")
+    /// Kept for What's New, which opens on the new version's first launch. Called on
+    /// every way an update gets installed.
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        UserDefaults.standard.set(["version": item.displayVersionString, "notes": item.itemDescription ?? ""],
+                                  forKey: Self.whatsNewKey)
     }
 }
+
 
 extension AppUpdater: UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {

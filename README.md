@@ -14,7 +14,7 @@ separation on CoreML models that run locally.
 
 ## Install
 
-Download **Nscribe-x.y.dmg** from [Releases](https://github.com/frozenemitt/nscribe/releases/latest),
+Download the disk image, **Nscribe-1.0.*n*.dmg**, from [Releases](https://github.com/frozenemitt/nscribe/releases/latest),
 open it, and drag Nscribe into Applications. It needs **macOS 27**.
 
 The first time you open it, macOS says it cannot check Nscribe for malware, and
@@ -139,8 +139,10 @@ are tagged with the whole version, such as `v1.0.352`, and listed under
 [Releases](https://github.com/frozenemitt/nscribe/releases).
 
 `Scripts/release.sh` makes a release: it builds and signs the app, puts it in the
-disk image, and writes the appcast that tells installed copies about it. The release
-notes are in [Docs/Releases](Docs/Releases).
+disk image, and writes the appcast that tells installed copies about it. The notes
+are in [Docs/Releases](Docs/Releases): `whats-new.md`, rewritten for every release
+and shown in Software Update and What's New, and the about text for the release
+page.
 
 ## Design
 

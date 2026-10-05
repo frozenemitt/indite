@@ -43,6 +43,9 @@ struct MenuBarView: View {
         if let version = updater.readyVersion {
             Button("Restart to Install Nscribe \(version)") { updater.restartToUpdate() }
             Divider()
+        } else if let version = updater.driver.waitingVersion {
+            Button("Nscribe \(version) Is Available…") { updater.checkForUpdates() }
+            Divider()
         }
 
         if meetingRecorder.hasActiveMeeting {
@@ -500,6 +503,7 @@ struct MenuBarIcon: View {
         // Named, or VoiceOver reads the status item as the symbol.
         icon
             .accessibilityLabel("Nscribe")
+            .modifier(RegistersFamilyWindows())
 
         // The meeting's clock beside the icon, so an hour-long meeting shows it is
         // still running without the pill.

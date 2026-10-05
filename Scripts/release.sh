@@ -6,9 +6,14 @@
 #   Scripts/release.sh
 #
 # The version is MARKETING_VERSION in the project followed by the build number, which
-# is the commit count: 1.0.352. Raise MARKETING_VERSION by hand for something new. The
-# release notes are Docs/Releases/<MARKETING_VERSION>.md, one file for every 1.0.x.
+# is the commit count: 1.0.352. Raise MARKETING_VERSION by hand for something new.
 # The tree must be clean, because the build number has to name exactly what shipped.
+#
+# Two sets of notes. Docs/Releases/whats-new.md is what changed in this release: it
+# goes into the appcast, where Software Update and What's New show it to people
+# updating. Rewrite it for every release. Docs/Releases/<MARKETING_VERSION>.md says
+# what Nscribe is and how to install it, for someone arriving at the GitHub release;
+# the release page shows it after what's new.
 #
 # The app is signed with the Apple Development certificate the project already uses,
 # so every release keeps one identity and macOS keeps each user's permissions across
@@ -25,11 +30,14 @@ cd "$(dirname "$0")/.."
 
 marketing=$(xcodebuild -project Nscribe.xcodeproj -scheme Nscribe -configuration Release \
   -showBuildSettings 2>/dev/null | sed -n 's/^ *MARKETING_VERSION = //p' | head -1)
-notes="Docs/Releases/$marketing.md"
-if [ ! -f "$notes" ]; then
-  echo "Write the release notes for $marketing in $notes first."
-  exit 1
-fi
+whats_new="Docs/Releases/whats-new.md"
+about="Docs/Releases/$marketing.md"
+for file in "$whats_new" "$about"; do
+  if [ ! -f "$file" ]; then
+    echo "Write $file first."
+    exit 1
+  fi
+done
 if [ -n "$(git status --porcelain)" ]; then
   echo "Commit your changes first: the build number has to match a commit."
   exit 1
@@ -79,8 +87,8 @@ ln -s /Applications "$staging/Applications"
 hdiutil create -volname Nscribe -srcfolder "$staging" -format UDZO -quiet "$out/Nscribe-$version.dmg"
 
 # The appcast names this release alone, which is all Sparkle needs. The notes beside
-# the image become the text of Sparkle's update window.
-cp "$notes" "$out/Nscribe-$version.md"
+# the image become the text of the Software Update and What's New windows.
+cp "$whats_new" "$out/Nscribe-$version.md"
 "$build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast" --account nscribe \
   --download-url-prefix "https://github.com/frozenemitt/nscribe/releases/download/v$version/" \
   --embed-release-notes -o "$out/appcast.xml" "$out"
@@ -89,4 +97,12 @@ echo
 echo "Nscribe $version is ready in $out"
 echo "Create the GitHub release as a draft with:"
 echo
-echo "  gh release create v$version --draft --title 'Nscribe $version' --notes-file $notes $out/Nscribe-$version.dmg $out/appcast.xml"
+# The GitHub page: what changed, then what Nscribe is and how to install it.
+{
+  printf '## What’s new\n\n'
+  cat "$whats_new"
+  printf '\n## About Nscribe\n\n'
+  cat "$about"
+} > "$out/release-notes.md"
+
+echo "  gh release create v$version --draft --title 'Nscribe $version' --notes-file $out/release-notes.md $out/Nscribe-$version.dmg $out/appcast.xml"
