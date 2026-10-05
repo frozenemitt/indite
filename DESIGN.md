@@ -289,3 +289,9 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   the page dots, "made on your Mac" in the welcome subtitle, the symbols that only
   filled the alignment column, the rules around release notes, and the lines under
   "Checking for Updates…" and "Preparing…". "Remove all seven."
+- 2026-10-05 The README opens as a storefront, as IINA, Loop, Ice and CodeEdit do:
+  the icon, the name, the tagline, one Download for macOS link, a row of links, then
+  the meeting screenshot. "Go with the storefront header."
+- 2026-10-05 Every image in the README is centered on its own line. "I think all
+  images should be centered, laying them out like a journal doesn't really make
+  sense in GitHub."

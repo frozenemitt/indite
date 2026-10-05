@@ -1,22 +1,48 @@
-# Nscribe
+<p align="center">
+  <img src="Docs/Images/icon.png" width="128" height="128" alt="The Nscribe icon: two quotation marks standing as the uprights of an N">
+</p>
 
-[![macOS 27](https://img.shields.io/badge/macOS-27-blue.svg)](https://www.apple.com/macos/)
-[![Swift 6](https://img.shields.io/badge/Swift-6-orange.svg)](https://swift.org)
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/frozenemitt/nscribe?label=download)](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)
+<h1 align="center">Nscribe</h1>
 
-**Hold a key, talk, and the words appear where your cursor is. Record a meeting and
-read it back by speaker. Nothing leaves your Mac.**
+<p align="center">
+  <b>Hold a key, talk, and the words appear where your cursor is.</b><br>
+  Record a meeting and read it back by speaker. Nothing leaves your Mac.
+</p>
 
-Nscribe is a dictation and meeting app for the Mac, free and open source. It lives in
-the menu bar as an N made of two quotation marks. Transcription runs on Apple's
-speech recognizer, rewriting and summaries on Apple's on-device model, and speaker
-separation on CoreML models that run locally.
+<p align="center">
+  <a href="https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/github/v/release/frozenemitt/nscribe?style=for-the-badge&label=Download%20for%20macOS&logo=apple&logoColor=1d1d1f&labelColor=f5f5f7&color=d2d2d7">
+      <img alt="Download for macOS" src="https://img.shields.io/github/v/release/frozenemitt/nscribe?style=for-the-badge&label=Download%20for%20macOS&logo=apple&logoColor=white&labelColor=1d1d1f&color=48484a">
+    </picture>
+  </a>
+  <br>
+  <sub>Free and open source · macOS 27</sub>
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#dictation">Dictation</a> ·
+  <a href="#meetings">Meetings</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="#build-it-yourself">Build it yourself</a>
+</p>
+
+<p align="center">
+  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-27-blue.svg" alt="macOS 27"></a>
+  <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-6-orange.svg" alt="Swift 6"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
+</p>
 
 <p align="center">
   <img src="Docs/Images/meeting.png" width="760"
        alt="A meeting in Nscribe: its title, the three speakers, a summary, and the transcript by speaker, with the word being played set in bold">
 </p>
+
+Nscribe is a dictation and meeting app for the Mac, free and open source. It lives in
+the menu bar as an N made of two quotation marks. Transcription runs on Apple's
+speech recognizer, rewriting and summaries on Apple's on-device model, and speaker
+separation on CoreML models that run locally.
 
 ## Install
 
@@ -61,13 +87,15 @@ Signing & Capabilities for the Nscribe target (a free Apple ID works), and press
 
 ### The first launch
 
-<img src="Docs/Images/menu.png" width="363" align="right"
-     alt="Nscribe's menu: Start Dictation, Start Meeting, the rewrite style, the microphone, Meetings, Recent Dictations, Settings and Check for Updates">
-
 Nscribe appears in the menu bar as its N, and nowhere else: it joins the Dock and
 Command-Tab only while one of its windows is open. A welcome window says what the
 key does, then lists what macOS needs to allow, ticking each item off as it is done,
 and has a box to try a dictation in before it closes.
+
+<p align="center">
+  <img src="Docs/Images/menu.png" width="363"
+       alt="Nscribe's menu: Start Dictation, Start Meeting, the rewrite style, the microphone, Meetings, Recent Dictations, Settings and Check for Updates">
+</p>
 
 | Permission | Needed for | Asked |
 |---|---|---|
