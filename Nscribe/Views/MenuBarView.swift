@@ -43,6 +43,9 @@ struct MenuBarView: View {
         if let version = updater.readyVersion {
             Button("Restart to Install Nscribe \(version)") { updater.restartToUpdate() }
             Divider()
+        } else if let version = updater.driver.waitingVersion {
+            Button("Nscribe \(version) Is Available…") { updater.checkForUpdates() }
+            Divider()
         }
 
         if meetingRecorder.hasActiveMeeting {

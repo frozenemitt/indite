@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.app.notice("App finished launching")
         DockPresence.start()
         onReady?()
+        AppUpdater.shared.showWhatsNewIfDue()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -235,6 +236,7 @@ struct NscribeApp: App {
                 .environment(settings)
                 .environment(updater)
                 .environment(coordinator)
+                .environment(transcriptionEngine)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
