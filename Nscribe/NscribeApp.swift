@@ -242,6 +242,25 @@ struct NscribeApp: App {
         .windowResizability(.contentSize)
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(hasSeenWelcome ? .suppressed : .presented)
+        // Software Update and What's New, opened by `FamilyWindows` when Sparkle or the
+        // launch asks for them.
+        Window("Software Update", id: FamilyWindows.softwareUpdate) {
+            SoftwareUpdateView(driver: updater.driver)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
+
+        Window("What’s New", id: FamilyWindows.whatsNew) {
+            WhatsNewWindow()
+                .environment(updater)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
+
         // The Help menu offered nothing. Help is the README, on GitHub.
         .commands {
             CommandGroup(replacing: .help) {

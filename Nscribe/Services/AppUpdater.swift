@@ -41,8 +41,15 @@ final class AppUpdater: NSObject {
     /// download by itself, until the person looks at it.
     let driver = UpdateDriver()
 
+    /// The notes for What's New, on the first launch of a new version.
+    private(set) var whatsNew: WhatsNew?
+
+    struct WhatsNew: Equatable {
+        let version: String
+        let notes: String
+    }
+
     @ObservationIgnored private var updater: SPUUpdater!
-    @ObservationIgnored private let whatsNewWindow = HostedWindow()
     @ObservationIgnored private var canCheckObservation: NSKeyValueObservation?
     @ObservationIgnored private var installReadyUpdate: (() -> Void)?
 
@@ -113,11 +120,8 @@ final class AppUpdater: NSObject {
         UserDefaults.standard.removeObject(forKey: Self.whatsNewKey)
         let notes = saved["notes"] ?? ""
         guard !notes.isEmpty else { return }
-        whatsNewWindow.show(title: "What’s New") {
-            WhatsNewView(version: UpdateDriver.currentVersion, notes: notes) { [weak self] in
-                self?.whatsNewWindow.close()
-            }
-        }
+        whatsNew = WhatsNew(version: UpdateDriver.currentVersion, notes: notes)
+        FamilyWindows.show(FamilyWindows.whatsNew)
     }
 
     private func notify(title: String, body: String) {

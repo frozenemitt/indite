@@ -2,6 +2,19 @@ import SwiftUI
 
 #if os(macOS)
 
+/// The What's New window's content, for the notes `AppUpdater` kept.
+struct WhatsNewWindow: View {
+    @Environment(AppUpdater.self) private var updater
+
+    var body: some View {
+        if let whatsNew = updater.whatsNew {
+            WhatsNewView(version: whatsNew.version, notes: whatsNew.notes) {
+                FamilyWindows.close(FamilyWindows.whatsNew)
+            }
+        }
+    }
+}
+
 /// Shown once, on the first launch of a new version, with that version's notes: the
 /// same notes the update carried, kept when it was installed.
 struct WhatsNewView: View {

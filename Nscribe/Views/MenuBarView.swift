@@ -503,6 +503,7 @@ struct MenuBarIcon: View {
         // Named, or VoiceOver reads the status item as the symbol.
         icon
             .accessibilityLabel("Nscribe")
+            .modifier(RegistersFamilyWindows())
 
         // The meeting's clock beside the icon, so an hour-long meeting shows it is
         // still running without the pill.

@@ -22,6 +22,7 @@ struct SoftwareUpdateView: View {
         }
         .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)
+        .onDisappear { driver.windowDidClose() }
     }
 
     // MARK: - Words

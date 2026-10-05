@@ -84,62 +84,58 @@ struct ReleaseNotesView: View {
     }
 }
 
-/// A window opened from the app's code rather than from a SwiftUI scene, for the
-/// windows that Sparkle and the launch decide to show: Software Update and What's
-/// New. Sized to its content, which it follows as the content changes.
+/// Opens and closes the family's windows from code that is not a view: Sparkle's
+/// driver and the launch. SwiftUI hands its window actions only to views, so the menu
+/// bar icon, on screen for the app's whole life, passes them here.
+///
+/// They were AppKit windows sized to their content at first. Under a transparent
+/// title bar every resize changed the content's inset, which asked for another resize,
+/// and AppKit stopped the app twice on the way to the first screenshot. SwiftUI's own
+/// window scenes size themselves as the welcome window does, without that loop.
 @MainActor
-final class HostedWindow: NSObject, NSWindowDelegate {
-    private var window: NSWindow?
+enum FamilyWindows {
+    static let softwareUpdate = "software-update"
+    static let whatsNew = "whats-new"
 
-    /// Called when the person closes the window with its close button.
-    var onClose: (() -> Void)?
+    private static var openWindow: OpenWindowAction?
+    private static var dismissWindow: DismissWindowAction?
+    /// Asked for before the menu bar icon appeared: What's New, at launch.
+    private static var waiting: [String] = []
 
-    var isVisible: Bool { window?.isVisible ?? false }
-
-    func show<Content: View>(title: String, @ViewBuilder content: () -> Content) {
-        let window = self.window ?? makeWindow(title: title)
-        window.contentViewController = NSHostingController(rootView: content())
-        (window.contentViewController as? NSHostingController<Content>)?.sizingOptions = [.preferredContentSize]
-        if !window.isVisible { window.center() }
-        bringForward()
+    static func register(open: OpenWindowAction, dismiss: DismissWindowAction) {
+        openWindow = open
+        dismissWindow = dismiss
+        let ids = waiting
+        waiting = []
+        ids.forEach(show)
     }
 
-    /// Bring the window in front of the app the person is in. The app has to be made
-    /// active first: a menu bar app is not, and its windows otherwise open behind.
-    func bringForward() {
-        guard let window else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
+    static func show(_ id: String) {
+        guard let openWindow else {
+            if !waiting.contains(id) { waiting.append(id) }
+            return
+        }
+        openWindow(id: id)
+        WindowFronting.bringForward(id)
     }
 
-    /// Close without calling `onClose`: for when the app itself is done with it.
-    func close() {
-        let handler = onClose
-        onClose = nil
-        window?.close()
-        onClose = handler
+    static func close(_ id: String) {
+        waiting.removeAll { $0 == id }
+        dismissWindow?(id: id)
     }
 
-    private func makeWindow(title: String) -> NSWindow {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
-            styleMask: [.titled, .closable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = title
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
-        window.isReleasedWhenClosed = false
-        window.delegate = self
-        self.window = window
-        return window
+    static func isShowing(_ id: String) -> Bool {
+        NSApp.windows.contains { $0.isVisible && $0.identifier?.rawValue.hasPrefix(id) == true }
     }
+}
 
-    func windowWillClose(_ notification: Notification) {
-        onClose?()
+/// Put on the menu bar icon, which is the one view alive from launch to quit.
+struct RegistersFamilyWindows: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    func body(content: Content) -> some View {
+        content.onAppear { FamilyWindows.register(open: openWindow, dismiss: dismissWindow) }
     }
 }
 #endif

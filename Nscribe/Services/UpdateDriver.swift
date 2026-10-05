@@ -41,15 +41,9 @@ final class UpdateDriver: NSObject {
     /// Told when an update found by the daily check is waiting for the person.
     @ObservationIgnored var onUpdateWaiting: ((String) -> Void)?
 
-    @ObservationIgnored private let window = HostedWindow()
     @ObservationIgnored private var choiceReply: ((SPUUserUpdateChoice) -> Void)?
     @ObservationIgnored private var cancellation: (() -> Void)?
     @ObservationIgnored private var acknowledgement: (() -> Void)?
-
-    override init() {
-        super.init()
-        window.onClose = { [weak self] in self?.closedByPerson() }
-    }
 
     /// The version this copy of Nscribe is.
     static var currentVersion: String {
@@ -84,7 +78,12 @@ final class UpdateDriver: NSObject {
     func present() {
         guard phase != .idle else { return }
         waitingVersion = nil
-        window.show(title: "Software Update") { SoftwareUpdateView(driver: self) }
+        FamilyWindows.show(FamilyWindows.softwareUpdate)
+    }
+
+    /// The window has gone. If the driver did not close it, the person did.
+    func windowDidClose() {
+        if phase != .idle { closedByPerson() }
     }
 
     // MARK: - Internals
@@ -99,7 +98,7 @@ final class UpdateDriver: NSObject {
     private func finish() {
         phase = .idle
         waitingVersion = nil
-        window.close()
+        FamilyWindows.close(FamilyWindows.softwareUpdate)
     }
 
     /// The close button answers as the gentlest button in the window would.
@@ -143,7 +142,7 @@ extension UpdateDriver: SPUUserDriver {
         phase = .available(version: appcastItem.displayVersionString,
                            notes: appcastItem.itemDescription ?? "",
                            infoURL: infoURL)
-        if state.userInitiated || window.isVisible {
+        if state.userInitiated || FamilyWindows.isShowing(FamilyWindows.softwareUpdate) {
             present()
         } else {
             waitingVersion = appcastItem.displayVersionString
