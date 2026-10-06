@@ -116,9 +116,8 @@ The Globe key (🌐) by default. You can change it to any key combination in Nsc
 settings.
 
 **Pressing Globe opens the emoji picker.**
-macOS also uses the Globe key, so it needs to be told to stand aside. In System
-Settings → Keyboard, set "Press 🌐 key to" to *Do Nothing*. The emoji picker is still
-on Control-Command-Space (⌃⌘Space), Apple's own default.
+macOS uses the Globe key too. In System Settings → Keyboard, set "Press 🌐 key to" to *Do Nothing*.
+The emoji picker is still on Control-Command-Space (⌃⌘Space), Apple's own default.
 
 **What permissions does it need?**
 
