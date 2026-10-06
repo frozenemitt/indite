@@ -9,24 +9,10 @@ final class HelpNavigator {
     static let shared = HelpNavigator()
     static let windowID = "help"
 
-    /// The article shown under the answer, or chosen from the list. None at first:
-    /// the window opens on the question, not on an article.
-    var selectedID: HelpArticle.ID?
-    var searchText = ""
-    /// The article list is there to browse, but asking comes first.
-    var columns: NavigationSplitViewVisibility = .detailOnly
-    /// Bumped to put the cursor in the question field.
+    /// The article opened in the list, under the answer or chosen by hand.
+    var openArticleID: HelpArticle.ID?
+    /// Bumped to put the cursor in the field.
     private(set) var focusRequest = 0
-
-    /// The articles that contain every word searched for, or all of them.
-    var visibleArticles: [HelpArticle] {
-        let words = searchText.lowercased().split(whereSeparator: \.isWhitespace)
-        guard !words.isEmpty else { return HelpArticle.all }
-        return HelpArticle.all.filter { article in
-            let text = (article.title + " " + article.body).lowercased()
-            return words.allSatisfy { text.contains($0) }
-        }
-    }
 
     /// Opens the Help window ready for a question.
     func ask() {
@@ -34,9 +20,10 @@ final class HelpNavigator {
         FamilyWindows.show(Self.windowID)
     }
 
-    /// Opens the Help window at an article.
+    /// Opens the Help window at an article, with the whole list around it.
     func show(_ articleID: HelpArticle.ID) {
-        selectedID = articleID
+        HelpAssistant.shared.clear()
+        openArticleID = articleID
         FamilyWindows.show(Self.windowID)
     }
 
@@ -48,138 +35,152 @@ final class HelpNavigator {
     }
 }
 
+/// One field: typing narrows the articles beneath it, Return asks the assistant, and
+/// the answer sits above the articles that match. The Help menu's search in any Mac
+/// app works the same way.
 struct HelpView: View {
-    @Bindable private var navigator = HelpNavigator.shared
     @Bindable private var assistant = HelpAssistant.shared
+    @Bindable private var navigator = HelpNavigator.shared
+    @FocusState private var fieldFocused: Bool
 
-    private var isLanding: Bool {
-        assistant.state == .idle && navigator.selectedID == nil
-    }
-
-    var body: some View {
-        NavigationSplitView(columnVisibility: $navigator.columns) {
-            List(navigator.visibleArticles, selection: $navigator.selectedID) { article in
-                Text(article.title)
-            }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-            .searchable(text: $navigator.searchText, placement: .sidebar, prompt: "Search Articles")
-        } detail: {
-            if isLanding {
-                LandingView()
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        QuestionField(size: .regular)
-                        AnswerView()
-                        if let id = navigator.selectedID, let article = HelpArticle.article(id: id) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text(article.title)
-                                    .font(.title2.bold())
-                                Text(article.body)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: 560, alignment: .leading)
-                    .padding(24)
-                }
-            }
-        }
-        .navigationTitle("Nscribe Help")
-    }
-}
-
-/// What the window opens on: one question, and what to ask.
-private struct LandingView: View {
     private static let examples = [
         "How do I change the dictation key?",
         "Why does the Globe key open the emoji picker?",
         "How do I record both sides of a call?"
     ]
 
+    private var query: String {
+        assistant.question.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// An answer, or the question being answered, belongs to the words in the field
+    /// only while they are the words that were asked.
+    private var showsAnswer: Bool {
+        assistant.state != .idle && query == assistant.askedQuestion
+    }
+
+    private var articles: [HelpArticle] {
+        query.isEmpty ? HelpArticle.all : HelpArticle.matches(query)
+    }
+
     var body: some View {
-        VStack(spacing: 16) {
-            Text("What do you need help with?")
-                .font(.title2.bold())
-            QuestionField(size: .large)
-            Text("Ask a question, or describe what isn't working. Nscribe answers from its help articles, on your Mac.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            VStack(spacing: 6) {
-                ForEach(Self.examples, id: \.self) { example in
-                    Button(example) { HelpAssistant.shared.ask(example) }
-                        .buttonStyle(.link)
+        VStack(spacing: 0) {
+            field
+            Divider()
+            List {
+                if query.isEmpty, !showsAnswer {
+                    Section("Try asking") {
+                        ForEach(Self.examples, id: \.self) { example in
+                            Button(example) { assistant.ask(example) }
+                                .buttonStyle(.link)
+                        }
+                    }
+                } else if showsAnswer {
+                    Section("Answer") { answer }
+                } else {
+                    Section {
+                        Button { assistant.ask(query) } label: {
+                            Label("Ask “\(query)”", systemImage: "sparkle")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+
+                Section(query.isEmpty ? "All Articles" : "Articles") {
+                    if articles.isEmpty {
+                        Text("No article matches. Press Return to ask.")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(articles) { article in
+                        ArticleRow(article: article)
+                    }
                 }
             }
-            .padding(.top, 4)
-            Button("Browse all articles") { HelpNavigator.shared.columns = .all }
-                .buttonStyle(.link)
-                .font(.callout)
-                .padding(.top, 12)
+            .listStyle(.inset)
         }
-        .frame(maxWidth: 480)
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Nscribe Help")
+        .frame(minWidth: 520, minHeight: 400)
+        .onAppear { fieldFocused = true }
+        .onChange(of: navigator.focusRequest) { fieldFocused = true }
     }
-}
 
-/// The question, asked on Return.
-private struct QuestionField: View {
-    let size: ControlSize
-    @Bindable private var assistant = HelpAssistant.shared
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        TextField("Ask a question about Nscribe", text: $assistant.question)
-            .textFieldStyle(.roundedBorder)
-            .controlSize(size)
-            .focused($focused)
-            .onSubmit { assistant.ask(assistant.question) }
-            .onAppear { focused = true }
-            .onChange(of: HelpNavigator.shared.focusRequest) { focused = true }
+    private var field: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Ask a question, or describe what isn't working", text: $assistant.question)
+                .textFieldStyle(.plain)
+                .font(.title3)
+                .focused($fieldFocused)
+                .onSubmit { assistant.ask(assistant.question) }
+            if !assistant.question.isEmpty {
+                Button {
+                    assistant.clear()
+                    fieldFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
-}
 
-/// The answer, and the articles it came from.
-private struct AnswerView: View {
-    @Bindable private var assistant = HelpAssistant.shared
-
-    var body: some View {
+    @ViewBuilder
+    private var answer: some View {
         switch assistant.state {
         case .idle:
             EmptyView()
         case .thinking:
             ProgressView("Looking it up…")
                 .controlSize(.small)
-        case .answered(let answer, let sources):
-            VStack(alignment: .leading, spacing: 8) {
+                .padding(.vertical, 4)
+        case .answered(let text, let sources):
+            VStack(alignment: .leading, spacing: 6) {
                 // The model writes Markdown emphasis around setting names.
                 Text((try? AttributedString(
-                    markdown: answer,
+                    markdown: text,
                     options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-                )) ?? AttributedString(answer))
+                )) ?? AttributedString(text))
                     .textSelection(.enabled)
-                if !sources.isEmpty {
-                    HStack(spacing: 4) {
-                        Text("From")
-                            .foregroundStyle(.secondary)
-                        ForEach(sources, id: \.self) { id in
-                            if let article = HelpArticle.article(id: id) {
-                                Button(article.title) { HelpNavigator.shared.selectedID = id }
-                                    .buttonStyle(.link)
-                            }
-                        }
-                    }
-                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let first = sources.first, let article = HelpArticle.article(id: first) {
+                    Text("From “\(article.title)”")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+            .padding(.vertical, 4)
         case .failed(let message):
             Text(message)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// An article in the list, opened in place.
+private struct ArticleRow: View {
+    let article: HelpArticle
+    @Bindable private var navigator = HelpNavigator.shared
+
+    private var isOpen: Binding<Bool> {
+        Binding(
+            get: { navigator.openArticleID == article.id },
+            set: { navigator.openArticleID = $0 ? article.id : nil }
+        )
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: isOpen) {
+            Text(article.body)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 4)
+        } label: {
+            Label(article.title, systemImage: "doc.text")
         }
     }
 }
