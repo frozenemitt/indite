@@ -113,8 +113,14 @@ extension HelpArticle {
         "into", "when", "where", "this", "that", "are", "its", "nscribe"
     ]
 
-    /// The articles that share the most words with a query, best first. With nothing
-    /// in common, every article: the model reads them and decides.
+    /// The articles that share the most words with a query, best first: the best one,
+    /// and any that come close to it. With nothing in common, every article, and the
+    /// model reads them and decides.
+    ///
+    /// Close means three quarters of the best score. Asked why the Globe key opens the
+    /// emoji picker, a search that also returned "Change the dictation key", which
+    /// shares only "Globe" and "key", led the small model to answer with that article's
+    /// fix instead.
     static func search(_ query: String) -> [HelpArticle] {
         let words = Set(query.lowercased()
             .split { !$0.isLetter && !$0.isNumber }
@@ -126,7 +132,8 @@ extension HelpArticle {
                 .map(String.init))
             return (article, words.intersection(text).count)
         }
-        let matching = scored.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.prefix(3).map(\.0)
-        return matching.isEmpty ? all : Array(matching)
+        guard let best = scored.map(\.1).max(), best > 0 else { return all }
+        let threshold = max(1, Int((Double(best) * 0.75).rounded(.up)))
+        return scored.filter { $0.1 >= threshold }.sorted { $0.1 > $1.1 }.prefix(3).map(\.0)
     }
 }

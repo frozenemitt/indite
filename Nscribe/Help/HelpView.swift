@@ -113,6 +113,10 @@ private struct LandingView: View {
                 }
             }
             .padding(.top, 4)
+            Button("Browse all articles") { HelpNavigator.shared.columns = .all }
+                .buttonStyle(.link)
+                .font(.callout)
+                .padding(.top, 12)
         }
         .frame(maxWidth: 480)
         .padding(32)
