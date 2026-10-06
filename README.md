@@ -29,22 +29,20 @@
        alt="A dictation into Notes: the ribbon swells blue and violet as the words arrive in the panel, turns amber while they are cleaned up, and the sentence lands in the note">
 </p>
 
-Nscribe types what you say into any app on your Mac and transcribes your meetings.
-It runs on Apple's speech recognition and on Apple's Foundation Models, the models
-behind Apple Intelligence, all on your Mac.
+Speak into any app on your Mac, and get every meeting transcribed. Nscribe runs on
+Apple's speech recognition and Foundation Models, the models behind Apple
+Intelligence, entirely on your device.
 
 ## Dictation
 
-Nscribe is made for replying quickly, to people or to software.
+Reply quickly, to people or to software.
 
-Once you've added a few words of your own, Nscribe also reads the names and unusual
-words in the window you're dictating into, so when you say them they come out spelled
-right.
+Teach Nscribe a few words of your own, and it also picks up the names and unusual
+words in the window you're dictating into, so they come out spelled right.
 
-Rewriting then puts what you said into the style you want, formal in Mail and casual
-in Messages, with each app keeping its own. Every style is a plain-English prompt you
-can edit, or write from scratch. Rewriting can also read what's already in the text
-field, so your answer fits the thread.
+Choose how your words come out: formal in Mail, casual in Messages, a style for every
+app. Each style is a plain-English prompt, so edit any of them or write your own. Let
+rewriting read what's already in the text field, and your answer fits the thread.
 
 <p align="center">
   <picture>
@@ -56,14 +54,14 @@ field, so your answer fits the thread.
 
 ## Meetings
 
-Record a meeting and stay in the conversation instead of taking notes. Nscribe records
-your microphone and, if you allow it, the sound your Mac plays, so it hears both sides
-of a call in any app. Nobody else has to install anything.
+Stay in the conversation and let Nscribe take the notes. It records your microphone
+and, if you allow it, the sound your Mac plays, so it hears both sides of a call in
+any app. Nobody else has to install anything.
 
-When the meeting ends, Nscribe works out who said what and writes a title and a
-summary. Play the recording and follow each word as it's spoken, fix what it misheard,
-and export the transcript as Markdown to ask an AI what was decided. It can also
-transcribe a recording or video you already have.
+When the meeting ends, see who said what, with a title and a summary on top. Play the
+recording and follow each word as it's spoken, fix what it misheard, and export the
+transcript as Markdown to ask an AI what was decided. Transcribe recordings and videos
+you already have, too.
 
 <p align="center">
   <picture>
