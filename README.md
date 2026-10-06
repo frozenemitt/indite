@@ -75,8 +75,12 @@ transcribe a recording or video you already have.
 
 ## Privacy
 
-Your audio and text are never uploaded. Nscribe connects to the internet for three
-things only:
+Your audio and text never leave your device. To spell names right, Nscribe reads the
+text of the window you're dictating into, and keeps only the unusual words for that
+one dictation. Store your latest dictations and your meeting recordings on your Mac,
+and delete them at any time. Or choose to not store them at all.
+
+Nscribe connects to the internet for three things only:
 
 - Apple's English speech recognition, which macOS downloads the first time you
   dictate.
@@ -84,11 +88,6 @@ things only:
   checked against Nscribe's own signature before it installs.
 - The files that tell voices apart, downloaded from Hugging Face when you install
   them for meetings.
-
-To spell names right, Nscribe reads the text of the window you're dictating into,
-keeps only the unusual words for that one dictation, and stores nothing. Your last 100
-dictations and your meeting recordings stay on your Mac, and both can be turned off.
-The source is open, so all of this can be checked.
 
 ## Install
 
