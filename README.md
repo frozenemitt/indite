@@ -63,8 +63,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="Docs/Images/meeting-dark.png">
-    <img src="Docs/Images/meeting-light.png" width="760"
+    <source media="(prefers-color-scheme: dark)" srcset="Docs/Images/meeting-window-dark.png">
+    <img src="Docs/Images/meeting-window-light.png" width="760"
          alt="A meeting in Nscribe: its title, the three speakers, a summary, and the transcript by speaker, with the word being played set in bold">
   </picture>
   <br>
