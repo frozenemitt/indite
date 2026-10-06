@@ -324,3 +324,11 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   works. No sidebar. Chosen over the field in the toolbar beside an article sidebar,
   and over a conversation with the field at the bottom. "It's really awkward having 2
   separate places to put your question." "Go with A."
+- 2026-10-06 Help follows the AI labs' own products, not a help-center index: "Look at
+  what anthropic and their other AI labs are doing on their websites. Those are
+  probably good models to follow." The articles are not listed under the field: "I
+  don't want to list all the articles on one page like this, but instead, I think
+  there should be a link to browse all articles manually, and then maybe like the
+  search bar would collapse at the top, so they could go back to the agentic search."
+  Rejected: titling each article as a question and asking it on click ("I'm not sure I
+  agree with this").
