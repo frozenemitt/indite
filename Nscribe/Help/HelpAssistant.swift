@@ -22,9 +22,6 @@ final class HelpAssistant {
 
     var question = ""
     private(set) var state: State = .idle
-    /// The question the current answer belongs to. Editing the field past it shows the
-    /// articles for the new words instead of an answer to the old ones.
-    private(set) var askedQuestion = ""
     private var task: Task<Void, Never>?
 
     private static let instructions = """
@@ -42,7 +39,6 @@ final class HelpAssistant {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
         self.question = question
-        askedQuestion = question
         task?.cancel()
 
         if let reason = FoundationModelsHelper.unavailabilityReason() {
@@ -90,11 +86,7 @@ extension HelpAssistant {
     func clear() {
         task?.cancel()
         question = ""
-        askedQuestion = ""
         state = .idle
-        #if os(macOS)
-        HelpNavigator.shared.openArticleID = nil
-        #endif
     }
 }
 
@@ -149,18 +141,6 @@ extension HelpArticle {
     /// fix instead.
     static func words(in text: String) -> Set<String> {
         Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
-    }
-
-    /// The articles sharing any word with what is typed, best first, for the list
-    /// under the field. Unlike `search`, nothing when nothing matches.
-    static func matches(_ query: String) -> [HelpArticle] {
-        let wanted = words(in: query).filter { $0.count > 2 && !stopWords.contains($0) }
-        guard !wanted.isEmpty else { return [] }
-        return all
-            .map { ($0, wanted.intersection(words(in: $0.title + " " + $0.body)).count) }
-            .filter { $0.1 > 0 }
-            .sorted { $0.1 > $1.1 }
-            .map(\.0)
     }
 
     static func search(_ query: String) -> [HelpArticle] {
