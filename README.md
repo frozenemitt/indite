@@ -49,6 +49,16 @@
   can be put where it belongs. <kbd>⌃⌥⌘Z</kbd> takes the last one back;
   <kbd>⌃⌥⌘V</kbd> types it again.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Docs/Images/rewriting-dark.png">
+    <img src="Docs/Images/rewriting-light.png" width="700"
+         alt="Settings, Rewriting: the built-in prompts with their In menu switches, and Simple Clean open for editing, showing its system prompt and its instructions">
+  </picture>
+  <br>
+  <sub>Every prompt can be shown in the menu, edited, or copied as a custom prompt of your own.</sub>
+</p>
+
 ## Meetings
 
 <p align="center">
