@@ -40,13 +40,44 @@ struct HelpArticleEntity: IndexedEntity {
     }
 }
 
-struct HelpArticleQuery: EntityQuery {
+/// Spotlight asks this to index the articles again, for instance after it rebuilds its
+/// index. Without it Spotlight logged "No IndexedEntityQuery found" and kept whatever it
+/// had.
+struct HelpArticleQuery: IndexedEntityQuery {
     func entities(for identifiers: [HelpArticleEntity.ID]) async throws -> [HelpArticleEntity] {
         identifiers.compactMap(HelpArticle.article(id:)).map(HelpArticleEntity.init)
     }
 
     func suggestedEntities() async throws -> [HelpArticleEntity] {
         HelpArticle.all.map(HelpArticleEntity.init)
+    }
+
+    func reindexEntities(for identifiers: [HelpArticleEntity.ID],
+                         indexDescription: CSSearchableIndexDescription) async throws {
+        let entities = identifiers.compactMap(HelpArticle.article(id:)).map(HelpArticleEntity.init)
+        try await CSSearchableIndex.default().indexAppEntities(entities)
+    }
+
+    func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
+        try await CSSearchableIndex.default().indexAppEntities(HelpArticle.all.map(HelpArticleEntity.init))
+    }
+}
+
+/// "Search Nscribe for the dictation key." Siri hands the words to the Help window,
+/// which shows the articles that match. This is the system's own search schema, which
+/// Siri understands in any wording, unlike a custom phrase.
+@AppIntent(schema: .system.searchInApp)
+struct SearchHelpIntent: ShowInAppSearchResultsIntent {
+    static let searchScopes: [StringSearchScope] = [.general]
+
+    var criteria: StringSearchCriteria
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        #if os(macOS)
+        HelpNavigator.shared.search(criteria.term)
+        #endif
+        return .result()
     }
 }
 
