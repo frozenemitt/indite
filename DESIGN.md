@@ -313,3 +313,31 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-06 The light panel, tried on Jonathan's desktop, stays as built. "I think it
   looks good. It's bouncing a little bit with background noise, but I don't think it's
   any different than in dark mode."
+- 2026-10-06 README copy is written as copy, not prose: feature headlines may be short
+  phrases. "Of course you can use fragments. This is copy not prose writing."
+- 2026-10-06 The README names no other product. "I don't think we should be comparing
+  to anyone else."
+- 2026-10-06 The README leads with what people who want this kind of app care about:
+  every app with one key, text that reads as typed, privacy, free; and for meetings,
+  no bot in the call. Developer material moved to BUILDING.md. "Really consider what
+  are the key points that someone attracted to this kind of app might care about and
+  make sure that you're highlighting those first."
+- 2026-10-06 The README carries no author story. What Jonathan said in the interview
+  shapes the product copy; it is not quoted or told in his voice. "I thought that you
+  were asking for my experience so that you could shape the copy. I don't want my
+  story written like that."
+- 2026-10-06 Rejected tagline: "Talk faster than you can type." "Everyone knows they
+  can talk faster than they can type."
+- 2026-10-06 The README's tagline is Jonathan's: "Unlock the potential of Apple's
+  Foundation Models. Fast, free, on-device dictation and transcription that knows your
+  context and adapts to your prompts."
+- 2026-10-06 The README describes what Nscribe does, not how to operate it: no fixed
+  keys or gestures, since the shortcut and its mode are settings. "We don't need to be
+  including manual level instructions in the read me page."
+- 2026-10-06 The README points out what is unique, not features every dictation app
+  is expected to have; the undo and type-again bullet came out. "We should only be
+  pointing out unique features, not standard features that are expected."
+- 2026-10-06 A five-reviewer panel (reader, mom, hemingway, asshole, sorkin) shaped the
+  README: one name per thing (Rewriting, as the app says; Apple Intelligence tied to
+  Foundation Models once), requirements before the steps, the window reading disclosed
+  in Privacy and in the permissions table, and no "signed" used for two things.
