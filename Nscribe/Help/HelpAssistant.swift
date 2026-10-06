@@ -33,7 +33,8 @@ final class HelpAssistant {
         it returns. Lead with the fix, not with why the problem happens. Answer in two \
         to four plain sentences and name the exact settings, \
         switches and buttons the articles name. Give the fix the articles give for the \
-        exact problem asked about, and do not offer other settings as alternatives. If \
+        exact problem asked about, and do not offer other settings as alternatives. Do \
+        not mention links or buttons that open settings: Help shows that button itself. If \
         the articles do not cover the question, say so in one sentence and do not guess.
         """
 

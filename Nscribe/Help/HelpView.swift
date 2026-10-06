@@ -74,16 +74,20 @@ struct HelpView: View {
                         ForEach(Self.examples, id: \.self) { example in
                             Button(example) { assistant.ask(example) }
                                 .buttonStyle(.link)
+                                .listRowSeparator(.hidden)
                         }
                     }
                 } else if showsAnswer {
-                    Section("Answer") { answer }
+                    Section("Answer") {
+                        answer.listRowSeparator(.hidden)
+                    }
                 } else {
                     Section {
                         Button { assistant.ask(query) } label: {
                             Label("Ask “\(query)”", systemImage: "sparkle")
                         }
                         .buttonStyle(.borderless)
+                        .listRowSeparator(.hidden)
                     }
                 }
 
@@ -92,14 +96,14 @@ struct HelpView: View {
                         Text("No article matches. Press Return to ask.")
                             .foregroundStyle(.secondary)
                     }
+                    // Space between sections, not a rule between every row.
                     ForEach(articles) { article in
                         ArticleRow(article: article)
+                            .listRowSeparator(.hidden)
                     }
                 }
             }
             .listStyle(.inset)
-            // Space between sections, not a rule between every row.
-            .listRowSeparator(.hidden)
         }
         .navigationTitle("Nscribe Help")
         .frame(minWidth: 520, minHeight: 400)
