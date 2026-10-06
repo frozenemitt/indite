@@ -55,8 +55,17 @@ final class HelpAssistant {
                 guard !Task.isCancelled else { return }
                 // The articles the model actually read, in the order the search ranked
                 // them; the question's own words only if it never searched.
+                // The articles the model read, the one the answer draws on most first:
+                // a search can return two, and the answer may use only the second.
                 var sources = tool.found.all
                 if sources.isEmpty { sources = HelpArticle.search(question).map(\.id) }
+                let answerWords = HelpArticle.words(in: response.content)
+                sources.sort { a, b in
+                    let overlap = { (id: HelpArticle.ID) in
+                        HelpArticle.article(id: id).map { answerWords.intersection(HelpArticle.words(in: $0.title + " " + $0.body)).count } ?? 0
+                    }
+                    return overlap(a) > overlap(b)
+                }
                 sources = Array(sources.prefix(2))
                 state = .answered(response.content, sources: sources)
                 #if os(macOS)
@@ -121,6 +130,10 @@ extension HelpArticle {
     /// emoji picker, a search that also returned "Change the dictation key", which
     /// shares only "Globe" and "key", led the small model to answer with that article's
     /// fix instead.
+    static func words(in text: String) -> Set<String> {
+        Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+    }
+
     static func search(_ query: String) -> [HelpArticle] {
         let words = Set(query.lowercased()
             .split { !$0.isLetter && !$0.isNumber }

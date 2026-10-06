@@ -154,7 +154,11 @@ private struct AnswerView: View {
                 .controlSize(.small)
         case .answered(let answer, let sources):
             VStack(alignment: .leading, spacing: 8) {
-                Text(answer)
+                // The model writes Markdown emphasis around setting names.
+                Text((try? AttributedString(
+                    markdown: answer,
+                    options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                )) ?? AttributedString(answer))
                     .textSelection(.enabled)
                 if !sources.isEmpty {
                     HStack(spacing: 4) {
