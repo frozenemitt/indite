@@ -34,20 +34,18 @@ speech and language models, so it works offline and nothing you say leaves your 
 
 ## Dictation
 
-Hold the <kbd>Globe</kbd> key, talk, and let go. Your words are typed wherever your
-cursor is. It's made for replying quickly, to people or to an AI: read the message,
-hold the key, and say your answer.
+Dictate into any app on your Mac, with a shortcut you choose. Nscribe is made for
+replying quickly, to people or to an AI.
 
-Cleanup turns what you said into the style you want. It can remove filler words,
-make a message formal or casual, fix the punctuation, or follow a prompt you write.
-With context turned on, cleanup also reads the text already in the field, so names
-and terms from the conversation come out spelled right.
+Add your own vocabulary, and Nscribe also listens for the names and unusual words in
+the window you're dictating into, so obscure terms come out spelled right. Cleanup
+then puts what you said into the style you want. It can remove filler words, make a
+message formal or casual, fix the punctuation, or follow a prompt you write, and it
+can read the text in the field to match the conversation.
 
 - Watch your words appear as you speak, or hide the panel.
-- Add the names and terms you use, and replacements for words it gets wrong.
 - Give each app its own style.
-- <kbd>⌃⌥⌘Z</kbd> takes back the last dictation. <kbd>⌃⌥⌘V</kbd> types it again
-  somewhere else.
+- Take back your last dictation, or type it again somewhere else.
 
 <p align="center">
   <picture>

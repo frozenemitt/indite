@@ -331,3 +331,6 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-06 The README's tagline is Jonathan's: "Unlock the potential of Apple's
   Foundation Models. Fast, free, on-device dictation and transcription that knows your
   context and adapts to your prompts."
+- 2026-10-06 The README describes what Nscribe does, not how to operate it: no fixed
+  keys or gestures, since the shortcut and its mode are settings. "We don't need to be
+  including manual level instructions in the read me page."
