@@ -86,6 +86,8 @@ struct MenuBarView: View {
 
         Divider()
 
+        Button("Help") { HelpNavigator.shared.show(nil) }
+
         Button("Settings…") {
             openSettings()
             WindowFronting.bringForward("com_apple_SwiftUI_Settings")

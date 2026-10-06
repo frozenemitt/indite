@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DockPresence.start()
         onReady?()
         AppUpdater.shared.showWhatsNewIfDue()
+        Task { await HelpIndex.refresh() }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -223,6 +224,13 @@ struct NscribeApp: App {
                 .modelContainer(Self.modelContainer)
         }
         .defaultSize(width: 900, height: 600)
+
+        // The help articles, opened from the menu, from Spotlight and by Siri.
+        Window("Nscribe Help", id: HelpNavigator.windowID) {
+            HelpView()
+        }
+        .defaultSize(width: 760, height: 520)
+        .defaultLaunchBehavior(.suppressed)
 
         Window("Recent Dictations", id: Self.historyWindowID) {
             DictationHistoryView()
@@ -461,6 +469,25 @@ struct NscribeShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Quick Transcribe",
             systemImageName: "mic"
+        )
+        AppShortcut(
+            intent: ShowHelpIntent(),
+            phrases: [
+                "Show \(.applicationName) help",
+                "Open \(.applicationName) help",
+                "Help with \(.applicationName)"
+            ],
+            shortTitle: "Nscribe Help",
+            systemImageName: "questionmark.circle"
+        )
+        AppShortcut(
+            intent: OpenHelpArticleIntent(),
+            phrases: [
+                "Open \(\.$target) in \(.applicationName)",
+                "Show \(\.$target) in \(.applicationName) help"
+            ],
+            shortTitle: "Help Article",
+            systemImageName: "book"
         )
     }
 }
