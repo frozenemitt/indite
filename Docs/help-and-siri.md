@@ -106,3 +106,11 @@ articles.
     minutes after indexing: all three articles are in the index, the lexical control
     "emoji picker" finds its article, and the three questions worded unlike any article
     find nothing yet. The Siri conclusion waits on the probe.
+- 2026-10-06, 11:56 to 12:49, build 1.0.396, index untouched by relaunches. In six
+  rounds an hour apart in total, the lexical control "emoji picker" found its article
+  every time and the three questions worded unlike any article found nothing every
+  time. The semantic index never matched the articles by meaning within the hour.
+  This Mac also gave no positive control that semantic search works for any app, so
+  the cause is unproven; the effect is that Siri has nothing of Nscribe's to answer
+  from. Slice 2, the assistant in the Help window, goes ahead: it answers from the
+  articles directly and does not depend on Spotlight.
