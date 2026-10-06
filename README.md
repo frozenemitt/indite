@@ -39,7 +39,7 @@
 <br>
 
 <p align="center">
-  <img src="Docs/Images/dictation.webp" width="700"
+  <img src="Docs/Images/dictation.webp" width="658"
        alt="A dictation into Notes: the ribbon swells blue and violet as the words arrive in the panel, turns amber while they are cleaned up, and the sentence lands in the note">
 </p>
 
