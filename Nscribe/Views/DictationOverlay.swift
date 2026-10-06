@@ -51,7 +51,7 @@ final class DictationOverlayController {
     private var panel: NSPanel?
 
     /// The pane behind the content, faded on its own so the words stay readable.
-    private var glassView: NSGlassEffectView?
+    private var glassView: PanelGlassView?
 
     private let model = OverlayModel()
     private let settings: AppSettings
@@ -209,9 +209,9 @@ final class DictationOverlayController {
     /// the glass rather than living inside it — a view's alpha takes its subviews
     /// with it.
     ///
-    /// The tint itself is set once when the panel is built. Assigning it twenty times
-    /// a second makes the material recomposite on every tick and the panel goes
-    /// muddy.
+    /// The tint itself is left alone here. Assigning it twenty times a second makes the
+    /// material recomposite on every tick and the panel goes muddy, so the glass sets
+    /// it when it is built and again only when the appearance changes.
     private func applyOpacity() {
         let wanted = settings.overlayOpacity
 
@@ -394,7 +394,7 @@ final class DictationOverlayController {
         // modifier: this one samples the windows behind the panel, which is where the
         // lensing comes from and what the SwiftUI version had no access to inside a
         // borderless transparent panel.
-        let glass = NSGlassEffectView()
+        let glass = PanelGlassView()
         glass.translatesAutoresizingMaskIntoConstraints = false
         // Clear rather than regular: the regular style is mostly frost, and frost is
         // what hides the refraction. Clear blurs far less and lets the edge bend what
@@ -404,9 +404,7 @@ final class DictationOverlayController {
         // this gentle put almost none of the panel inside it. A larger radius gives
         // the effect somewhere to happen.
         glass.cornerRadius = 26
-        // Set once. Reassigning it per frame makes the material recomposite and the
-        // panel darkens as it goes.
-        glass.tintColor = NSColor.black.withAlphaComponent(0.22)
+        glass.applyTint()
         self.glassView = glass
 
         // The content sits on top of the glass rather than inside it. As the glass
@@ -526,6 +524,26 @@ final class DictationOverlayController {
     }
 }
 
+/// The panel's glass, tinted for the appearance it is drawn in.
+///
+/// The tint changes only when the appearance does. Reassigning it every frame makes the
+/// material recomposite, and the panel darkens as it goes. It still has to follow the
+/// system from light to dark and back while Nscribe runs, or a panel built in one
+/// would keep that tint under the other.
+private final class PanelGlassView: NSGlassEffectView {
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyTint()
+    }
+
+    func applyTint() {
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        tintColor = isDark
+            ? NSColor.black.withAlphaComponent(0.22)
+            : NSColor.white.withAlphaComponent(0.20)
+    }
+}
+
 /// Drags the panel from anywhere inside it.
 ///
 /// `performDrag` hands the drag to the window server and returns before the panel has
@@ -576,6 +594,8 @@ final class OverlayModel {
 
 private struct DictationOverlayView: View {
     @Bindable var model: OverlayModel
+
+    @Environment(\.colorScheme) private var colorScheme
 
     /// One line of the text style actually in use, so everything below follows the
     /// system font size rather than a number that happens to look right today.
@@ -638,34 +658,57 @@ private struct DictationOverlayView: View {
             maxHeight: .infinity,
             alignment: .top
         )
-        // No background here. The glass is an NSGlassEffectView behind this view.
+        // No background here, and no color scheme. The glass is an NSGlassEffectView
+        // behind this view, and the words, the ribbon and the rim follow the system
+        // appearance as the glass does: dark on a light pane, light on a dark one.
         //
-        // The rim is drawn rather than sampled: a light edge, brightest where a light
-        // above and to the left would catch it, fading around the curve. That is the
-        // specular highlight the material renders faintly on a shape this large, and
-        // drawing it is the honest way to get the read at this size.
-        .overlay(
-            RoundedRectangle(cornerRadius: 26)
-                .strokeBorder(
+        // The rim is the pane's edge, so it thins with the pane. Left solid it outlines
+        // a panel that is no longer there.
+        .overlay(rim.opacity(model.paneOpacity))
+    }
+
+    /// The rim is drawn rather than sampled: a light edge, brightest where a light
+    /// above and to the left would catch it, fading around the curve. That is the
+    /// specular highlight the material renders faintly on a shape this large, and
+    /// drawing it is the honest way to get the read at this size.
+    ///
+    /// A white edge vanishes against a light pane, so in light mode a faint dark
+    /// outline marks where the panel ends and the highlight runs just inside it.
+    @ViewBuilder
+    private var rim: some View {
+        let corner = RoundedRectangle(cornerRadius: 26)
+        if colorScheme == .dark {
+            corner.strokeBorder(
+                LinearGradient(
+                    colors: [
+                        .white.opacity(0.55),
+                        .white.opacity(0.12),
+                        .white.opacity(0.04),
+                        .white.opacity(0.18)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
+        } else {
+            ZStack {
+                corner.strokeBorder(Color.black.opacity(0.10), lineWidth: 1)
+                corner.inset(by: 1).strokeBorder(
                     LinearGradient(
                         colors: [
-                            .white.opacity(0.55),
-                            .white.opacity(0.12),
-                            .white.opacity(0.04),
-                            .white.opacity(0.18)
+                            .white.opacity(0.95),
+                            .white.opacity(0.35),
+                            .white.opacity(0.15),
+                            .white.opacity(0.5)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
                     lineWidth: 1
                 )
-                // The rim is the pane's edge, so it thins with the pane. Left solid it
-                // outlines a panel that is no longer there.
-                .opacity(model.paneOpacity)
-        )
-        // Rendered dark throughout, so the text comes out light and the glass picks
-        // its dark treatment, rather than each part being told separately.
-        .environment(\.colorScheme, .dark)
+            }
+        }
     }
 
     /// The dictation stays up, dimmed, until the rewrite starts replacing it.

@@ -28,6 +28,8 @@ The ribbon has the only colors of Nscribe's own, defined in `ListeningBar.swift`
 - Azure `(0.24, 0.60, 1.00)` and violet `(0.62, 0.38, 1.00)` while listening.
 - Amber `(1.00, 0.70, 0.32)` while the AI rewrites.
 - White at the center line.
+- In light mode, an edge of deep azure `(0.10, 0.42, 0.95)`, or deep amber
+  `(0.90, 0.48, 0.05)` while the AI rewrites.
 
 Speaker colors in a transcript come from the system palette, by speaker number.
 
@@ -44,7 +46,8 @@ live clock. No serif: see the decisions log.
 - Meetings: a list beside a page, with no third column. The list's commands sit
   directly above it. The page reads top to bottom: title and speakers, summary,
   transcript, and a playback bar along the bottom. See `Docs/meetings-rework.md`.
-- Floating panels: glass, dark, draggable, on every desktop.
+- Floating panels: glass, draggable, on every desktop. The dictation panel follows the
+  system appearance; the meeting pill stays dark.
 
 ## Elevation & Depth
 
@@ -307,3 +310,6 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   deep blue center ("reads as a marker") and a colored rim. "I agree with direction 2
   for the light mode." This replaces "Floating panels: glass, dark" for the dictation
   panel.
+- 2026-10-06 The light panel, tried on Jonathan's desktop, stays as built. "I think it
+  looks good. It's bouncing a little bit with background noise, but I don't think it's
+  any different than in dark mode."
