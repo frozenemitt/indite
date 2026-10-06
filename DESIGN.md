@@ -313,3 +313,9 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-06 The light panel, tried on Jonathan's desktop, stays as built. "I think it
   looks good. It's bouncing a little bit with background noise, but I don't think it's
   any different than in dark mode."
+- 2026-10-06 The Help window opens on a question, not on an article: one field, what to
+  ask, three example questions, and the article list behind the sidebar button and a
+  "Browse all articles" link. Ask Nscribe is in the menu, on ⌘? and in Siri. "The
+  landing of the help window should just be a search bar with instructions to say
+  what you're looking for. I think the menu should be accessible as well, but I don't
+  want that to be the default."
