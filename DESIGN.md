@@ -295,3 +295,15 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-05 Every image in the README is centered on its own line. "I think all
   images should be centered, laying them out like a journal doesn't really make
   sense in GitHub."
+- 2026-10-06 The README leads with a dictation clip, not the meeting screenshot. "I like
+  the idea of the dictation clip."
+- 2026-10-06 Removed from the README: the badge row, the row of section links, the intro
+  paragraph (its sentence on what runs where moved to Privacy), the still of the panel
+  under Dictation, and "an N made of two quotation marks". "I agree with the removal
+  proposals."
+- 2026-10-06 The dictation panel follows the system appearance. In light mode the ribbon
+  keeps its white core, given a thin blue edge and a colored halo in normal blending;
+  the glass takes a light tint, the rim a dark outline, the text dark. Chosen over a
+  deep blue center ("reads as a marker") and a colored rim. "I agree with direction 2
+  for the light mode." This replaces "Floating panels: glass, dark" for the dictation
+  panel.

@@ -22,20 +22,6 @@
   <sub>Free and open source · macOS 27</sub>
 </p>
 
-<p align="center">
-  <a href="#install">Install</a> ·
-  <a href="#dictation">Dictation</a> ·
-  <a href="#meetings">Meetings</a> ·
-  <a href="#privacy">Privacy</a> ·
-  <a href="#build-it-yourself">Build it yourself</a>
-</p>
-
-<p align="center">
-  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-27-blue.svg" alt="macOS 27"></a>
-  <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-6-orange.svg" alt="Swift 6"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
-</p>
-
 <br>
 
 <p align="center">
@@ -43,17 +29,7 @@
        alt="A dictation into Notes: the ribbon swells blue and violet as the words arrive in the panel, turns amber while they are cleaned up, and the sentence lands in the note">
 </p>
 
-Nscribe is a dictation and meeting app for the Mac, free and open source. It lives in
-the menu bar as an N made of two quotation marks. Transcription runs on Apple's
-speech recognizer, rewriting and summaries on Apple's on-device model, and speaker
-separation on CoreML models that run locally.
-
 ## Dictation
-
-<p align="center">
-  <img src="Docs/Images/dictation.png" width="510"
-       alt="The ribbon panel during a dictation, showing the words as they arrive">
-</p>
 
 - **The Globe key.** Hold <kbd>Globe</kbd> and talk, or press it once to start and
   again to stop. <kbd>Esc</kbd> discards a dictation.
@@ -97,7 +73,9 @@ separation on CoreML models that run locally.
 
 ## Privacy
 
-Everything runs on this Mac. Audio and text are never uploaded.
+Everything runs on this Mac. Audio and text are never uploaded. Transcription runs
+on Apple's speech recognizer, rewriting and summaries on Apple's on-device model, and
+speaker separation on CoreML models that run locally.
 
 Nscribe reaches the network for three things only, and never with your data:
 
