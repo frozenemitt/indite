@@ -52,7 +52,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="Docs/Images/rewriting-dark.png">
-    <img src="Docs/Images/rewriting-light.png" width="700"
+    <img src="Docs/Images/rewriting-light.png" width="760"
          alt="Settings, Rewriting: the built-in prompts with their In menu switches, and Simple Clean open for editing, showing its system prompt and its instructions">
   </picture>
   <br>
@@ -62,8 +62,11 @@
 ## Meetings
 
 <p align="center">
-  <img src="Docs/Images/meeting.png" width="700"
-       alt="A meeting in Nscribe: its title, the three speakers, a summary, and the transcript by speaker, with the word being played set in bold">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Docs/Images/meeting-dark.png">
+    <img src="Docs/Images/meeting-light.png" width="760"
+         alt="A meeting in Nscribe: its title, the three speakers, a summary, and the transcript by speaker, with the word being played set in bold">
+  </picture>
   <br>
   <sub>A meeting, read back by speaker. The word being played is set in bold.</sub>
 </p>
