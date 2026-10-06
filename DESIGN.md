@@ -313,3 +313,12 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-06 The light panel, tried on Jonathan's desktop, stays as built. "I think it
   looks good. It's bouncing a little bit with background noise, but I don't think it's
   any different than in dark mode."
+- 2026-10-06 README copy is written as copy, not prose: feature headlines may be short
+  phrases. "Of course you can use fragments. This is copy not prose writing."
+- 2026-10-06 The README names no other product. "I don't think we should be comparing
+  to anyone else."
+- 2026-10-06 The README leads with what people who want this kind of app care about:
+  every app with one key, text that reads as typed, privacy, free; and for meetings,
+  no bot in the call. Developer material moved to BUILDING.md. "Really consider what
+  are the key points that someone attracted to this kind of app might care about and
+  make sure that you're highlighting those first."
