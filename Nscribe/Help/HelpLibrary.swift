@@ -14,7 +14,7 @@ enum HelpLibrary {
         microphone, stopsByItself, undoDictation, typeAgain, recentDictations, sounds,
         notifications, appProfiles, language,
         // Rewriting
-        keepMyWords, choosePrompt, customPrompt, surroundingContext,
+        keepMyWords, choosePrompt, customPrompt, promptAdvanced, surroundingContext,
         // Words and Spelling
         vocabulary, wordReplacements,
         // Meetings
@@ -63,7 +63,7 @@ enum HelpLibrary {
             Click the N to open Nscribe's menu. Its first line says whether Nscribe is \
             ready and which key starts a dictation. Below it are "Start Dictation", "Start \
             Meeting", the Rewrite and Microphone choices, "Meetings", "Recent Dictations", \
-            "Ask Nscribe…", "Settings…" and "Check for Updates…".
+            "Help", "Settings…" and "Check for Updates…".
 
             The N changes shape with what Nscribe is doing. It sits in a filled square \
             while you dictate, becomes a brain while your words are rewritten, and becomes \
@@ -93,16 +93,16 @@ enum HelpLibrary {
         id: "ask-nscribe",
         title: "Ask Nscribe a question",
         body: """
-            Click Nscribe's N in the menu bar and choose "Ask Nscribe…". Type a question, \
-            or describe what isn't working, and press Return.
+            Click Nscribe's N in the menu bar and choose "Help", or choose "Nscribe Help" \
+            from the Help menu while an Nscribe window is open. Type a question, or \
+            describe what isn't working, and press Return.
 
             The answer is written on this Mac by Apple's on-device model, from these help \
-            articles. Under it, "Answered from" names the article it came from, and a \
-            button opens the setting it mentions when there is one.
+            articles. Under it, "From" names the article it came from, and a button opens \
+            the setting it mentions when there is one.
 
-            Answers need Apple Intelligence. Without it, the list under the field still \
-            shows every article that shares a word with what you typed, and you can open \
-            any of them to read it.
+            Answers need Apple Intelligence. Without it, click "Browse all articles" to \
+            read the articles by topic.
             """,
         topic: .gettingStarted
     )
@@ -464,6 +464,32 @@ enum HelpLibrary {
         action: .nscribeSettings
     )
 
+    static let promptAdvanced = HelpArticle(
+        id: "prompt-advanced",
+        title: "Make rewrites more predictable or more varied",
+        body: """
+            Each prompt has Advanced settings, which set how freely Apple's on-device \
+            model chooses its words when it rewrites a dictation. Open Nscribe's \
+            Settings, choose Rewriting, select the prompt, and click "Advanced" under its \
+            instructions. Built-in prompts can change these too, without a copy.
+
+            Temperature, from 0 to 1, sets how much the wording varies. Lower it to make \
+            rewrites more predictable; raise it if they sound stiff or repetitive. Every \
+            built-in prompt starts at 0.5, except Simple Clean, which starts at 0.3.
+
+            Sampling sets how each word is chosen. Greedy always takes the likeliest word, \
+            so the same dictation is rewritten the same way every time: choose it if a \
+            prompt rewrites the same words differently each time, or strays from what you \
+            said. Simple Clean uses it. Temperature is hidden while Greedy is chosen, \
+            because it has nothing to act on. Automatic, the setting for the other \
+            built-in prompts, is Apple's default. Top-P chooses among the likeliest words \
+            until their chances add up to the Probability Threshold. Top-K chooses among a \
+            fixed number of the likeliest words; a lower Top K keeps the wording closer.
+            """,
+        topic: .rewriting,
+        action: .nscribeSettings
+    )
+
     static let surroundingContext = HelpArticle(
         id: "surrounding-context",
         title: "Let the rewrite match the conversation",
@@ -739,9 +765,9 @@ enum HelpLibrary {
         title: "Ask Siri for help with Nscribe",
         body: """
             Say "Ask Nscribe" or "Show Nscribe help" to Siri to open Nscribe's Help \
-            window, then type your question. To go straight to the articles about \
-            something, say "Search Nscribe for" and the words, such as "Search Nscribe for \
-            the dictation key".
+            window, then type your question. To ask in one go, say "Search Nscribe for" \
+            and the question, such as "Search Nscribe for how to change the dictation \
+            key". The Help window opens with the answer.
 
             Spotlight also finds these help articles by their words. Choosing one opens it \
             in Nscribe's Help window.

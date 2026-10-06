@@ -332,3 +332,12 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   search bar would collapse at the top, so they could go back to the agentic search."
   Rejected: titling each article as a question and asking it on click ("I'm not sure I
   agree with this").
+- 2026-10-06 The menu says Help: "Help" in Nscribe's menu, and "Nscribe Help" on ⌘? in
+  the Help menu, replacing "Ask Nscribe…". "I do think it should say help, because
+  that's what people are looking for in the menu."
+- 2026-10-06 Help articles may name other companies' products, such as AirPods, Slack
+  and Zoom, because people ask with those words: "Yeah, that's totally fine." The
+  README still compares Nscribe to no one.
+- 2026-10-06 The README keeps "Click a word to hear it", though a click moves the
+  playhead and Play starts the sound: "People will understand that they need to click
+  play." The Play button's tooltip names ⌘↩.

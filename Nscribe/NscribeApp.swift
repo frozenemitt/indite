@@ -238,7 +238,8 @@ struct NscribeApp: App {
         // The standard Help shortcut, while any Nscribe window is in front.
         .commands {
             CommandGroup(replacing: .help) {
-                Button("Ask Nscribe…") { HelpNavigator.shared.ask() }
+                // "Help", because that is the word people look for in a menu.
+                Button("Nscribe Help") { HelpNavigator.shared.ask() }
                     .keyboardShortcut("?", modifiers: .command)
                 Button("Nscribe on GitHub") { NSWorkspace.shared.open(Self.repositoryURL) }
             }
