@@ -157,6 +157,9 @@ enum HelpIndex {
     /// Each question, and the article that should answer it. None shares the article's
     /// key words, so only a semantic match finds it.
     private static let probes: [(question: String, expected: String)] = [
+        // A control that shares the article's words: if this misses too, the query
+        // is at fault, not the index.
+        ("emoji picker", "globe-key-emoji"),
         ("why does pressing the world key show smileys", "globe-key-emoji"),
         ("use a different shortcut to start talking", "dictation-key"),
         ("capture what the other people say on a video call", "call-audio")
@@ -164,6 +167,8 @@ enum HelpIndex {
 
     /// Runs the probe at launch and every ten minutes for an hour.
     static func probeRepeatedly() async {
+        // Loads what semantic search needs; Apple asks for it before the first query.
+        CSUserQuery.prepare()
         for round in 0..<7 {
             if round > 0 { try? await Task.sleep(for: .seconds(600)) }
             await probe(round: round)
@@ -175,7 +180,9 @@ enum HelpIndex {
         Log.app.notice("Help probe \(round, privacy: .public): \(lexical.count, privacy: .public) articles in the index: \(lexical.joined(separator: ", "), privacy: .public)")
         for probe in probes {
             let found = await search(probe.question, semantic: true)
-            let hit = found.first == probe.expected ? "HIT" : (found.contains(probe.expected) ? "found, not first" : "MISS")
+            // Spotlight prefixes each identifier with the entity's type name.
+            let ids = found.map { $0.split(separator: "/").last.map(String.init) ?? $0 }
+            let hit = ids.first == probe.expected ? "HIT" : (ids.contains(probe.expected) ? "found, not first" : "MISS")
             Log.app.notice("Help probe \(round, privacy: .public): \(hit, privacy: .public) for \"\(probe.question, privacy: .public)\" -> \(found.joined(separator: ", "), privacy: .public)")
         }
     }
