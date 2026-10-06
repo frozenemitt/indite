@@ -9,6 +9,23 @@ struct HelpArticle: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let body: String
+    /// The one thing to do about it, offered as a button under an answer drawn from
+    /// this article.
+    var action: Action? = nil
+
+    enum Action: Hashable, Sendable {
+        case nscribeSettings
+        case keyboardSettings
+        case screenRecordingSettings
+
+        var title: String {
+            switch self {
+            case .nscribeSettings: "Open Nscribe Settings"
+            case .keyboardSettings: "Open Keyboard Settings"
+            case .screenRecordingSettings: "Open Screen & System Audio Recording"
+            }
+        }
+    }
 }
 
 extension HelpArticle {
@@ -31,7 +48,8 @@ extension HelpArticle {
             Under "Pressing it", choose "Hold to talk" to dictate only while the key is \
             held down, or "Press to start, press to stop" to keep dictating until you \
             press it again. Escape discards a dictation in progress.
-            """
+            """,
+        action: .nscribeSettings
     )
 
     static let globeKeyEmoji = HelpArticle(
@@ -45,7 +63,8 @@ extension HelpArticle {
 
             The emoji picker is still on Control-Command-Space (⌃⌘Space), Apple's own \
             default.
-            """
+            """,
+        action: .keyboardSettings
     )
 
     static let callAudio = HelpArticle(
@@ -61,6 +80,7 @@ extension HelpArticle {
             This works with any app that plays the call through your Mac. It records \
             everyone audible on the call, so check that the people you are meeting with \
             are content to be recorded.
-            """
+            """,
+        action: .screenRecordingSettings
     )
 }

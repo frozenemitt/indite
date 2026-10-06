@@ -232,7 +232,8 @@ struct NscribeApp: App {
         Window("Nscribe Help", id: HelpNavigator.windowID) {
             HelpView()
         }
-        .defaultSize(width: 760, height: 520)
+        // Narrow, as Help windows are: an answer reads best at a short line.
+        .defaultSize(width: 560, height: 620)
         .defaultLaunchBehavior(.suppressed)
         // The standard Help shortcut, while any Nscribe window is in front.
         .commands {

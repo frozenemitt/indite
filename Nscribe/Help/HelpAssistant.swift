@@ -30,7 +30,8 @@ final class HelpAssistant {
     private static let instructions = """
         You answer questions about Nscribe, a Mac app for dictation and meeting \
         transcription. Always call searchHelp first, then answer only from the articles \
-        it returns. Answer in two to four plain sentences and name the exact settings, \
+        it returns. Lead with the fix, not with why the problem happens. Answer in two \
+        to four plain sentences and name the exact settings, \
         switches and buttons the articles name. Give the fix the articles give for the \
         exact problem asked about, and do not offer other settings as alternatives. If \
         the articles do not cover the question, say so in one sentence and do not guess.
@@ -72,9 +73,7 @@ final class HelpAssistant {
                 }
                 sources = Array(sources.prefix(2))
                 state = .answered(response.content, sources: sources)
-                #if os(macOS)
-                HelpNavigator.shared.openArticleID = sources.first
-                #endif
+
                 Log.app.notice("Help assistant answered in \(response.content.count, privacy: .public) characters")
             } catch {
                 guard !Task.isCancelled else { return }

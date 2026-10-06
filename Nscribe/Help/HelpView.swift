@@ -42,6 +42,7 @@ struct HelpView: View {
     @Bindable private var assistant = HelpAssistant.shared
     @Bindable private var navigator = HelpNavigator.shared
     @FocusState private var fieldFocused: Bool
+    @Environment(\.openSettings) private var openSettings
 
     private static let examples = [
         "How do I change the dictation key?",
@@ -69,7 +70,7 @@ struct HelpView: View {
             Divider()
             List {
                 if query.isEmpty, !showsAnswer {
-                    Section("Try asking") {
+                    Section("Try Asking") {
                         ForEach(Self.examples, id: \.self) { example in
                             Button(example) { assistant.ask(example) }
                                 .buttonStyle(.link)
@@ -86,7 +87,7 @@ struct HelpView: View {
                     }
                 }
 
-                Section(query.isEmpty ? "All Articles" : "Articles") {
+                Section("Articles") {
                     if articles.isEmpty {
                         Text("No article matches. Press Return to ask.")
                             .foregroundStyle(.secondary)
@@ -97,6 +98,8 @@ struct HelpView: View {
                 }
             }
             .listStyle(.inset)
+            // Space between sections, not a rule between every row.
+            .listRowSeparator(.hidden)
         }
         .navigationTitle("Nscribe Help")
         .frame(minWidth: 520, minHeight: 400)
@@ -139,24 +142,48 @@ struct HelpView: View {
                 .controlSize(.small)
                 .padding(.vertical, 4)
         case .answered(let text, let sources):
-            VStack(alignment: .leading, spacing: 6) {
+            let source = sources.first.flatMap(HelpArticle.article(id:))
+            VStack(alignment: .leading, spacing: 10) {
                 // The model writes Markdown emphasis around setting names.
                 Text((try? AttributedString(
                     markdown: text,
                     options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
                 )) ?? AttributedString(text))
+                    .font(.title3)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                if let first = sources.first, let article = HelpArticle.article(id: first) {
-                    Text("From “\(article.title)”")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if let action = source?.action {
+                    Button(action.title) { perform(action) }
+                        .controlSize(.large)
+                }
+                if let source {
+                    HStack(spacing: 4) {
+                        Text("Answered from")
+                            .foregroundStyle(.secondary)
+                        Button(source.title) { navigator.openArticleID = source.id }
+                            .buttonStyle(.link)
+                    }
+                    .font(.caption)
                 }
             }
             .padding(.vertical, 4)
         case .failed(let message):
             Text(message)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+extension HelpView {
+    private func perform(_ action: HelpArticle.Action) {
+        switch action {
+        case .nscribeSettings:
+            openSettings()
+            WindowFronting.bringForward("com_apple_SwiftUI_Settings")
+        case .keyboardSettings:
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
+        case .screenRecordingSettings:
+            SystemAudioCapture.openSystemSettings()
         }
     }
 }
