@@ -283,7 +283,8 @@ private struct ArticlePage: View {
 @MainActor
 private func perform(_ action: HelpArticle.Action, openSettings: OpenSettingsAction) {
     switch action {
-    case .nscribeSettings:
+    case .nscribeSettings(let tab):
+        SettingsTab.open(tab)
         openSettings()
         WindowFronting.bringForward("com_apple_SwiftUI_Settings")
     case .keyboardSettings:

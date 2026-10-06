@@ -300,7 +300,7 @@ final class AIProcessor {
     /// request's own opening, character for character. Any difference and the warming
     /// buys nothing.
     private static func userPrompt(for prompt: Prompt, text: String, surroundingText: String?) -> String {
-        let request = prompt.apply(to: text)
+        let request = prompt.apply(to: text, note: languageNote)
 
         // Prepended, and fenced off in its own tags, so the model treats it as
         // background rather than as more text to rewrite. Without the fencing the
@@ -318,6 +318,18 @@ final class AIProcessor {
 
             \(request)
             """
+    }
+
+    /// The dictation's language, told to the model when it is not English. The
+    /// prompts are written in English, and Clean Up turned German and French
+    /// dictations into English; told the language, it kept German, French and
+    /// Spanish in every try. Before the transcription, so a warmed prefix still
+    /// matches the request.
+    private static var languageNote: String? {
+        guard let code = TranscriptionEngine.language?.languageCode, code != .english,
+              let name = Locale(identifier: "en").localizedString(forLanguageCode: code.identifier)
+        else { return nil }
+        return "The transcription is in \(name). Write your reply in \(name)."
     }
 
     /// Hold a prompt that keeps the speaker's words to it; see `WordGuard`.

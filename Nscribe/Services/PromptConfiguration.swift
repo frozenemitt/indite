@@ -131,10 +131,12 @@ struct Prompt: Identifiable, Codable, Equatable, Hashable {
     /// `{text}` placeholder; that substitution hasn't existed for a while, so any
     /// leftover `{text}` is dropped rather than left sitting uselessly next to the
     /// transcript that is now appended after it.
-    func apply(to text: String) -> String {
+    /// The template, then `note` when there is one, then the transcription.
+    func apply(to text: String, note: String? = nil) -> String {
         let withoutPlaceholder = userTemplate.replacingOccurrences(of: "{text}", with: "")
         let trimmed = withoutPlaceholder.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(trimmed)\n\n<transcription>\n\(text)\n</transcription>"
+        let head = [trimmed, note].compactMap { $0 }.joined(separator: "\n\n")
+        return "\(head)\n\n<transcription>\n\(text)\n</transcription>"
     }
 
     /// Build GenerationOptions from this prompt's per-prompt settings

@@ -146,7 +146,7 @@ enum HelpLibrary {
             The first line of Nscribe's menu names the key in use.
             """,
         topic: .dictation,
-        action: .nscribeSettings
+        action: .nscribeSettings(.dictation)
     )
 
     static let handsFree = HelpArticle(
@@ -163,7 +163,7 @@ enum HelpLibrary {
             In either mode, Escape throws the dictation away.
             """,
         topic: .dictation,
-        action: .nscribeSettings
+        action: .nscribeSettings(.dictation)
     )
 
     static let cancelDictation = HelpArticle(
@@ -199,7 +199,7 @@ enum HelpLibrary {
             go away for good, turn off "Show the words as you dictate".
             """,
         topic: .dictation,
-        action: .nscribeSettings
+        action: .nscribeSettings(.feedback)
     )
 
     static let afterTyping = HelpArticle(
@@ -220,7 +220,7 @@ enum HelpLibrary {
             undo key cannot take the dictation back.
             """,
         topic: .dictation,
-        action: .nscribeSettings
+        action: .nscribeSettings(.dictation)
     )
 
     static let alwaysCopy = HelpArticle(
@@ -241,7 +241,7 @@ enum HelpLibrary {
             Apps tab and set its "Output".
             """,
         topic: .dictation,
-        action: .nscribeSettings
+        action: .nscribeSettings(.dictation)
     )
 
     static let microphone = HelpArticle(
@@ -275,7 +275,7 @@ enum HelpLibrary {
             "Start Meeting" from Nscribe's menu instead.
             """,
         topic: .dictation,
-        action: .nscribeSettings
+        action: .nscribeSettings(.dictation)
     )
 
     static let undoDictation = HelpArticle(
@@ -349,7 +349,7 @@ enum HelpLibrary {
             choose an audio file. It then appears in every list of sounds.
             """,
         topic: .dictation,
-        action: .nscribeSettings
+        action: .nscribeSettings(.feedback)
     )
 
     static let notifications = HelpArticle(
@@ -363,7 +363,7 @@ enum HelpLibrary {
             you turn them off.
             """,
         topic: .dictation,
-        action: .nscribeSettings
+        action: .nscribeSettings(.feedback)
     )
 
     static let appProfiles = HelpArticle(
@@ -385,20 +385,28 @@ enum HelpLibrary {
             own, Nscribe's menu says so.
             """,
         topic: .dictation,
-        action: .nscribeSettings
+        action: .nscribeSettings(.apps)
     )
 
     static let language = HelpArticle(
         id: "language",
         title: "Dictate in another language",
         body: """
-            Nscribe transcribes English. It asks Apple's speech recognizer for its US \
-            English model, and there is no setting to choose another language, such as \
-            Spanish, French or German. Meetings and imported recordings are transcribed in \
-            English too.
+            Nscribe transcribes in your Mac's language: the first language under \
+            Preferred Languages, in System Settings, General, Language & Region, that \
+            Apple's speech recognizer supports. It supports German, Spanish, French, \
+            Italian, Portuguese, Japanese, Korean, Chinese, Hindi and others. If it \
+            supports none of your languages, Nscribe transcribes US English. Meetings and \
+            imported recordings use the same language.
 
-            Apple downloads the speech model the first time you dictate, so that first \
-            dictation can take longer to start.
+            To dictate in another language, drag it to the top of Preferred Languages, \
+            then choose "Quit Nscribe" from Nscribe's menu and open Nscribe again. Apple \
+            downloads the speech model for a language the first time you dictate in it, \
+            so that first dictation can take longer to start.
+
+            Rewriting keeps your dictation in its language. It runs on Apple \
+            Intelligence, which supports fewer languages: Hindi and the other languages \
+            of India are not among them.
             """,
         topic: .dictation
     )
@@ -461,7 +469,7 @@ enum HelpLibrary {
             then appears in the Rewrite menu.
             """,
         topic: .rewriting,
-        action: .nscribeSettings
+        action: .nscribeSettings(.rewriting)
     )
 
     static let promptAdvanced = HelpArticle(
@@ -487,7 +495,7 @@ enum HelpLibrary {
             fixed number of the likeliest words; a lower Top K keeps the wording closer.
             """,
         topic: .rewriting,
-        action: .nscribeSettings
+        action: .nscribeSettings(.rewriting)
     )
 
     static let surroundingContext = HelpArticle(
@@ -504,7 +512,7 @@ enum HelpLibrary {
             it for that one rewrite, and never sends it anywhere.
             """,
         topic: .rewriting,
-        action: .nscribeSettings
+        action: .nscribeSettings(.rewriting)
     )
 
     // MARK: - Words and Spelling
@@ -528,7 +536,7 @@ enum HelpLibrary {
             on the same tab.
             """,
         topic: .words,
-        action: .nscribeSettings
+        action: .nscribeSettings(.words)
     )
 
     static let wordReplacements = HelpArticle(
@@ -546,7 +554,7 @@ enum HelpLibrary {
             appears. To remove a rule, select it and click the minus button.
             """,
         topic: .words,
-        action: .nscribeSettings
+        action: .nscribeSettings(.words)
     )
 
     // MARK: - Meetings
@@ -585,7 +593,7 @@ enum HelpLibrary {
             the people you are meeting with are content to be recorded.
             """,
         topic: .meetings,
-        action: .screenRecordingSettings
+        action: .nscribeSettings(.meetings)
     )
 
     static let meetingPill = HelpArticle(
@@ -604,7 +612,7 @@ enum HelpLibrary {
             where it started.
             """,
         topic: .meetings,
-        action: .nscribeSettings
+        action: .nscribeSettings(.meetings)
     )
 
     static let speakerNames = HelpArticle(
@@ -793,7 +801,7 @@ enum HelpLibrary {
             sits beside any that needs you.
             """,
         topic: .privacy,
-        action: .nscribeSettings
+        action: .nscribeSettings(.dictation)
     )
 
     static let privacy = HelpArticle(
@@ -833,7 +841,7 @@ enum HelpLibrary {
             Deleted.
             """,
         topic: .privacy,
-        action: .nscribeSettings
+        action: .nscribeSettings(.dictation)
     )
 
     // MARK: - Troubleshooting
@@ -892,7 +900,7 @@ enum HelpLibrary {
             Settings" beside either one goes to the switch for it.
             """,
         topic: .troubleshooting,
-        action: .nscribeSettings
+        action: .nscribeSettings(.dictation)
     )
 
     static let copiedNotTyped = HelpArticle(
@@ -933,7 +941,7 @@ enum HelpLibrary {
             meeting gets no summary.
             """,
         topic: .troubleshooting,
-        action: .nscribeSettings
+        action: .nscribeSettings(.dictation)
     )
 
     static let rewriteFailed = HelpArticle(
@@ -982,11 +990,16 @@ enum HelpLibrary {
             MB from HuggingFace, and then run on this Mac with no network.
 
             Speakers are separated when a meeting ends, because telling voices apart needs \
-            the whole recording. "Check for Updates" in the same place compares your copy \
-            with the published models, and "Re-download Models" replaces it.
+            the whole recording. A meeting recorded before the models were installed \
+            keeps a single speaker: Nscribe cannot separate the speakers of a past \
+            meeting. To give its lines to other people, click the speaker's name on a \
+            line and choose "A New Speaker".
+
+            "Check for Updates" in the same place compares your copy with the published \
+            models, and "Re-download Models" replaces it.
             """,
         topic: .troubleshooting,
-        action: .nscribeSettings
+        action: .nscribeSettings(.meetings)
     )
 
     static let microphoneBusy = HelpArticle(
@@ -1017,7 +1030,7 @@ enum HelpLibrary {
             Anything you wrote or said is redacted by macOS before it reaches this list.
             """,
         topic: .troubleshooting,
-        action: .nscribeSettings
+        action: .nscribeSettings(.about)
     )
 
     static let resetSettings = HelpArticle(
@@ -1033,6 +1046,6 @@ enum HelpLibrary {
             meetings. A reset cannot be undone.
             """,
         topic: .troubleshooting,
-        action: .nscribeSettings
+        action: .nscribeSettings(.about)
     )
 }

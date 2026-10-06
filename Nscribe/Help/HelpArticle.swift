@@ -27,7 +27,8 @@ struct HelpArticle: Identifiable, Hashable, Sendable {
     }
 
     enum Action: Hashable, Sendable {
-        case nscribeSettings
+        /// Nscribe's Settings, at the tab the article names.
+        case nscribeSettings(SettingsTab)
         case keyboardSettings
         case screenRecordingSettings
 
