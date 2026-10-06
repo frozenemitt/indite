@@ -18,7 +18,7 @@ enum HelpLibrary {
         // Words and Spelling
         vocabulary, wordReplacements,
         // Meetings
-        startMeeting, callAudio, meetingPill, speakerNames, correctTranscript, playback,
+        startMeeting, callAudio, meetingPill, speakerNames, oldMeetingSpeakers, correctTranscript, playback,
         meetingSummary, importRecording, exportMeeting, deleteMeeting, searchMeetings,
         // Siri and Shortcuts
         quickTranscribe, siriHelp,
@@ -404,9 +404,9 @@ enum HelpLibrary {
             downloads the speech model for a language the first time you dictate in it, \
             so that first dictation can take longer to start.
 
-            Rewriting keeps your dictation in its language. It runs on Apple \
-            Intelligence, which supports fewer languages: Hindi and the other languages \
-            of India are not among them.
+            Rewriting keeps your dictation in the language you spoke, and does not \
+            translate it. Apple Intelligence, which does the rewriting, does not support \
+            Hindi or the other languages of India.
             """,
         topic: .dictation
     )
@@ -629,6 +629,23 @@ enum HelpLibrary {
 
             Nscribe separates the speakers when a meeting ends, and only when the speaker \
             models are installed in Settings, under Meetings.
+            """,
+        topic: .meetings
+    )
+
+    static let oldMeetingSpeakers = HelpArticle(
+        id: "old-meeting-speakers",
+        title: "Separate the speakers in an earlier meeting",
+        body: """
+            Nscribe cannot separate the speakers of a meeting recorded before the speaker \
+            models were installed. Installing the models later does not change that \
+            meeting: speakers are separated only when a meeting ends, and only if the \
+            models were installed when it began. Meetings recorded after you install them \
+            are separated.
+
+            To give an earlier meeting's lines to other people by hand, open it in the \
+            Meetings window, click the speaker's name on a line, and under "Attribute to" \
+            choose "A New Speaker" or another speaker.
             """,
         topic: .meetings
     )
@@ -991,9 +1008,9 @@ enum HelpLibrary {
 
             Speakers are separated when a meeting ends, because telling voices apart needs \
             the whole recording. A meeting recorded before the models were installed \
-            keeps a single speaker: Nscribe cannot separate the speakers of a past \
-            meeting. To give its lines to other people, click the speaker's name on a \
-            line and choose "A New Speaker".
+            keeps a single speaker, and installing them later does not change it. To give \
+            its lines to other people by hand, click the speaker's name on a line and \
+            choose "A New Speaker".
 
             "Check for Updates" in the same place compares your copy with the published \
             models, and "Re-download Models" replaces it.
