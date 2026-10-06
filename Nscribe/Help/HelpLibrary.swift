@@ -830,7 +830,8 @@ enum HelpLibrary {
         id: "key-does-nothing",
         title: "The dictation key does nothing",
         body: """
-            Nscribe needs Accessibility access to notice the dictation key or shortcut. \
+            When you press the Globe key or your shortcut and nothing happens, Nscribe \
+            most likely lacks Accessibility access, which it needs to notice the key. \
             Without it, the first line of Nscribe's menu says "The dictation key is not \
             working." and the N in the menu bar becomes a warning triangle.
 

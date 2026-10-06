@@ -180,19 +180,18 @@ private struct AnswerView: View {
             )) ?? AttributedString(text))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 12) {
-                if let action = source?.action {
-                    Button(action.title) { perform(action, openSettings: openSettings) }
-                }
-                Spacer()
-                if let source {
+            if let action = source?.action {
+                Button(action.title) { perform(action, openSettings: openSettings) }
+            }
+            if let source {
+                HStack(spacing: 4) {
                     Text("From")
                         .foregroundStyle(.secondary)
                     Button(source.title) { HelpNavigator.shared.show(source.id) }
                         .buttonStyle(.link)
                 }
+                .font(.callout)
             }
-            .font(.callout)
         case .failed(let message):
             Text(message)
                 .foregroundStyle(.secondary)

@@ -130,8 +130,15 @@ struct SearchHelpTool: Tool {
 extension HelpArticle {
     /// Words too common to say which article a question is about.
     private static let stopWords: Set<String> = [
-        "the", "and", "how", "can", "you", "does", "what", "why", "with", "for", "from",
-        "into", "when", "where", "this", "that", "are", "its", "nscribe"
+        "the", "and", "how", "can", "you", "your", "does", "doesn", "did", "didn", "what",
+        "why", "who", "which", "when", "where", "with", "for", "from", "into", "onto",
+        "this", "that", "these", "those", "are", "was", "were", "been", "being", "have",
+        "has", "had", "its", "isn", "aren", "wasn", "won", "don", "not", "any", "all",
+        "anything", "something", "get", "got", "just", "keep", "keeps", "make",
+        "makes", "made", "then", "there", "here", "will", "would", "should", "could",
+        "about", "after", "before", "over", "under", "more", "most", "some", "such",
+        "than", "too", "very", "also", "only", "still", "even", "want", "need", "way",
+        "use", "using", "used", "mine", "our", "their", "they", "them", "nscribe"
     ]
 
     static func words(in text: String) -> Set<String> {
@@ -147,8 +154,14 @@ extension HelpArticle {
     /// fix instead.
     static func search(_ query: String) -> [HelpArticle] {
         let wanted = words(in: query).filter { $0.count > 2 && !stopWords.contains($0) }
+        // A word in the title says more about what the article is for than the same
+        // word in its body, so it counts twice.
         let scored = all.map { article in
-            (article, wanted.intersection(articleWords[article.id] ?? []).reduce(0) { $0 + (weight[$1] ?? 0) })
+            let titleWords = words(in: article.title)
+            let score = wanted.intersection(articleWords[article.id] ?? []).reduce(0.0) { total, word in
+                total + (weight[word] ?? 0) * (titleWords.contains(word) ? 2 : 1)
+            }
+            return (article, score)
         }
         guard let best = scored.map(\.1).max(), best > 0 else { return [] }
         return scored.filter { $0.1 >= best * 0.75 }.sorted { $0.1 > $1.1 }.prefix(3).map(\.0)
