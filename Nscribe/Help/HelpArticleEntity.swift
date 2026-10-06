@@ -1,5 +1,6 @@
 import AppIntents
 import CoreSpotlight
+import CryptoKit
 import os
 
 /// A help article as Siri, Spotlight and Shortcuts see it.
@@ -115,16 +116,98 @@ struct ShowHelpIntent: AppIntent {
 }
 
 enum HelpIndex {
-    /// Replaces whatever an earlier version indexed, so an article that was removed or
-    /// renamed does not linger in Spotlight or in Siri's answers.
+    private static let versionKey = "helpIndexVersion"
+
+    /// A fingerprint of every article's words, so the index is rebuilt only when an
+    /// article changed. Rebuilding at every launch threw away whatever Spotlight had
+    /// done with the articles since, and Siri's semantic index may need longer than
+    /// the time between two installs.
+    private static var contentVersion: String {
+        let text = HelpArticle.all.map { $0.id + "\u{1F}" + $0.title + "\u{1F}" + $0.body }
+            .joined(separator: "\u{1E}")
+        let digest = SHA256.hash(data: Data(text.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Indexes the articles if they changed since the last time, replacing the old
+    /// ones so a removed or renamed article does not linger in Spotlight or Siri.
     static func refresh() async {
+        let version = contentVersion
+        guard UserDefaults.standard.string(forKey: versionKey) != version else {
+            Log.app.notice("Help: articles unchanged, index left as it is")
+            return
+        }
         let index = CSSearchableIndex.default()
         do {
             try await index.deleteAppEntities(ofType: HelpArticleEntity.self)
             try await index.indexAppEntities(HelpArticle.all.map(HelpArticleEntity.init))
+            UserDefaults.standard.set(version, forKey: versionKey)
             Log.app.notice("Help: indexed \(HelpArticle.all.count, privacy: .public) articles")
         } catch {
             Log.app.error("Help: indexing failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: - Probe
+
+    // Diagnostic, for slice 1 only: whether the articles are in Spotlight's index, and
+    // whether a question worded unlike any article finds the right one by meaning.
+    // Remove once the question is settled. See Docs/help-and-siri.md.
+
+    /// Each question, and the article that should answer it. None shares the article's
+    /// key words, so only a semantic match finds it.
+    private static let probes: [(question: String, expected: String)] = [
+        ("why does pressing the world key show smileys", "globe-key-emoji"),
+        ("use a different shortcut to start talking", "dictation-key"),
+        ("capture what the other people say on a video call", "call-audio")
+    ]
+
+    /// Runs the probe at launch and every ten minutes for an hour.
+    static func probeRepeatedly() async {
+        for round in 0..<7 {
+            if round > 0 { try? await Task.sleep(for: .seconds(600)) }
+            await probe(round: round)
+        }
+    }
+
+    private static func probe(round: Int) async {
+        let lexical = await search(nil, semantic: false)
+        Log.app.notice("Help probe \(round, privacy: .public): \(lexical.count, privacy: .public) articles in the index: \(lexical.joined(separator: ", "), privacy: .public)")
+        for probe in probes {
+            let found = await search(probe.question, semantic: true)
+            let hit = found.first == probe.expected ? "HIT" : (found.contains(probe.expected) ? "found, not first" : "MISS")
+            Log.app.notice("Help probe \(round, privacy: .public): \(hit, privacy: .public) for \"\(probe.question, privacy: .public)\" -> \(found.joined(separator: ", "), privacy: .public)")
+        }
+    }
+
+    /// The identifiers of the articles a query finds, best first. With no words, every
+    /// article in the index.
+    private static func search(_ words: String?, semantic: Bool) async -> [String] {
+        await withCheckedContinuation { continuation in
+            var identifiers: [String] = []
+            let query: CSSearchQuery
+            if let words {
+                let context = CSUserQueryContext()
+                context.fetchAttributes = ["title"]
+                context.disableSemanticSearch = !semantic
+                context.enableRankedResults = true
+                context.maxResultCount = 10
+                query = CSUserQuery(userQueryString: words, userQueryContext: context)
+            } else {
+                let context = CSSearchQueryContext()
+                context.fetchAttributes = ["title"]
+                query = CSSearchQuery(queryString: "title == \"*\"", queryContext: context)
+            }
+            query.foundItemsHandler = { items in
+                identifiers += items.map { $0.uniqueIdentifier }
+            }
+            query.completionHandler = { error in
+                if let error {
+                    Log.app.error("Help probe: query failed: \(error.localizedDescription, privacy: .public)")
+                }
+                continuation.resume(returning: identifiers)
+            }
+            query.start()
         }
     }
 }
