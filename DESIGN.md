@@ -328,3 +328,6 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   story written like that."
 - 2026-10-06 Rejected tagline: "Talk faster than you can type." "Everyone knows they
   can talk faster than they can type."
+- 2026-10-06 The README's tagline is Jonathan's: "Unlock the potential of Apple's
+  Foundation Models. Fast, free, on-device dictation and transcription that knows your
+  context and adapts to your prompts."

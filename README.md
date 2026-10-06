@@ -5,9 +5,9 @@
   </picture>
 </p>
 
-<h3 align="center">Dictation that knows what you're replying to.</h3>
+<h3 align="center">Unlock the potential of Apple's Foundation Models.</h3>
 
-<p align="center">Free dictation and meeting transcripts for the Mac, built on Apple's on-device models.</p>
+<p align="center">Fast, free, on-device dictation and transcription that knows your context and adapts to your prompts.</p>
 
 <br>
 
