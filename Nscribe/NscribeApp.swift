@@ -240,6 +240,7 @@ struct NscribeApp: App {
             CommandGroup(replacing: .help) {
                 Button("Ask Nscribe…") { HelpNavigator.shared.ask() }
                     .keyboardShortcut("?", modifiers: .command)
+                Button("Nscribe on GitHub") { NSWorkspace.shared.open(Self.repositoryURL) }
             }
         }
 
@@ -283,14 +284,6 @@ struct NscribeApp: App {
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(.suppressed)
 
-        // The Help menu offered nothing. Help is the README, on GitHub.
-        .commands {
-            CommandGroup(replacing: .help) {
-                Button("Nscribe Help") {
-                    NSWorkspace.shared.open(Self.repositoryURL)
-                }
-            }
-        }
     }
 
     static let meetingsWindowID = "meetings"

@@ -118,6 +118,9 @@ struct SearchHelpTool: Tool {
     func call(arguments: Arguments) async throws -> String {
         let articles = HelpArticle.search(arguments.query)
         found.record(articles.map(\.id))
+        // With fifty articles, handing the model all of them when none matched led it
+        // to answer from whichever it read first.
+        guard !articles.isEmpty else { return "No help article matches that." }
         return articles
             .map { "# \($0.title)\n\n\($0.body)" }
             .joined(separator: "\n\n")
@@ -131,31 +134,40 @@ extension HelpArticle {
         "into", "when", "where", "this", "that", "are", "its", "nscribe"
     ]
 
-    /// The articles that share the most words with a query, best first: the best one,
-    /// and any that come close to it. With nothing in common, every article, and the
-    /// model reads them and decides.
+    static func words(in text: String) -> Set<String> {
+        Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+    }
+
+    /// The articles that share the most telling words with a query, best first: the
+    /// best one, and any that come close to it. None when nothing is shared.
     ///
     /// Close means three quarters of the best score. Asked why the Globe key opens the
     /// emoji picker, a search that also returned "Change the dictation key", which
     /// shares only "Globe" and "key", led the small model to answer with that article's
     /// fix instead.
-    static func words(in text: String) -> Set<String> {
-        Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+    static func search(_ query: String) -> [HelpArticle] {
+        let wanted = words(in: query).filter { $0.count > 2 && !stopWords.contains($0) }
+        let scored = all.map { article in
+            (article, wanted.intersection(articleWords[article.id] ?? []).reduce(0) { $0 + (weight[$1] ?? 0) })
+        }
+        guard let best = scored.map(\.1).max(), best > 0 else { return [] }
+        return scored.filter { $0.1 >= best * 0.75 }.sorted { $0.1 > $1.1 }.prefix(3).map(\.0)
     }
 
-    static func search(_ query: String) -> [HelpArticle] {
-        let words = Set(query.lowercased()
-            .split { !$0.isLetter && !$0.isNumber }
-            .map(String.init)
-            .filter { $0.count > 2 && !stopWords.contains($0) })
-        let scored = all.map { article -> (HelpArticle, Int) in
-            let text = Set((article.title + " " + article.body).lowercased()
-                .split { !$0.isLetter && !$0.isNumber }
-                .map(String.init))
-            return (article, words.intersection(text).count)
+    /// Each article's words, worked out once.
+    private static let articleWords: [HelpArticle.ID: Set<String>] = Dictionary(
+        uniqueKeysWithValues: all.map { ($0.id, words(in: $0.title + " " + $0.body)) }
+    )
+
+    /// How much a shared word says about which article is meant: a word in one article
+    /// says a lot, a word in half of them very little. Counting every word as one made
+    /// "use" tie with "offline", and a tie is a coin toss between two articles.
+    private static let weight: [String: Double] = {
+        var counts: [String: Int] = [:]
+        for words in articleWords.values {
+            for word in words { counts[word, default: 0] += 1 }
         }
-        guard let best = scored.map(\.1).max(), best > 0 else { return all }
-        let threshold = max(1, Int((Double(best) * 0.75).rounded(.up)))
-        return scored.filter { $0.1 >= threshold }.sorted { $0.1 > $1.1 }.prefix(3).map(\.0)
-    }
+        let total = Double(all.count)
+        return counts.mapValues { log(1 + total / Double($0)) }
+    }()
 }
