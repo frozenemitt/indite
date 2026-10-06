@@ -39,10 +39,8 @@
 <br>
 
 <p align="center">
-  <img src="Docs/Images/meeting.png" width="760"
-       alt="A meeting in Nscribe: its title, the three speakers, a summary, and the transcript by speaker, with the word being played set in bold">
-  <br>
-  <sub>A meeting, read back by speaker. The word being played is set in bold.</sub>
+  <img src="Docs/Images/dictation.webp" width="700"
+       alt="A dictation into Notes: the ribbon swells blue and violet as the words arrive in the panel, turns amber while they are cleaned up, and the sentence lands in the note">
 </p>
 
 Nscribe is a dictation and meeting app for the Mac, free and open source. It lives in
@@ -57,38 +55,45 @@ separation on CoreML models that run locally.
        alt="The ribbon panel during a dictation, showing the words as they arrive">
 </p>
 
-- **Hold the Globe key and talk**, or press once to start and again to stop. Escape
-  discards a dictation.
-- **The words are typed where your cursor is.** With no text field in front, they go
-  to the clipboard, and the panel says so.
-- **The ribbon panel** shows the words as they arrive, and says how the dictation
+- **The Globe key.** Hold <kbd>Globe</kbd> and talk, or press it once to start and
+  again to stop. <kbd>Esc</kbd> discards a dictation.
+- **Typing where your cursor is.** With no text field in front, the words go to the
+  clipboard, and the panel says so.
+- **The ribbon panel.** It shows the words as they arrive and says how the dictation
   ended.
-- **Rewriting**, with Apple's on-device model: clean up, summarize, make formal, or a
-  prompt of your own. Simple Clean fixes only what the recognizer got wrong and keeps
-  every other word as you said it. It can read the text already in the field, so a dictated reply
-  matches the thread above it.
-- **Words you use**: vocabulary the recognizer should prefer, and replacements for
-  words it mishears.
-- **Per-app profiles** choose the prompt and where the text goes, by the app you are
-  dictating into.
-- **Recent dictations** are kept, so one that landed in the wrong window can be put
-  where it belongs. An undo key takes the last one back; a type-again key types it
-  again.
+- **Rewriting.** Apple's on-device model can clean up, summarize, make formal, or
+  follow a prompt of your own. Simple Clean fixes only what the recognizer got wrong
+  and keeps every other word as you said it. It can read the text already in the
+  field, so a dictated reply matches the thread above it.
+- **Words you use.** The recognizer prefers your vocabulary, and your replacements
+  fix the words it mishears.
+- **Per-app profiles.** Each one chooses the prompt and where the text goes, by the
+  app you are dictating into.
+- **Recent dictations.** Nscribe keeps them, so one that landed in the wrong window
+  can be put where it belongs. <kbd>⌃⌥⌘Z</kbd> takes the last one back;
+  <kbd>⌃⌥⌘V</kbd> types it again.
 
 ## Meetings
 
-- **Start Meeting** from the menu bar. A small pill shows the meeting is still being
-  heard, with Pause and Stop.
-- **The other side of a call** is recorded through a system audio tap, alongside your
-  microphone, when you switch that on.
-- **Speakers are separated** when the meeting ends, and each is named by you.
-- **A title and a summary** are written when the meeting ends.
-- **The transcript plays.** Click a word to hear it; the word being said is set in
-  bold as the audio runs. Lines can be corrected by typing over them, given to
-  another speaker, or split.
-- **Import a recording** or a video, and it gets the same treatment.
-- **Export** as Markdown or plain text. **Deleted meetings** wait thirty days in
-  Recently Deleted.
+<p align="center">
+  <img src="Docs/Images/meeting.png" width="700"
+       alt="A meeting in Nscribe: its title, the three speakers, a summary, and the transcript by speaker, with the word being played set in bold">
+  <br>
+  <sub>A meeting, read back by speaker. The word being played is set in bold.</sub>
+</p>
+
+- **Starting one.** Choose Start Meeting from the menu bar. A small pill shows the
+  meeting is still being heard, with Pause and Stop.
+- **The other side of a call.** When you switch it on, a system audio tap records it
+  alongside your microphone.
+- **Speakers.** Nscribe separates them when the meeting ends, and you name each one.
+- **A title and a summary.** Both are written when the meeting ends.
+- **Playback.** Click a word to hear it; the word being said is set in bold as the
+  audio runs. Lines can be corrected by typing over them, given to another speaker,
+  or split.
+- **Imports.** A recording or a video gets the same treatment.
+- **Export and deletion.** Meetings export as Markdown or plain text. Deleted
+  meetings wait thirty days in Recently Deleted.
 
 ## Privacy
 
