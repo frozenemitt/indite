@@ -319,3 +319,8 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   landing of the help window should just be a search bar with instructions to say
   what you're looking for. I think the menu should be accessible as well, but I don't
   want that to be the default."
+- 2026-10-06 Help has one field. Typing narrows the articles beneath it, Return asks the
+  assistant, and the answer sits above the matching articles, as the Help menu's search
+  works. No sidebar. Chosen over the field in the toolbar beside an article sidebar,
+  and over a conversation with the field at the bottom. "It's really awkward having 2
+  separate places to put your question." "Go with A."
