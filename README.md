@@ -19,7 +19,7 @@
     </picture>
   </a>
   <br>
-  <sub>Free and open source · macOS 27</sub>
+  <sub>Open source · macOS 27 · English</sub>
 </p>
 
 <br>
@@ -29,22 +29,22 @@
        alt="A dictation into Notes: the ribbon swells blue and violet as the words arrive in the panel, turns amber while they are cleaned up, and the sentence lands in the note">
 </p>
 
-Nscribe types what you say into any app on your Mac. It runs on Apple's on-device
-speech and language models, so it works offline and nothing you say leaves your Mac.
+Nscribe types what you say into any app on your Mac and transcribes your meetings.
+It runs on Apple's speech recognition and on Apple's Foundation Models, the models
+behind Apple Intelligence, all on your Mac.
 
 ## Dictation
 
-Dictate into any app on your Mac, with a shortcut you choose. Nscribe is made for
-replying quickly, to people or to software.
+Nscribe is made for replying quickly, to people or to software.
 
-Add your own vocabulary, and Nscribe also listens for the names and unusual words in
-the window you're dictating into, so obscure terms come out spelled right. Cleanup
-then puts what you said into the style you want. It can remove filler words, make a
-message formal or casual, fix the punctuation, or follow a prompt you write, and it
-can read the text in the field to match the conversation.
+Once you've added a few words of your own, Nscribe also reads the names and unusual
+words in the window you're dictating into, so when you say them they come out spelled
+right.
 
-- Watch your words appear as you speak, or hide the panel.
-- Give each app its own style.
+Rewriting then puts what you said into the style you want, formal in Mail and casual
+in Messages, with each app keeping its own. Every style is a plain-English prompt you
+can edit, or write from scratch. Rewriting can also read what's already in the text
+field, so your answer fits the thread.
 
 <p align="center">
   <picture>
@@ -56,14 +56,14 @@ can read the text in the field to match the conversation.
 
 ## Meetings
 
-Record a meeting and stay in the conversation instead of taking notes. Nscribe
-records your microphone, and your Mac's audio if you allow it, so it hears both sides
-of a call in any app. Nothing joins the call.
+Record a meeting and stay in the conversation instead of taking notes. Nscribe records
+your microphone and, if you allow it, the sound your Mac plays, so it hears both sides
+of a call in any app. Nobody else has to install anything.
 
-When the meeting ends, Nscribe separates the speakers and writes a title and a
-summary. Play the transcript back word by word, fix anything it misheard, and export
-it as Markdown, ready to hand to an AI for a second look. Recordings and videos can be
-imported too.
+When the meeting ends, Nscribe works out who said what and writes a title and a
+summary. Play the recording and follow each word as it's spoken, fix what it misheard,
+and export the transcript as Markdown to ask an AI what was decided. It can also
+transcribe a recording or video you already have.
 
 <p align="center">
   <picture>
@@ -75,33 +75,34 @@ imported too.
 
 ## Privacy
 
-Transcription, cleanup and summaries use Apple's on-device models, and speaker
-separation runs on your Mac too. Nscribe works offline, and your audio and text are
-never uploaded.
+Your audio and text are never uploaded. Nscribe connects to the internet for three
+things only:
 
-It connects to the internet for three things:
+- Apple's English speech recognition, which macOS downloads the first time you
+  dictate.
+- A daily check for a new version of Nscribe, which you can turn off. Each update is
+  checked against Nscribe's own signature before it installs.
+- The files that tell voices apart, downloaded from Hugging Face when you install
+  them for meetings.
 
-- Apple's speech model, downloaded the first time you dictate.
-- A daily update check against this repository's latest release. You can turn it off
-  in **Settings → About**. Updates are signed and verified before they install.
-- The speaker models, downloaded from Hugging Face when you click **Install Models**
-  in **Settings → Meetings**.
+To spell names right, Nscribe reads the text of the window you're dictating into,
+keeps only the unusual words for that one dictation, and stores nothing. Your last 100
+dictations and your meeting recordings stay on your Mac, and both can be turned off.
+The source is open, so all of this can be checked.
 
 ## Install
 
-1. Download [Nscribe.dmg](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)
-   and drag Nscribe into Applications.
-2. Open it. The first time, macOS says it can't check Nscribe for malware, because
-   Nscribe isn't signed through Apple's paid developer program. Click **Done**, then
-   open **System Settings → Privacy & Security** and click **Open Anyway**.
-3. The welcome window walks you through the permissions and lets you try a dictation.
+Nscribe needs macOS 27 and dictates in English. Rewriting and meeting summaries need
+Apple Intelligence turned on.
 
-Nscribe needs macOS 27 and dictates in English. Cleanup, titles and summaries also
-need Apple Intelligence, which you turn on in **System Settings → Apple Intelligence
-& Siri**. Nscribe updates itself; older versions are under
-[Releases](https://github.com/frozenemitt/nscribe/releases).
-
-Nscribe lives in the menu bar.
+1. Download [Nscribe](https://github.com/frozenemitt/nscribe/releases/latest/download/Nscribe.dmg)
+   and drag it into Applications.
+2. Open it. The first time, macOS warns that it can't check Nscribe for malware. Apple
+   checks only apps from its paid developer program, and Nscribe, a free project,
+   isn't in it. Click **Done**, then open **System Settings → Privacy & Security** and
+   click **Open Anyway**.
+3. Nscribe opens in the menu bar, and its welcome window sets up the permissions with
+   you.
 
 <p align="center">
   <img src="Docs/Images/menu.png" width="363"
@@ -110,9 +111,9 @@ Nscribe lives in the menu bar.
 
 ## FAQ
 
-**Pressing Globe opens the emoji picker or switches my keyboard.**
-Set **System Settings → Keyboard → "Press 🌐 key to"** to *Do Nothing*, or choose a
-different key in **Settings → Dictation**.
+**The Globe key (🌐) opens the emoji picker instead of dictating.**
+In System Settings → Keyboard, set "Press 🌐 key to" to *Do Nothing*, or choose a
+different key in Nscribe's settings.
 
 **What permissions does it need?**
 
@@ -120,16 +121,15 @@ different key in **Settings → Dictation**.
 |---|---|
 | Microphone | Hearing you |
 | Speech Recognition | Turning speech into text |
-| Accessibility | The dictation key, and typing into other apps |
-| Screen & System Audio Recording | The other side of a call, only if you record meetings with it |
+| Accessibility | Typing into other apps, and reading the window you dictate into. macOS files both under Accessibility. |
+| Screen & System Audio Recording | Hearing the other side of a call, if you turn that on. Nscribe takes only the sound. |
 
 **Why isn't it on the Mac App Store?**
-App Store apps have to be sandboxed, and macOS doesn't give a sandboxed app the
-Accessibility access it needs to type into other apps.
+App Store apps have to be sandboxed, and a sandboxed app can't type into other apps.
 
 ## Build from source
 
-You need Xcode 27 and a free Apple ID.
+For developers: you need Xcode 27 and a free Apple ID.
 
 ```bash
 git clone https://github.com/frozenemitt/nscribe.git
@@ -137,17 +137,16 @@ cd nscribe
 Scripts/install.sh
 ```
 
-See [BUILDING.md](BUILDING.md) for building in Xcode, versions, releases and the code
-layout.
+See [BUILDING.md](BUILDING.md) for Xcode builds, releases and the code layout.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT License](LICENSE).
 
 ## Acknowledgments
 
 Built on [Swift Scribe](https://github.com/seamlesscompute/swift-scribe) by
-seamlesscompute (MIT). The dictation and meeting features follow
+seamlesscompute (MIT). The dictation and meeting features are modeled on
 [voxtype](https://github.com/peteonrails/voxtype). Speaker separation uses
 [FluidAudio](https://github.com/FluidInference/FluidAudio), and updates use
 [Sparkle](https://sparkle-project.org).

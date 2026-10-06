@@ -337,3 +337,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-06 The README points out what is unique, not features every dictation app
   is expected to have; the undo and type-again bullet came out. "We should only be
   pointing out unique features, not standard features that are expected."
+- 2026-10-06 A five-reviewer panel (reader, mom, hemingway, asshole, sorkin) shaped the
+  README: one name per thing (Rewriting, as the app says; Apple Intelligence tied to
+  Foundation Models once), requirements before the steps, the window reading disclosed
+  in Privacy and in the permissions table, and no "signed" used for two things.
