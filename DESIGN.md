@@ -292,3 +292,6 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   the page dots, "made on your Mac" in the welcome subtitle, the symbols that only
   filled the alignment column, the rules around release notes, and the lines under
   "Checking for Updates…" and "Preparing…". "Remove all seven."
+- 2026-10-06 The light panel, tried on Jonathan's desktop, stays as built. "I think it
+  looks good. It's bouncing a little bit with background noise, but I don't think it's
+  any different than in dark mode."
