@@ -50,7 +50,8 @@ final class HelpAssistant {
         task = Task {
             // A fresh session for every question: each one stands alone, and a long
             // conversation would only crowd the small model's context.
-            let tool = SearchHelpTool()
+            let pick = await Self.route(question)
+            let tool = SearchHelpTool(question: question, pick: pick)
             let session = LanguageModelSession(tools: [tool], instructions: Self.instructions)
             do {
                 let response = try await session.respond(to: question)
@@ -82,6 +83,34 @@ final class HelpAssistant {
 }
 
 extension HelpAssistant {
+    /// The article whose title best answers the question, chosen by the model from the
+    /// list of titles, or nil when none fits.
+    ///
+    /// Matching words cannot see that "upload a voice memo" means "Transcribe a
+    /// recording or video"; the model can. It misses where words do not, so the two run
+    /// together: on fresh questions each was right about seven times in ten, on
+    /// different questions.
+    private static func route(_ question: String) async -> HelpArticle.ID? {
+        let catalog = HelpArticle.all.map { "\($0.id): \($0.title)" }.joined(separator: "\n")
+        let choices = HelpArticle.all.map(\.id) + ["none"]
+        guard let schema = try? GenerationSchema(
+            root: DynamicGenerationSchema(name: "Article", anyOf: choices), dependencies: []
+        ) else { return nil }
+        let session = LanguageModelSession(instructions: """
+            You pick the one help article that best answers a question about Nscribe, a \
+            Mac app for dictation and meeting transcription. These are the articles, one \
+            per line as id: title:
+
+            \(catalog)
+
+            Reply with the id of the best article, or none if no article fits.
+            """)
+        guard let response = try? await session.respond(
+            to: question, schema: schema, options: GenerationOptions(sampling: .greedy)
+        ), let id = try? response.content.value(String.self), id != "none" else { return nil }
+        return id
+    }
+
     /// Back to an empty field, with no answer.
     func clear() {
         task?.cancel()
@@ -105,6 +134,12 @@ struct SearchHelpTool: Tool {
     }
 
     let found = Found()
+    /// The person's own words. The model writes its own search, and its words can lead
+    /// elsewhere: asked "my microphone isn't picking anything up", it searched for
+    /// recording audio and found the articles about recording calls.
+    let question: String
+    /// The article the model chose from the titles, before any words were matched.
+    let pick: HelpArticle.ID?
     let name = "searchHelp"
     let description = "Searches Nscribe's help articles and returns the ones that match, in full."
 
@@ -116,7 +151,16 @@ struct SearchHelpTool: Tool {
 
     @concurrent
     func call(arguments: Arguments) async throws -> String {
-        let articles = HelpArticle.search(arguments.query)
+        // The article chosen by meaning first, then the question as the person put it,
+        // then the model's own search.
+        var articles = pick.flatMap(HelpArticle.article(id:)).map { [$0] } ?? []
+        for article in HelpArticle.search(question) where !articles.contains(article) {
+            articles.append(article)
+        }
+        for article in HelpArticle.search(arguments.query) where !articles.contains(article) {
+            articles.append(article)
+        }
+        articles = Array(articles.prefix(3))
         found.record(articles.map(\.id))
         // With fifty articles, handing the model all of them when none matched led it
         // to answer from whichever it read first.
@@ -141,8 +185,35 @@ extension HelpArticle {
         "use", "using", "used", "mine", "our", "their", "they", "them", "nscribe"
     ]
 
+    /// The telling words of a text: common words left out before endings are cut, so
+    /// "notes" cannot turn into the left-out "not".
     static func words(in text: String) -> Set<String> {
-        Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+        Set(text.lowercased()
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { $0.count > 2 && !stopWords.contains($0) }
+            .map(stem))
+    }
+
+    /// A word without its common English ending, so "wiping" finds "wipes" and
+    /// "copied" finds "copy". Rough, and the same on both sides of a comparison, which
+    /// is all a match needs.
+    private static func stem(_ word: String) -> String {
+        var word = word
+        if word.count >= 5, word.hasSuffix("ies") || word.hasSuffix("ied") {
+            word = String(word.dropLast(3)) + "y"
+        } else if word.count >= 6, word.hasSuffix("ing") {
+            word.removeLast(3)
+        } else if word.count >= 5, word.hasSuffix("ed") {
+            word.removeLast(2)
+        } else if word.count >= 5, ["sses", "xes", "zes", "ches", "shes"].contains(where: word.hasSuffix) {
+            word.removeLast(2)
+        } else if word.count >= 4, word.hasSuffix("s"), !word.hasSuffix("ss") {
+            word.removeLast()
+        }
+        // "wipe" and "wip", from "wipes" and "wiping", become one.
+        if word.count > 3, word.hasSuffix("e") { word.removeLast() }
+        return word
     }
 
     /// The articles that share the most telling words with a query, best first: the
@@ -153,7 +224,7 @@ extension HelpArticle {
     /// shares only "Globe" and "key", led the small model to answer with that article's
     /// fix instead.
     static func search(_ query: String) -> [HelpArticle] {
-        let wanted = words(in: query).filter { $0.count > 2 && !stopWords.contains($0) }
+        let wanted = words(in: query)
         // A word in the title says more about what the article is for than the same
         // word in its body, so it counts twice.
         let scored = all.map { article in

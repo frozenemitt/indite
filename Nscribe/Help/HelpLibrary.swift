@@ -253,7 +253,9 @@ enum HelpLibrary {
             choose it. Dictations and meetings both record from it. The same choice is in \
             Nscribe's Settings, under Dictation, as "Record from".
 
-            "System Default" follows the Mac's own default input. If the microphone you \
+            If your microphone isn't picking anything up, the wrong one may be chosen: \
+            check the Microphone menu first. "System Default" follows the Mac's own \
+            default input. If the microphone you \
             chose is unplugged, Nscribe records from the system default, and the menu says \
             the chosen one is "Not Connected".
             """,
@@ -485,8 +487,9 @@ enum HelpLibrary {
         id: "vocabulary",
         title: "Teach Nscribe names and jargon",
         body: """
-            To teach Nscribe a name it misspells, such as a colleague's name, open \
-            Nscribe's Settings, choose Words, and type it under Vocabulary. Put each name \
+            To teach Nscribe a name it misspells, such as a colleague's name, or to add a \
+            word to its dictionary, open Nscribe's Settings, choose Words, and type it \
+            under Vocabulary. Put each name \
             or term on a line of its own. When Nscribe is unsure what it heard, it prefers \
             these words, and it spells them the way you wrote them. Dictations and \
             meetings both use the list.
