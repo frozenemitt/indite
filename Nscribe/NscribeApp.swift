@@ -234,6 +234,13 @@ struct NscribeApp: App {
         }
         .defaultSize(width: 760, height: 520)
         .defaultLaunchBehavior(.suppressed)
+        // The standard Help shortcut, while any Nscribe window is in front.
+        .commands {
+            CommandGroup(replacing: .help) {
+                Button("Ask Nscribe…") { HelpNavigator.shared.ask() }
+                    .keyboardShortcut("?", modifiers: .command)
+            }
+        }
 
         Window("Recent Dictations", id: Self.historyWindowID) {
             DictationHistoryView()
@@ -476,6 +483,7 @@ struct NscribeShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: ShowHelpIntent(),
             phrases: [
+                "Ask \(.applicationName)",
                 "Show \(.applicationName) help",
                 "Open \(.applicationName) help",
                 "Help with \(.applicationName)"

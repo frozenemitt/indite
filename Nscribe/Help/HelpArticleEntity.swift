@@ -109,7 +109,7 @@ struct ShowHelpIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         #if os(macOS)
-        HelpNavigator.shared.show(nil)
+        HelpNavigator.shared.ask()
         #endif
         return .result()
     }

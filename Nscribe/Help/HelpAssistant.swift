@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import os
+import Synchronization
 
 /// Answers questions about Nscribe from the help articles, on Apple's on-device model.
 ///
@@ -27,8 +28,9 @@ final class HelpAssistant {
         You answer questions about Nscribe, a Mac app for dictation and meeting \
         transcription. Always call searchHelp first, then answer only from the articles \
         it returns. Answer in two to four plain sentences and name the exact settings, \
-        switches and buttons the articles name. If the articles do not cover the \
-        question, say so in one sentence and do not guess.
+        switches and buttons the articles name. Give the fix the articles give for the \
+        exact problem asked about, and do not offer other settings as alternatives. If \
+        the articles do not cover the question, say so in one sentence and do not guess.
         """
 
     func ask(_ question: String) {
@@ -46,12 +48,20 @@ final class HelpAssistant {
         task = Task {
             // A fresh session for every question: each one stands alone, and a long
             // conversation would only crowd the small model's context.
-            let session = LanguageModelSession(tools: [SearchHelpTool()], instructions: Self.instructions)
+            let tool = SearchHelpTool()
+            let session = LanguageModelSession(tools: [tool], instructions: Self.instructions)
             do {
                 let response = try await session.respond(to: question)
                 guard !Task.isCancelled else { return }
-                let sources = HelpArticle.search(question).map(\.id)
+                // The articles the model actually read, in the order the search ranked
+                // them; the question's own words only if it never searched.
+                var sources = tool.found.all
+                if sources.isEmpty { sources = HelpArticle.search(question).map(\.id) }
+                sources = Array(sources.prefix(2))
                 state = .answered(response.content, sources: sources)
+                #if os(macOS)
+                HelpNavigator.shared.selectedID = sources.first
+                #endif
                 Log.app.notice("Help assistant answered in \(response.content.count, privacy: .public) characters")
             } catch {
                 guard !Task.isCancelled else { return }
@@ -64,6 +74,19 @@ final class HelpAssistant {
 
 /// The model's way into the help articles.
 struct SearchHelpTool: Tool {
+    /// What each search returned, first search first, so the answer can name the
+    /// articles it came from.
+    final class Found: Sendable {
+        private let ids = Mutex<[HelpArticle.ID]>([])
+        func record(_ new: [HelpArticle.ID]) {
+            ids.withLock { ids in ids += new.filter { !ids.contains($0) } }
+        }
+        var all: [HelpArticle.ID] {
+            ids.withLock { $0 }
+        }
+    }
+
+    let found = Found()
     let name = "searchHelp"
     let description = "Searches Nscribe's help articles and returns the ones that match, in full."
 
@@ -75,7 +98,9 @@ struct SearchHelpTool: Tool {
 
     @concurrent
     func call(arguments: Arguments) async throws -> String {
-        HelpArticle.search(arguments.query)
+        let articles = HelpArticle.search(arguments.query)
+        found.record(articles.map(\.id))
+        return articles
             .map { "# \($0.title)\n\n\($0.body)" }
             .joined(separator: "\n\n")
     }

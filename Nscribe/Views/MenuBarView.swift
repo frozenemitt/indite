@@ -86,7 +86,8 @@ struct MenuBarView: View {
 
         Divider()
 
-        Button("Help") { HelpNavigator.shared.show(nil) }
+        Button("Ask Nscribe…") { HelpNavigator.shared.ask() }
+            .keyboardShortcut("?", modifiers: .command)
 
         Button("Settings…") {
             openSettings()
