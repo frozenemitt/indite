@@ -35,7 +35,7 @@ speech and language models, so it works offline and nothing you say leaves your 
 ## Dictation
 
 Dictate into any app on your Mac, with a shortcut you choose. Nscribe is made for
-replying quickly, to people or to an AI.
+replying quickly, to people or to software.
 
 Add your own vocabulary, and Nscribe also listens for the names and unusual words in
 the window you're dictating into, so obscure terms come out spelled right. Cleanup
@@ -45,7 +45,6 @@ can read the text in the field to match the conversation.
 
 - Watch your words appear as you speak, or hide the panel.
 - Give each app its own style.
-- Take back your last dictation, or type it again somewhere else.
 
 <p align="center">
   <picture>

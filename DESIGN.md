@@ -334,3 +334,6 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-06 The README describes what Nscribe does, not how to operate it: no fixed
   keys or gestures, since the shortcut and its mode are settings. "We don't need to be
   including manual level instructions in the read me page."
+- 2026-10-06 The README points out what is unique, not features every dictation app
+  is expected to have; the undo and type-again bullet came out. "We should only be
+  pointing out unique features, not standard features that are expected."
