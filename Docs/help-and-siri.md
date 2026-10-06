@@ -87,3 +87,11 @@ articles.
     and reader would put help articles among a person's own notes or books. The next
     build adds the system `searchInApp` schema, so "search Nscribe for …" reaches the
     Help window in any wording.
+- 2026-10-06, build 1.0.392, with `IndexedEntityQuery` and the `searchInApp` schema.
+  "Search Nscribe for the dictation key" opened the Help window at the right article:
+  the system schema reaches the app in any wording. "How do I change Nscribe's
+  dictation key?" was still answered from the web: Siri did not answer from the
+  indexed article. Spotlight showed Siri's own answer, not the article.
+  Siri therefore routes into Nscribe but does not answer from its content. The
+  assistant in the Help window becomes the place answers come from, and Siri's search
+  hands it the question.
