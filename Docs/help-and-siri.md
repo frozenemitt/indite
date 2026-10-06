@@ -95,3 +95,14 @@ articles.
   Siri therefore routes into Nscribe but does not answer from its content. The
   assistant in the Help window becomes the place answers come from, and Siri's search
   hands it the question.
+- 2026-10-06, Jonathan: "If we are sure that indexing is complete, then we can draw
+  this conclusion, but otherwise, I don't think we can." He was right to doubt it. Two
+  facts undercut the conclusion above:
+  - Every launch deleted and re-indexed the articles, and each test install relaunched
+    the app, so Spotlight never kept them for more than a few minutes. Build 1.0.395
+    indexes only when the articles change.
+  - Nothing measured whether the semantic index had them. A probe (build 1.0.396) now
+    queries the app's own index at launch and every ten minutes for an hour. Two
+    minutes after indexing: all three articles are in the index, the lexical control
+    "emoji picker" finds its article, and the three questions worded unlike any article
+    find nothing yet. The Siri conclusion waits on the probe.
