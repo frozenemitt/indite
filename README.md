@@ -111,9 +111,14 @@ Apple Intelligence turned on.
 
 ## FAQ
 
-**The Globe key (🌐) opens the emoji picker instead of dictating.**
-In System Settings → Keyboard, set "Press 🌐 key to" to *Do Nothing*, or choose a
-different key in Nscribe's settings.
+**Which key starts dictation?**
+The Globe key (🌐) by default. You can change it to any key combination in Nscribe's
+settings.
+
+**Pressing Globe opens the emoji picker.**
+macOS also uses the Globe key, so it needs to be told to stand aside. In System
+Settings → Keyboard, set "Press 🌐 key to" to *Do Nothing*. The emoji picker is still
+on Control-Command-Space (⌃⌘Space), Apple's own default.
 
 **What permissions does it need?**
 
