@@ -70,3 +70,20 @@ articles.
   such as helping the user set up permissions."
 - 2026-10-06 The first slice is Siri answering from an article: "I definitely want to do
   this 1st slice with the Siri help window and see how it works."
+
+## Findings
+
+- 2026-10-06, slice 1, build 1.0.391. Siri answered all three test questions from the
+  web, not from the articles: "How do I change Nscribe's dictation key?", "Why does my
+  Globe key open emojis?" and even the App Shortcut phrase "Show Nscribe help". The
+  build was registered: linkd logged "Interpolated com.nscribe.app.macos, donating to
+  Siri…", and the metadata carries the intents, the phrases and the indexed entity.
+  Two causes are visible:
+  - corespotlightd logged "No IndexedEntityQuery found for entity type
+    HelpArticleEntity". macOS 27 re-indexes through `IndexedEntityQuery`, which the
+    query did not adopt. Fixed in the next build.
+  - The entity conforms to no schema. Apple's session says Siri needs a schema to
+    understand what an entity is, and none of the domains fits a help article: notes
+    and reader would put help articles among a person's own notes or books. The next
+    build adds the system `searchInApp` schema, so "search Nscribe for …" reaches the
+    Help window in any wording.
