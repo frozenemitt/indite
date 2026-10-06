@@ -103,6 +103,7 @@ private struct QuestionBox: View {
             .buttonStyle(.plain)
             .disabled(isEmpty)
             .help("Ask")
+            .accessibilityLabel("Ask")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
