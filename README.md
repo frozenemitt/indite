@@ -5,9 +5,9 @@
   </picture>
 </p>
 
-<h3 align="center">Talk faster than you can type.</h3>
+<h3 align="center">Dictation that knows what you're replying to.</h3>
 
-<p align="center">Dictation and meeting transcripts that run entirely on your Mac.</p>
+<p align="center">Free dictation and meeting transcripts for the Mac, built on Apple's on-device models.</p>
 
 <br>
 
@@ -29,45 +29,23 @@
        alt="A dictation into Notes: the ribbon swells blue and violet as the words arrive in the panel, turns amber while they are cleaned up, and the sentence lands in the note">
 </p>
 
-## Why I built it
-
-I tried a few paid dictation apps, and the value I got was nowhere near what they
-charged. It felt silly to pay for something my Mac can already do to some degree.
-So I looked for a way to run Apple's own on-device models and get better dictation
-out of them. I found [Swift Scribe](https://github.com/seamlesscompute/swift-scribe)
-and spent about a year building on it, adding what I needed and polishing the rest.
-
-I dictate into every app I use, most often when I'm working with AI. I can read much
-faster than I can listen, and I can talk much faster than I can type, so reading a
-response and speaking my reply is the quickest way for me to work. Nscribe is built
-for people like me, who work with machines all day and need to respond quickly. It's
-fast, it works offline, and nothing leaves the Mac. The part that still feels a
-little magical to me is cleanup reading the text already in the field and using it
-to get names and terms right.
-
-I added meetings for the conversations Nora and I have about our business, sometimes
-with a third or fourth person. We get to stay inside our thoughts and engage with
-each other instead of taking notes. Nothing gets lost, and afterward we can feed the
-transcript to an AI and find things we hadn't noticed on our own.
-
-It isn't perfect, but it's getting closer to technology that gets out of the way and
-lets us be more human.
-
-— Jonathan
+Nscribe types what you say into any app on your Mac. It runs on Apple's on-device
+speech and language models, so it works offline and nothing you say leaves your Mac.
 
 ## Dictation
 
-Hold the <kbd>Globe</kbd> key and talk. Your words are typed wherever your cursor
-is, in any app. You can also tap the key once to start and again to stop, and
-<kbd>Esc</kbd> cancels.
+Hold the <kbd>Globe</kbd> key, talk, and let go. Your words are typed wherever your
+cursor is. It's made for replying quickly, to people or to an AI: read the message,
+hold the key, and say your answer.
 
-Cleanup puts what you said into the style you want. It can drop the filler words,
+Cleanup turns what you said into the style you want. It can remove filler words,
 make a message formal or casual, fix the punctuation, or follow a prompt you write.
-Each app can have its own style, and cleanup can read the text already in the field
-so a reply fits the conversation.
+With context turned on, cleanup also reads the text already in the field, so names
+and terms from the conversation come out spelled right.
 
-- Read your words live as you speak, or hide the panel and keep it out of the way.
-- Add the names and terms you use, and set replacements for words it gets wrong.
+- Watch your words appear as you speak, or hide the panel.
+- Add the names and terms you use, and replacements for words it gets wrong.
+- Give each app its own style.
 - <kbd>⌃⌥⌘Z</kbd> takes back the last dictation. <kbd>⌃⌥⌘V</kbd> types it again
   somewhere else.
 
@@ -81,13 +59,14 @@ so a reply fits the conversation.
 
 ## Meetings
 
-Start a meeting from the menu bar. Nscribe records your microphone, and your
-Mac's audio if you allow it, so it hears both sides of a call in any app. Nothing
-joins the call.
+Record a meeting and stay in the conversation instead of taking notes. Nscribe
+records your microphone, and your Mac's audio if you allow it, so it hears both sides
+of a call in any app. Nothing joins the call.
 
-When you stop, it separates the speakers, writes a title and a summary, and gives you
-a transcript you can play back word by word, correct, and export as Markdown. You can
-import an audio or video recording and get the same.
+When the meeting ends, Nscribe separates the speakers and writes a title and a
+summary. Play the transcript back word by word, fix anything it misheard, and export
+it as Markdown, ready to hand to an AI for a second look. Recordings and videos can be
+imported too.
 
 <p align="center">
   <picture>
@@ -99,9 +78,9 @@ import an audio or video recording and get the same.
 
 ## Privacy
 
-Transcription, cleanup, summaries and speaker separation all run on your Mac, with
-Apple's on-device models. Nscribe works offline, and your audio and text are never
-uploaded.
+Transcription, cleanup and summaries use Apple's on-device models, and speaker
+separation runs on your Mac too. Nscribe works offline, and your audio and text are
+never uploaded.
 
 It connects to the internet for three things:
 

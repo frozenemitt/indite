@@ -322,3 +322,9 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   no bot in the call. Developer material moved to BUILDING.md. "Really consider what
   are the key points that someone attracted to this kind of app might care about and
   make sure that you're highlighting those first."
+- 2026-10-06 The README carries no author story. What Jonathan said in the interview
+  shapes the product copy; it is not quoted or told in his voice. "I thought that you
+  were asking for my experience so that you could shape the copy. I don't want my
+  story written like that."
+- 2026-10-06 Rejected tagline: "Talk faster than you can type." "Everyone knows they
+  can talk faster than they can type."
