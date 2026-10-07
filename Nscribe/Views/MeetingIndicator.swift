@@ -136,10 +136,8 @@ final class MeetingIndicatorController {
 
         let glass = NSGlassEffectView()
         glass.translatesAutoresizingMaskIntoConstraints = false
-        // Apple's Regular glass, as on the dictation panel, in its dark form: the pill
-        // stays dark in light mode too, and its white buttons are drawn for that.
+        // Apple's Regular glass, as on the dictation panel, following light and dark.
         glass.style = .regular
-        glass.appearance = NSAppearance(named: .darkAqua)
         glass.cornerRadius = Self.height / 2
 
         let container = NSView()
@@ -300,7 +298,6 @@ private struct MeetingIndicatorView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .frame(width: MeetingIndicatorController.width, height: MeetingIndicatorController.height)
-        .environment(\.colorScheme, .dark)
     }
 
     private var controls: some View {
@@ -331,7 +328,7 @@ private struct MeetingIndicatorView: View {
                       systemImage: model.isPaused ? "play.fill" : "pause.fill")
                     .labelStyle(.iconOnly)
                     .frame(width: 30, height: 30)
-                    .background(Circle().fill(.white.opacity(0.16)))
+                    .background(Circle().fill(.primary.opacity(0.12)))
                     .contentShape(Circle())
             }
             .disabled(!model.canPauseOrResume)
@@ -342,6 +339,7 @@ private struct MeetingIndicatorView: View {
             } label: {
                 Label("Stop", systemImage: "stop.fill")
                     .labelStyle(.iconOnly)
+                    .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
                     .background(Circle().fill(Color.red.opacity(0.85)))
                     .contentShape(Circle())
@@ -367,13 +365,13 @@ private struct MeetingIndicatorView: View {
             Button("Cancel") {
                 stopAsking()
             }
-            .buttonStyle(PillButtonStyle(fill: .white.opacity(0.16)))
+            .buttonStyle(PillButtonStyle(fill: .primary.opacity(0.12), label: .primary))
 
             Button("End") {
                 stopAsking()
                 model.stop()
             }
-            .buttonStyle(PillButtonStyle(fill: Color.red.opacity(0.85)))
+            .buttonStyle(PillButtonStyle(fill: Color.red.opacity(0.85), label: .white))
         }
     }
 
@@ -398,11 +396,12 @@ private struct MeetingIndicatorView: View {
 /// A capsule button for the pill's two answers, 30 points tall like its round ones.
 private struct PillButtonStyle: ButtonStyle {
     let fill: Color
+    let label: Color
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(label)
             .padding(.horizontal, 12)
             .frame(height: 30)
             .background(Capsule().fill(fill))

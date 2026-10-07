@@ -46,8 +46,8 @@ live clock. No serif: see the decisions log.
 - Meetings: a list beside a page, with no third column. The list's commands sit
   directly above it. The page reads top to bottom: title and speakers, summary,
   transcript, and a playback bar along the bottom. See `Docs/meetings-rework.md`.
-- Floating panels: Apple's Regular glass, draggable, on every desktop. The dictation
-  panel follows the system appearance; the meeting pill stays dark.
+- Floating panels: Apple's Regular glass, draggable, on every desktop, following the
+  system appearance.
 
 ## Elevation & Depth
 
@@ -385,4 +385,5 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   and turned down first: a blur switch that only frosted, tunable blur through private
   window-server and Core Animation calls, Apple's private glass variants, and Bubbles'
   bending rim over Regular's frost, which left a hard seam. This replaces the light
-  panel's tint and drawn rim. The pill keeps its dark form.
+  panel's tint and drawn rim. The pill follows light and dark mode too, replacing "the
+  meeting pill stays dark": "Light mode meeting pill is not adapting."
