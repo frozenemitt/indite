@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Build Nscribe from source and put it in /Applications.
+# Build Indite from source and put it in /Applications.
 #
 #   Scripts/install.sh
 #
@@ -45,19 +45,21 @@ ENABLE_HARDENED_RUNTIME = NO
 SETTINGS
 fi
 
-echo "Building Nscribe… (the full log is in $log)"
-if ! xcodebuild -project Nscribe.xcodeproj -scheme Nscribe -configuration Release \
+echo "Building Indite… (the full log is in $log)"
+if ! xcodebuild -project Indite.xcodeproj -scheme Indite -configuration Release \
     -destination 'platform=macOS' -derivedDataPath "$build" -xcconfig "$signing" build > "$log" 2>&1; then
   grep -E "error:" "$log" | head -20
   echo "The build failed. The full log is in $log"
   exit 1
 fi
 
-app="$build/Build/Products/Release/Nscribe.app"
-osascript -e 'tell application "Nscribe" to quit' > /dev/null 2>&1 || true
-rm -rf /Applications/Nscribe.app
-ditto "$app" /Applications/Nscribe.app
-touch /Applications/Nscribe.app
-open -a /Applications/Nscribe.app
+app="$build/Build/Products/Release/Indite.app"
+# Quit by identity rather than by name, so a copy still called Nscribe quits too.
+osascript -e 'tell application id "com.nscribe.app.macos" to quit' > /dev/null 2>&1 || true
+# A copy under the app's first name would be a second Indite with the same identity.
+rm -rf /Applications/Nscribe.app /Applications/Indite.app
+ditto "$app" /Applications/Indite.app
+touch /Applications/Indite.app
+open -a /Applications/Indite.app
 
-echo "Nscribe is in /Applications and running. Look for its N in the menu bar."
+echo "Indite is in /Applications and running. Look for its N in the menu bar."

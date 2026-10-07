@@ -77,7 +77,7 @@ The date of deletion is a property of the meeting, `deletedAt`, added in version
 of the store. It was kept in preferences for its first hour. The migration ran on
 Jonathan's store on 2026-10-01 with 11 meetings, 179 lines, 19 speakers and 100
 dictations before and after; a copy from before it is in
-`~/Library/Application Support/Nscribe/Backups`. In the installed build, the Delete
+`~/Library/Application Support/Indite/Backups`. In the installed build, the Delete
 button wrote the date, Undo cleared it, and a second delete wrote it again. Jonathan
 recovered a meeting from the Recently Deleted list: "recovery works fine". Delete
 Now and the thirty-day purge were run on 2026-10-01 against two throwaway meetings

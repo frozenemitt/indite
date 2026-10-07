@@ -1,13 +1,13 @@
 # Help and Siri
 
-Shaped 2026-10-06 with Jonathan. Nscribe is meant to be agent first: what a person can
+Shaped 2026-10-06 with Jonathan. Indite is meant to be agent first: what a person can
 learn or change in it, Siri and an assistant inside the app can too.
 
 ## Problem
 
-Nscribe has no documentation inside the app. A question such as "how do I change the
+Indite has no documentation inside the app. A question such as "how do I change the
 dictation key?" sends a person to the README, which by decision describes what the app
-does and not how to operate it. Nothing lets Siri answer questions about Nscribe, check
+does and not how to operate it. Nothing lets Siri answer questions about Indite, check
 why something is not working, or change a setting when asked.
 
 ## Solution sketch
@@ -26,7 +26,7 @@ releases are the only way Siri calls into an app.
 - Setup checks are App Intents too. They report what is missing (the Accessibility
   grant, the Globe-key setting, Apple Intelligence) and open the right place.
 
-**An assistant inside Nscribe** uses the same pieces through Foundation Models tool
+**An assistant inside Indite** uses the same pieces through Foundation Models tool
 calling, on the Mac: a tool that searches the articles, one that reads the settings and
 one that changes them. The Help window holds it, together with a searchable list of the
 articles.
@@ -52,18 +52,18 @@ articles.
 ## Slices
 
 1. **Siri finds and answers from one article.** Done: Siri reaches Help through
-   "Search Nscribe for …" but never answers from the articles. See Findings.
+   "Search Indite for …" but never answers from the articles. See Findings.
 2. **The assistant in the Help window**, with the article search tool, on Foundation
    Models. Shipped in 1.1.
 3. **Help that knows your setup**, replacing "settings as intents" and "setup checks".
    Shaped below.
 4. **The full set of articles** and the browsable list. Shipped in 1.1, 55 articles.
 
-Dropped: onscreen awareness for "explain this". It would go through Siri, and Nscribe
+Dropped: onscreen awareness for "explain this". It would go through Siri, and Indite
 has few moments it would explain that an article or a tooltip does not already
 cover: "I don't think I want to implement the explain this option."
 
-Dropped: Siri changing Nscribe's settings. No Siri schema covers an app's settings,
+Dropped: Siri changing Indite's settings. No Siri schema covers an app's settings,
 custom commands need fixed phrases, and the in-app assistant chose the right article
 for 19 of 24 fresh questions, too few to let it change a setting by itself.
 
@@ -72,7 +72,7 @@ for 19 of 24 fresh questions, too few to let it change a setting by itself.
 **Problem.** When dictation fails, the cause is usually state the person cannot see:
 Accessibility off, the Globe key opening emoji, the microphone or speech recognition
 refused, Apple Intelligence off or still downloading, the speaker models missing. Help
-answers in general terms ("Nscribe most likely lacks Accessibility") although the app
+answers in general terms ("Indite most likely lacks Accessibility") although the app
 knows the answer. Settings' Status list knows it too, but only someone who opens
 Settings sees it.
 
@@ -86,7 +86,7 @@ Settings sees it.
 - The assistant gets it as a second tool, so an answer can say "Accessibility is
   off" rather than "most likely".
 - The fix stays one press for the person: the answer's button goes to the exact
-  place, Nscribe's Settings tab or the System Settings pane (Accessibility,
+  place, Indite's Settings tab or the System Settings pane (Accessibility,
   Microphone, Speech Recognition, Keyboard).
 - First vertical cut: "my key does nothing" answered with the real state of
   Accessibility and the tap, and a button to the Accessibility pane.
@@ -147,14 +147,14 @@ Globe key article under the warning, not the Accessibility one.
   of which checks bore on an answer was right in all twelve. So Help shows the checks,
   and the model answers from the articles alone, as in 1.1.
 
-- 2026-10-06, 1.1.444, Jonathan's Spotlight: typing "Ask Nscribe" lists the App
-  Shortcut "Show Nscribe help.", the "Show Nscribe Help" action, and the help articles
+- 2026-10-06, 1.1.444, Jonathan's Spotlight: typing "Ask Indite" lists the App
+  Shortcut "Show Indite help.", the "Show Indite Help" action, and the help articles
   by their words. macOS has registered the shortcut; whether Siri runs it by voice is
   untested.
 
 - 2026-10-06, slice 1, build 1.0.391. Siri answered all three test questions from the
-  web, not from the articles: "How do I change Nscribe's dictation key?", "Why does my
-  Globe key open emojis?" and even the App Shortcut phrase "Show Nscribe help". The
+  web, not from the articles: "How do I change Indite's dictation key?", "Why does my
+  Globe key open emojis?" and even the App Shortcut phrase "Show Indite help". The
   build was registered: linkd logged "Interpolated com.nscribe.app.macos, donating to
   Siri…", and the metadata carries the intents, the phrases and the indexed entity.
   Two causes are visible:
@@ -164,14 +164,14 @@ Globe key article under the warning, not the Accessibility one.
   - The entity conforms to no schema. Apple's session says Siri needs a schema to
     understand what an entity is, and none of the domains fits a help article: notes
     and reader would put help articles among a person's own notes or books. The next
-    build adds the system `searchInApp` schema, so "search Nscribe for …" reaches the
+    build adds the system `searchInApp` schema, so "search Indite for …" reaches the
     Help window in any wording.
 - 2026-10-06, build 1.0.392, with `IndexedEntityQuery` and the `searchInApp` schema.
-  "Search Nscribe for the dictation key" opened the Help window at the right article:
-  the system schema reaches the app in any wording. "How do I change Nscribe's
+  "Search Indite for the dictation key" opened the Help window at the right article:
+  the system schema reaches the app in any wording. "How do I change Indite's
   dictation key?" was still answered from the web: Siri did not answer from the
   indexed article. Spotlight showed Siri's own answer, not the article.
-  Siri therefore routes into Nscribe but does not answer from its content. The
+  Siri therefore routes into Indite but does not answer from its content. The
   assistant in the Help window becomes the place answers come from, and Siri's search
   hands it the question.
 - 2026-10-06, Jonathan: "If we are sure that indexing is complete, then we can draw
@@ -190,6 +190,6 @@ Globe key article under the warning, not the Accessibility one.
   every time and the three questions worded unlike any article found nothing every
   time. The semantic index never matched the articles by meaning within the hour.
   This Mac also gave no positive control that semantic search works for any app, so
-  the cause is unproven; the effect is that Siri has nothing of Nscribe's to answer
+  the cause is unproven; the effect is that Siri has nothing of Indite's to answer
   from. Slice 2, the assistant in the Help window, goes ahead: it answers from the
   articles directly and does not depend on Spotlight.
