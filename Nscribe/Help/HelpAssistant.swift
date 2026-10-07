@@ -55,10 +55,22 @@ final class HelpAssistant {
         }
 
         state = .thinking
+        let setup = self.setup
         task = Task {
             // A fresh session for every question: each one stands alone, and a long
             // conversation would only crowd the small model's context.
             let pick = await Self.route(question)
+            // The fix article itself, not the model's account of it. Given the Globe
+            // article first, the model still wrote from "The dictation key does nothing"
+            // after it; given the Globe article alone, it answered "my key does nothing"
+            // with "no specific fix". Help already knows the problem and its fix.
+            if let fix = Self.fixArticle(for: question, picked: pick, setup: setup),
+               let article = HelpArticle.article(id: fix) {
+                guard !Task.isCancelled else { return }
+                state = .answered(article.body, sources: [fix])
+                Log.app.notice("Help assistant answered from the fix for a problem it found: \(fix, privacy: .public)")
+                return
+            }
             let tool = SearchHelpTool(question: question, pick: pick)
             let session = LanguageModelSession(tools: [tool], instructions: Self.instructions)
             do {
@@ -117,6 +129,21 @@ extension HelpAssistant {
             to: question, schema: schema, options: GenerationOptions(sampling: .greedy)
         ), let id = try? response.content.value(String.self), id != "none" else { return nil }
         return id
+    }
+
+    /// The article that fixes an urgent problem Help found, when the question is about
+    /// something not working and the problem bears on it; nil otherwise.
+    ///
+    /// Asked "my dictation key does nothing" with the Globe key setting wrong, the
+    /// model answered from the Accessibility article, under a warning about the Globe
+    /// key. Only for troubleshooting: asked how to change the key while Accessibility
+    /// was off, the person wants the steps, and the warning above says what is off.
+    static func fixArticle(for question: String, picked: HelpArticle.ID?, setup: HelpSetup?) -> HelpArticle.ID? {
+        guard let setup,
+              let base = picked ?? HelpArticle.search(question).first?.id,
+              HelpArticle.article(id: base)?.topic == .troubleshooting else { return nil }
+        let bearing = Set([base] + HelpArticle.search(question).map(\.id))
+        return setup.checks(for: bearing).first { !$0.isFine && $0.isUrgent && $0.fixArticle != nil }?.fixArticle
     }
 
     /// Read the setup again. Permissions change in System Settings while Help is open.

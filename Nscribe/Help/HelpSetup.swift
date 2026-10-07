@@ -36,6 +36,9 @@ struct HelpSetup: Equatable, Sendable {
         /// answer about them.
         let isUrgent: Bool
         let articles: Set<HelpArticle.ID>
+        /// The article that fixes it, which a question about something not working is
+        /// answered from while the problem stands.
+        var fixArticle: HelpArticle.ID? = nil
     }
 
     var checks: [Check] {
@@ -46,13 +49,15 @@ struct HelpSetup: Equatable, Sendable {
                     ? "Accessibility is on for Nscribe."
                     : "Accessibility is off for Nscribe, so the dictation key does nothing and Nscribe can't type into other apps.",
                   action: .accessibilitySettings, isUrgent: true,
-                  articles: keyArticles.union(["permissions", "copied-not-typed"]))
+                  articles: keyArticles.union(["permissions", "copied-not-typed"]),
+                  fixArticle: "key-does-nothing")
         ]
         if accessibility {
             found.append(Check(
                 id: "key", isFine: keyError == nil,
                 sentence: keyError.map { "The dictation key isn't working. \($0)" } ?? "The dictation key is listening.",
-                action: .nscribeSettings(.dictation), isUrgent: true, articles: keyArticles))
+                action: .nscribeSettings(.dictation), isUrgent: true, articles: keyArticles,
+                fixArticle: "key-does-nothing"))
         }
         if usesGlobeKey {
             found.append(Check(
@@ -61,7 +66,7 @@ struct HelpSetup: Equatable, Sendable {
                     ? "macOS's \"Press 🌐 key to\" setting is Do Nothing, so macOS leaves the Globe key to Nscribe."
                     : "macOS also acts on the Globe key, so each press opens emoji or switches your input source as well.",
                 action: .keyboardSettings, isUrgent: true,
-                articles: keyArticles.union(["globe-key-emoji"])))
+                articles: keyArticles.union(["globe-key-emoji"]), fixArticle: "globe-key-emoji"))
         }
         let microphoneSentence = switch microphone {
         case .allowed: "Nscribe is allowed to use the microphone."
@@ -71,7 +76,8 @@ struct HelpSetup: Equatable, Sendable {
         found.append(Check(
             id: "microphone", isFine: microphone != .refused, sentence: microphoneSentence,
             action: .microphoneSettings, isUrgent: true,
-            articles: ["nothing-heard", "microphone", "permissions", "first-dictation", "start-meeting", "microphone-busy"]))
+            articles: ["nothing-heard", "microphone", "permissions", "first-dictation", "start-meeting", "microphone-busy"],
+            fixArticle: "nothing-heard"))
         let speechSentence = switch speech {
         case .allowed: "Nscribe is allowed to use speech recognition."
         case .notAsked: "macOS has not asked about speech recognition yet; it asks at the first dictation."
@@ -80,7 +86,8 @@ struct HelpSetup: Equatable, Sendable {
         found.append(Check(
             id: "speech", isFine: speech != .refused, sentence: speechSentence,
             action: .speechSettings, isUrgent: true,
-            articles: ["nothing-heard", "permissions", "first-dictation", "language"]))
+            articles: ["nothing-heard", "permissions", "first-dictation", "language"],
+            fixArticle: "nothing-heard"))
         found.append(Check(
             id: "apple-intelligence", isFine: appleIntelligence == nil,
             sentence: appleIntelligence.map {
@@ -88,7 +95,8 @@ struct HelpSetup: Equatable, Sendable {
             } ?? "Apple Intelligence is ready.",
             action: .nscribeSettings(.dictation), isUrgent: true,
             articles: ["apple-intelligence", "rewrite-failed", "choose-prompt", "custom-prompt",
-                       "keep-my-words", "meeting-summary", "ask-nscribe"]))
+                       "keep-my-words", "meeting-summary", "ask-nscribe"],
+            fixArticle: "apple-intelligence"))
         found.append(Check(
             id: "meetings", isFine: meetingsNotSaved == nil,
             sentence: meetingsNotSaved.map { "Meetings aren't being saved. \($0)" } ?? "Meetings are being saved.",
@@ -100,7 +108,8 @@ struct HelpSetup: Equatable, Sendable {
                 ? "The speaker models are installed."
                 : "The speaker models aren't installed, so meetings have no speaker names.",
             action: .nscribeSettings(.meetings), isUrgent: false,
-            articles: ["no-speaker-names", "speaker-names", "old-meeting-speakers"]))
+            articles: ["no-speaker-names", "speaker-names", "old-meeting-speakers"],
+            fixArticle: "no-speaker-names"))
         return found
     }
 
