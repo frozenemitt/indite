@@ -1,11 +1,11 @@
 ---
-name: Nscribe
+name: Indite
 version: 1
 ---
 
 ## Overview
 
-Nscribe turns speech into text on the Mac: dictation into any app, and recorded
+Indite turns speech into text on the Mac: dictation into any app, and recorded
 meetings kept as transcripts. It is open source and meant for a wide public, not one
 user. It should feel like part of macOS: you notice your words, not the app.
 
@@ -23,7 +23,7 @@ System colors throughout, so light and dark and the user's accent color work.
 The app's own accent color is the ribbon's azure, `#3D99FF`. It colors the selected
 meeting, the default button, switches, and the block behind the line being played.
 The word being said carries no color: it is set in bold.
-The ribbon has the only colors of Nscribe's own, defined in `ListeningBar.swift`:
+The ribbon has the only colors of Indite's own, defined in `ListeningBar.swift`:
 
 - Azure `(0.24, 0.60, 1.00)` and violet `(0.62, 0.38, 1.00)` while listening.
 - Amber `(1.00, 0.70, 0.32)` while the AI rewrites.
@@ -76,9 +76,12 @@ rewriting ribbon still. No animation on menus or frequent actions.
 
 ## Imagery
 
-SF Symbols. The menu bar icon is the app icon's N, drawn as a template image, so
-state is carried by shape: the N at rest, the N knocked out of a filled tile while a
-dictation is heard, and symbols for the meeting, the rewrite and a failed key.
+SF Symbols. The app icon is the I-beam text cursor, white on a black tile, with no
+crossbar and no color. The menu bar icon is the same cursor drawn as a template image,
+so state is carried by shape: the cursor at rest, the cursor cut out of a filled tile
+while a dictation is heard, and symbols for the meeting, the rewrite and a failed key.
+The README's wordmark is the one place the icon moves: the ribbon runs across the
+cursor where a crossbar would be.
 
 ## Do's and Don'ts
 
@@ -135,7 +138,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-01 Words in a transcript can be corrected. "If we could just be able to
   overwrite what's in the transcript with a correction, that would be an excellent
   addition."
-- 2026-10-01 A window Nscribe opens comes to the front. Of windows opened from the
+- 2026-10-01 A window Indite opens comes to the front. Of windows opened from the
   new menu landing behind other apps: "That's very difficult because I don't know
   how to find them. So they need to be surfaced to the front when I open them."
 - 2026-10-01 Space does not play or pause a meeting's audio. "Maybe we don't use the
@@ -168,7 +171,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   the app's green at full strength with white text. "I don't love the green
   highlight of the conversation that's active. Could you propose a more Apple
   aligned view?" Options shown; none chosen yet.
-- 2026-10-01 Green is not Nscribe's color. It is the accent color the project was
+- 2026-10-01 Green is not Indite's color. It is the accent color the project was
   created with (#00AB83, in the first commit) and nobody chose it. "I don't know
   where you got this idea of green being our app color, but I don't think that is
   our app color."
@@ -177,7 +180,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   note. Neutral gray for the meeting was offered and turned down. "I think the
   active meeting should be highlighted in an app color, and the green is definitely
   not it." Which color is the app's is not chosen yet.
-- 2026-10-01 Nscribe's color is azure, the ribbon's. Chosen over coral from the app
+- 2026-10-01 Indite's color is azure, the ribbon's. Chosen over coral from the app
   icon, which was recommended, and violet: "Azure". Installed the same hour. The
   selected meeting is the system's own highlight, azure at full strength under white
   text. The soft tint under dark text that the mockup showed is not built: the list
@@ -218,24 +221,24 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   edge ("show me these without the 2 tone"), and the chisel turned the other way.
   "U2 looks great. I think that's it!" The marks read first, the N second, the
   chisel as a tool last, which is the order asked for. Drawn by
-  `Design/Icon/draw-icon.swift`; the document is `Nscribe/AppIcon.icon`.
+  `Design/Icon/draw-icon.swift`; the document is `Indite/AppIcon.icon`.
 - 2026-10-04 The menu bar icon is the app icon's N, not the ribbon. "Let's change
   the menu bar icon to the actual AppIcon instead of using the audio waveform." The
   N is drawn from the icon's own shapes as a template image, the chisel lighter than
   the marks with a gap where it crosses them; while a dictation is heard the N is
   knocked out of a filled tile, which replaces the swollen ribbon. The ribbon stays
   in the dictation panel.
-- 2026-10-05 Nscribe is downloaded as a disk image from GitHub Releases and updates
+- 2026-10-05 Indite is downloaded as a disk image from GitHub Releases and updates
   itself through Sparkle. "I'm not paying Apple for sharing free software." "Add the
   in-app updater." Without a Developer ID, the first open goes through Open Anyway
   in System Settings; updates installed by Sparkle are not marked as downloaded, so
   they open without asking. Releases are signed with the Apple Development
   certificate the project already uses, so every version has one identity and keeps
-  each user's permissions. The update check is the one network call Nscribe makes
+  each user's permissions. The update check is the one network call Indite makes
   unasked, and Sparkle asks on the second launch before making it on a schedule.
   This replaces "people build it from source"; `Scripts/install.sh` stays for those
   who want to.
-- 2026-10-05 Nscribe is a menu bar app. "I definitely want to make this a menu bar
+- 2026-10-05 Indite is a menu bar app. "I definitely want to make this a menu bar
   only app." It joins the Dock and Command-Tab while any of its windows is open, so
   the Meetings window can be switched back to and every window has the Edit menu.
   "When the meetings window is open, I do want it to show in the command tab."
@@ -264,7 +267,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   people will give up very quickly." macOS's Accessibility prompt no longer opens
   over the window at launch; the checklist asks instead.
 - 2026-10-05 The welcome window's first page is only a welcome and a short summary
-  of what Nscribe does; everything practical, the key choice included, moves to the
+  of what Indite does; everything practical, the key choice included, moves to the
   second page, a guided setup. Both pages carry the icon and the name. "The 1st page
   should just be a very generic welcome and quick summary of what the app does. The
   second page should be a very helpful, guided setup page." "Make sure the 2nd page
@@ -331,7 +334,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-06 The README's tagline is Jonathan's: "Unlock the potential of Apple's
   Foundation Models. Fast, free, on-device dictation and transcription that knows your
   context and adapts to your prompts."
-- 2026-10-06 The README describes what Nscribe does, not how to operate it: no fixed
+- 2026-10-06 The README describes what Indite does, not how to operate it: no fixed
   keys or gestures, since the shortcut and its mode are settings. "We don't need to be
   including manual level instructions in the read me page."
 - 2026-10-06 The README points out what is unique, not features every dictation app
@@ -343,7 +346,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   in Privacy and in the permissions table, and no "signed" used for two things.
 - 2026-10-06 The Help window opens on a question, not on an article: one field, what to
   ask, three example questions, and the article list behind the sidebar button and a
-  "Browse all articles" link. Ask Nscribe is in the menu, on ⌘? and in Siri. "The
+  "Browse all articles" link. Ask Indite is in the menu, on ⌘? and in Siri. "The
   landing of the help window should just be a search bar with instructions to say
   what you're looking for. I think the menu should be accessible as well, but I don't
   want that to be the default."
@@ -360,16 +363,16 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   search bar would collapse at the top, so they could go back to the agentic search."
   Rejected: titling each article as a question and asking it on click ("I'm not sure I
   agree with this").
-- 2026-10-06 The menu says Help: "Help" in Nscribe's menu, and "Nscribe Help" on ⌘? in
-  the Help menu, replacing "Ask Nscribe…". "I do think it should say help, because
+- 2026-10-06 The menu says Help: "Help" in Indite's menu, and "Indite Help" on ⌘? in
+  the Help menu, replacing "Ask Indite…". "I do think it should say help, because
   that's what people are looking for in the menu."
 - 2026-10-06 Help articles may name other companies' products, such as AirPods, Slack
   and Zoom, because people ask with those words: "Yeah, that's totally fine." The
-  README still compares Nscribe to no one.
+  README still compares Indite to no one.
 - 2026-10-06 Clicking a word moves the playhead and Play starts the sound; copy may say
   a click plays it: "People will understand that they need to click play." The Play
   button's tooltip names ⌘↩.
-- 2026-10-06 Nscribe transcribes in the Mac's language: the first preferred language
+- 2026-10-06 Indite transcribes in the Mac's language: the first preferred language
   Apple's recognizer supports, and US English when it supports none. Chosen over a
   Language menu in Settings: "Follow the Mac's language automatically." A rewrite is
   told the dictation's language when it is not English, because Clean Up turned
@@ -396,3 +399,33 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   the article that fixes it, shown as written: "I like the article picking fix." Other
   questions keep the model's answer. "Explain this" is dropped: "I don't think I want
   to implement the explain this option."
+- 2026-10-07 Nscribe is renamed Indite, an old word for putting something into words.
+  Chosen from eight names beginning with I, screened for US trademarks, App Store
+  apps and domains, over Ibeam, the cursor's own name: "I definitely like indite the
+  best at this point." "Let's rename." "Make sure you change the name everywhere."
+  Inscribe was given up first: a registered INSCRIBE mark covers dictation software.
+  The project, target, scheme, source folder, module, code, logs, help, scripts and
+  docs take the new name, and so does the folder in Application Support, which the
+  first launch as Indite moves with its store. No domain: "I don't want the domain,
+  just host it on GitHub for now." The repository is to be renamed indite on GitHub,
+  which redirects the old address.
+- 2026-10-07 The bundle identifier becomes com.indite.app.macos. "I think we can change
+  this because I don't think anyone has installed it besides Nora." A copy of Nscribe
+  cannot update itself into Indite, and macOS asks again for every permission, so the
+  few people who have Nscribe download Indite fresh. Indite's first launch copies over
+  the settings Nscribe left, once, and moves its meetings and recordings.
+- 2026-10-07 The update key moves to the Keychain account indite. "We can probably
+  change this one too, with no real consequence." The release script copies the key
+  from the nscribe account the first time it runs; the key itself stays the same, so
+  the public key in the app does not change.
+- 2026-10-07 The app icon and the menu bar icon are the lone I-beam cursor, replacing
+  the quotation-mark N. Chosen over the cursor beside a lowercase n, which reads as
+  "In" and comes close to LinkedIn's mark, and over the quotation marks around a
+  chisel: "I do really like the look of that single cursor, even without the quote, I
+  think it looks really smooth."
+- 2026-10-07 The README leads with the icon animated, the ribbon running across the
+  cursor as its crossbar; everywhere else the cursor stays plain. "I'd like for the
+  GitHub README to lead with the animated version of the I logo. Otherwise, keep it as
+  the simple I." The ribbon is drawn large: twice the tile's width, swelling to most
+  of the cursor's height. "Make the ribbon huge, and highly visible while animating
+  it." Drawn as an animated SVG so GitHub plays it.

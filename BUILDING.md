@@ -1,4 +1,4 @@
-# Building Nscribe
+# Building Indite
 
 ## Build from source
 
@@ -7,20 +7,20 @@ so it can finish setting up its tools. No Apple Developer Program membership is
 needed.
 
 ```bash
-git clone https://github.com/frozenemitt/nscribe.git
-cd nscribe
+git clone https://github.com/frozenemitt/indite.git
+cd indite
 Scripts/install.sh
 ```
 
-The script builds Nscribe, puts it in `/Applications`, and launches it. The first
+The script builds Indite, puts it in `/Applications`, and launches it. The first
 build downloads two packages, FluidAudio and Sparkle, and takes a few minutes; later
 builds are faster.
 
-To build in Xcode instead, open `Nscribe.xcodeproj`, choose your own team under
-Signing & Capabilities for the Nscribe target (a free Apple ID works), and press Run.
+To build in Xcode instead, open `Indite.xcodeproj`, choose your own team under
+Signing & Capabilities for the Indite target (a free Apple ID works), and press Run.
 
 Each rebuild is a new app to macOS, and it forgets the Accessibility grant: remove
-Nscribe from the Accessibility list and add it again. The downloaded app keeps one
+Indite from the Accessibility list and add it again. The downloaded app keeps one
 signature from version to version, so its grants carry over.
 
 ## Versions
@@ -30,12 +30,12 @@ something new ships, the first for a change big enough to say so. The third is t
 number of commits the app was built from, so it rises with every build, fixes
 included, and any two builds can be told apart. **Settings → About** shows it. Releases
 are tagged with the whole version, such as `v1.0.352`, and listed under
-[Releases](https://github.com/frozenemitt/nscribe/releases).
+[Releases](https://github.com/frozenemitt/indite/releases).
 
 ## Releasing
 
 `Scripts/release.sh` makes a release: it builds and signs the app, puts it in the
-disk image `Nscribe.dmg`, and writes the appcast that tells installed copies about it.
+disk image `Indite.dmg`, and writes the appcast that tells installed copies about it.
 The notes are in [Docs/Releases](Docs/Releases): `whats-new.md`, rewritten for every
 release and shown in Software Update and What's New, and the about text for the
 release page.
@@ -49,8 +49,8 @@ are built.
 ## Project layout
 
 ```
-Nscribe/
-├── NscribeApp.swift          Entry point, the store, the scenes
+Indite/
+├── InditeApp.swift           Entry point, the store, the scenes
 ├── Models/                  SwiftData: meetings, speakers, lines, dictations, the schema
 ├── Services/
 │   ├── GlobalHotkeyMonitor  The dictation key, through a CGEvent tap
