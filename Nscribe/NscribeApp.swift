@@ -27,10 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DockPresence.start()
         onReady?()
         AppUpdater.shared.showWhatsNewIfDue()
-        Task {
-            await HelpIndex.refresh()
-            await HelpIndex.probeRepeatedly()
-        }
+        Task { await HelpIndex.refresh() }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
