@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The app's own folder in Application Support: the meeting store, meeting audio, the
 /// sounds a person adds and the downloaded vocabulary model all live under it.

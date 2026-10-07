@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// What carries over from the app's first name, Nscribe.
 ///
