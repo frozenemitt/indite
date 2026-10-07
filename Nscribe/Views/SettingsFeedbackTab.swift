@@ -15,21 +15,6 @@ struct FeedbackSettingsView: View {
 
     @State private var importError: String?
 
-    /// One labelled slider with its value beside it, in the form's own columns. As a
-    /// row of its own with a label column of a fixed width, it lined up with nothing
-    /// else in the form.
-    private func solidityRow(_ label: String, value: Binding<Double>) -> some View {
-        LabeledContent(label) {
-            HStack(spacing: 8) {
-                Slider(value: value, in: 0.25...1)
-                Text(value.wrappedValue.formatted(.percent.precision(.fractionLength(0))))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(width: 40, alignment: .trailing)
-            }
-        }
-    }
-
     var body: some View {
         @Bindable var settings = settings
 
@@ -37,12 +22,7 @@ struct FeedbackSettingsView: View {
             Section("Panels") {
                 Toggle("Show the words as you dictate", isOn: $settings.showDictationOverlay)
 
-                // The meeting pill reads these too, so they stay while either panel
-                // is on.
                 if settings.showDictationOverlay || settings.showMeetingIndicator {
-                    solidityRow("Glass", value: $settings.overlayOpacity)
-                    solidityRow("Words and ribbon", value: $settings.overlayContentOpacity)
-
                     // Both panels. It used to put back the dictation panel alone, and
                     // a meeting pill dragged onto a display since unplugged had no way
                     // home.

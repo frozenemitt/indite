@@ -50,9 +50,6 @@ final class DictationOverlayController {
 
     private var panel: NSPanel?
 
-    /// The pane behind the content, faded on its own so the words stay readable.
-    private var glassView: PanelGlassView?
-
     private let model = OverlayModel()
     private let settings: AppSettings
     /// Held so the desktop-change notifications keep arriving for the life of the app.
@@ -144,8 +141,6 @@ final class DictationOverlayController {
         followScreenChanges()
 
         place()
-        applyOpacity()
-        applyContentOpacity()
         // orderFrontRegardless, not makeKeyAndOrderFront: taking key status would pull
         // focus out of the app being dictated into, which is where the text must land.
         panel?.orderFrontRegardless()
@@ -189,49 +184,11 @@ final class DictationOverlayController {
 
     func update(text: String, spectrum: [Double]) {
         model.spectrum = spectrum
-        applyOpacity()
-        applyContentOpacity()
 
         // Only when it changed: the band wants twenty updates a second, and laying out
         // a panel-tall block of text that often to say the same words is waste.
         guard model.text != text else { return }
         model.text = text
-    }
-
-    /// Fade the whole panel, glass included.
-    ///
-    /// The pane thins; the words do not.
-    ///
-    /// Three ways to do this and only one of them works. Tint only darkens the
-    /// material, so nothing showed through at any setting. The window's alpha thins
-    /// everything including the text, which defeats the panel. Fading the glass view
-    /// alone is the answer, and it needs the content to be a sibling drawn on top of
-    /// the glass rather than living inside it — a view's alpha takes its subviews
-    /// with it.
-    ///
-    /// The tint itself is left alone here. Assigning it twenty times a second makes the
-    /// material recomposite on every tick and the panel goes muddy, so the glass sets
-    /// it when it is built and again only when the appearance changes.
-    private func applyOpacity() {
-        let wanted = settings.overlayOpacity
-
-        // The rim is checked on its own. It starts from a different default than the
-        // glass, so a pane set fully solid matched the glass, returned early, and left
-        // the rim at three quarters.
-        if abs(model.paneOpacity - wanted) > 0.001 {
-            model.paneOpacity = wanted
-        }
-
-        guard let glassView, abs(glassView.alphaValue - wanted) > 0.001 else { return }
-        glassView.alphaValue = wanted
-    }
-
-    /// The words and the band carry their own setting, so a pane turned right down can
-    /// still hold solid text, or a solid pane can hold text that stays out of the way.
-    private func applyContentOpacity() {
-        let wanted = settings.overlayContentOpacity
-        guard abs(model.contentOpacity - wanted) > 0.001 else { return }
-        model.contentOpacity = wanted
     }
 
     func showProcessing() {
@@ -391,26 +348,17 @@ final class DictationOverlayController {
         let hosting = NSHostingView(rootView: DictationOverlayView(model: model))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         // The glass the panel is made of. AppKit's own view rather than SwiftUI's
-        // modifier: this one samples the windows behind the panel, which is where the
-        // lensing comes from and what the SwiftUI version had no access to inside a
-        // borderless transparent panel.
-        let glass = PanelGlassView()
+        // modifier: this one samples the windows behind the panel, which the SwiftUI
+        // version had no access to inside a borderless transparent panel.
+        let glass = NSGlassEffectView()
         glass.translatesAutoresizingMaskIntoConstraints = false
-        // Clear rather than regular: regular frosts the windows behind, and the panel
-        // is there to let them show through. Measured on 2026-10-06, both styles blur
-        // alike at full Glass, and below it the sharp windows show through and hide
-        // the blur.
-        glass.style = .clear
-        // Refraction in Liquid Glass lives in the rim, not the interior, so a curve
-        // this gentle put almost none of the panel inside it. A larger radius gives
-        // the effect somewhere to happen.
+        // Apple's Regular glass, untinted, with its own edge. It frosts the windows
+        // behind, so the words read over whatever is there. The clear glass it
+        // replaced, faded by a Glass slider, let the text behind show through under
+        // the dictation.
+        glass.style = .regular
         glass.cornerRadius = 26
-        glass.applyTint()
-        self.glassView = glass
 
-        // The content sits on top of the glass rather than inside it. As the glass
-        // view's `contentView` it would inherit the glass's alpha, and thinning the
-        // pane would thin the dictation with it.
         let container = DragHandleView()
         // Remembered only when the user drags it. Every programmatic move used to be
         // saved too, so placing the panel on the screen with the pointer pinned it to
@@ -479,8 +427,6 @@ final class DictationOverlayController {
                       panel.isVisible, !panel.isOnActiveSpace else { return }
                 self.replacePanel()
                 self.position(self.panel)
-                self.applyOpacity()
-                self.applyContentOpacity()
                 self.fitToText()
                 self.panel?.orderFrontRegardless()
             }
@@ -525,26 +471,6 @@ final class DictationOverlayController {
     }
 }
 
-/// The panel's glass, tinted for the appearance it is drawn in.
-///
-/// The tint changes only when the appearance does. Reassigning it every frame makes the
-/// material recomposite, and the panel darkens as it goes. It still has to follow the
-/// system from light to dark and back while Nscribe runs, or a panel built in one
-/// would keep that tint under the other.
-private final class PanelGlassView: NSGlassEffectView {
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        applyTint()
-    }
-
-    func applyTint() {
-        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        tintColor = isDark
-            ? NSColor.black.withAlphaComponent(0.22)
-            : NSColor.white.withAlphaComponent(0.20)
-    }
-}
-
 /// Drags the panel from anywhere inside it.
 ///
 /// `performDrag` hands the drag to the window server and returns before the panel has
@@ -580,12 +506,6 @@ final class OverlayModel {
     /// Handed in by the controller so a new measurement resizes the panel.
     var resizePanel: () -> Void = {}
 
-    /// How solid the pane behind is, so the rim drawn on top can match it.
-    var paneOpacity: Double = 0.75
-
-    /// How solid the words and the band are.
-    var contentOpacity: Double = 1.0
-
     /// How tall the text may grow before older lines are pushed off the top: the text
     /// room in the tallest panel the screen's visible height can hold.
     var maxTextHeight: CGFloat = DictationOverlayView.lineHeight * 5
@@ -595,8 +515,6 @@ final class OverlayModel {
 
 private struct DictationOverlayView: View {
     @Bindable var model: OverlayModel
-
-    @Environment(\.colorScheme) private var colorScheme
 
     /// One line of the text style actually in use, so everything below follows the
     /// system font size rather than a number that happens to look right today.
@@ -645,71 +563,19 @@ private struct DictationOverlayView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .clipped()
         }
-        // The contents carry their own setting; the rim below belongs to the pane and
-        // takes the pane's.
-        .opacity(model.contentOpacity)
         .padding(.horizontal, 18)
         .padding(.vertical, DictationOverlayController.verticalPadding / 2)
         .frame(width: DictationOverlayController.width)
         // Fills the panel, with the contents at its top: the room the text does not
-        // need lies below the words, not between them and the band. Filling it also
-        // keeps the rim below on the panel's edge, where the glass ends.
+        // need lies below the words, not between them and the band.
         .frame(
             minHeight: DictationOverlayController.minimumHeight,
             maxHeight: .infinity,
             alignment: .top
         )
         // No background here, and no color scheme. The glass is an NSGlassEffectView
-        // behind this view, and the words, the ribbon and the rim follow the system
-        // appearance as the glass does: dark on a light pane, light on a dark one.
-        //
-        // The rim is the pane's edge, so it thins with the pane. Left solid it outlines
-        // a panel that is no longer there.
-        .overlay(rim.opacity(model.paneOpacity))
-    }
-
-    /// The rim is drawn rather than sampled: a light edge, brightest where a light
-    /// above and to the left would catch it, fading around the curve. That is the
-    /// specular highlight the material renders faintly on a shape this large, and
-    /// drawing it is the honest way to get the read at this size.
-    ///
-    /// A white edge vanishes against a light pane, so in light mode a faint dark
-    /// outline marks where the panel ends and the highlight runs just inside it.
-    @ViewBuilder
-    private var rim: some View {
-        let corner = RoundedRectangle(cornerRadius: 26)
-        if colorScheme == .dark {
-            corner.strokeBorder(
-                LinearGradient(
-                    colors: [
-                        .white.opacity(0.55),
-                        .white.opacity(0.12),
-                        .white.opacity(0.04),
-                        .white.opacity(0.18)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1
-            )
-        } else {
-            ZStack {
-                corner.strokeBorder(Color.black.opacity(0.10), lineWidth: 1)
-                corner.inset(by: 1).strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            .white.opacity(0.95),
-                            .white.opacity(0.35),
-                            .white.opacity(0.15),
-                            .white.opacity(0.5)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-            }
-        }
+        // behind this view, and the words and the ribbon follow the system appearance
+        // as the glass does: dark on a light pane, light on a dark one.
     }
 
     /// The dictation stays up, dimmed, until the rewrite starts replacing it.

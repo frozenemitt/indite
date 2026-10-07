@@ -185,7 +185,7 @@ enum HelpLibrary {
 
     static let dictationPanel = HelpArticle(
         id: "dictation-panel",
-        title: "Move, fade or hide the dictation panel",
+        title: "Move or hide the dictation panel",
         body: """
             The dictation panel is the floating box that shows your words while Nscribe \
             hears them. Its ribbon moves blue and violet with your voice, turns amber \
@@ -193,10 +193,11 @@ enum HelpLibrary {
             ended.
 
             If the panel covers what you are reading, drag it anywhere, and it comes back \
-            where you left it. To change how see-through it is, open Nscribe's Settings, \
-            choose Feedback, and move the "Glass" and "Words and ribbon" sliders. "Reset \
-            Panel Positions" puts it back at the bottom of the screen. To make the panel \
-            go away for good, turn off "Show the words as you dictate".
+            where you left it. Open Nscribe's Settings and choose Feedback: "Reset Panel \
+            Positions" puts it back at the bottom of the screen, and turning off "Show \
+            the words as you dictate" makes it go away for good.
+
+            The panel is frosted glass, so your words read over whatever is behind it.
             """,
         topic: .dictation,
         action: .nscribeSettings(.feedback)

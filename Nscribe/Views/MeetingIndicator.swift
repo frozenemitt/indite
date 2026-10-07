@@ -17,7 +17,6 @@ import AppKit
 final class MeetingIndicatorController {
 
     private var panel: NSPanel?
-    private var glassView: NSGlassEffectView?
     private let model = MeetingIndicatorModel()
     private let settings: AppSettings
     /// Saves where the user drops the current panel. Replaced with the panel.
@@ -55,7 +54,6 @@ final class MeetingIndicatorController {
         watchForStranding()
         followScreenChanges()
         position(panel)
-        applyTint()
         panel?.orderFrontRegardless()
     }
 
@@ -97,22 +95,11 @@ final class MeetingIndicatorController {
         model.microphoneHeldReason = microphoneHeldReason
         model.seconds = seconds
         model.error = error
-        model.contentOpacity = settings.overlayContentOpacity
-        applyTint()
     }
 
     func hide() {
         panel?.orderOut(nil)
         model.spectrum = []
-    }
-
-    /// Thin the pane, not the clock. Same reasoning as the dictation panel: the
-    /// content is a sibling above the glass, so fading the glass leaves it alone.
-    private func applyTint() {
-        guard let glassView else { return }
-        let wanted = settings.overlayOpacity
-        guard abs(glassView.alphaValue - wanted) > 0.001 else { return }
-        glassView.alphaValue = wanted
     }
 
     private func makePanel() -> NSPanel {
@@ -149,10 +136,11 @@ final class MeetingIndicatorController {
 
         let glass = NSGlassEffectView()
         glass.translatesAutoresizingMaskIntoConstraints = false
-        glass.style = .clear
+        // Apple's Regular glass, as on the dictation panel, in its dark form: the pill
+        // stays dark in light mode too, and its white buttons are drawn for that.
+        glass.style = .regular
+        glass.appearance = NSAppearance(named: .darkAqua)
         glass.cornerRadius = Self.height / 2
-        glass.tintColor = NSColor.black.withAlphaComponent(0.22)
-        self.glassView = glass
 
         let container = NSView()
         container.addSubview(glass)
@@ -209,7 +197,6 @@ final class MeetingIndicatorController {
                       panel.isVisible, !panel.isOnActiveSpace else { return }
                 self.replacePanel()
                 self.position(self.panel)
-                self.applyTint()
                 self.panel?.orderFrontRegardless()
             }
         }
@@ -276,7 +263,6 @@ final class MeetingIndicatorModel {
     /// or a shortcut. Nil during the meeting's own resume, so the button keeps its name.
     var microphoneHeldReason: String?
     var seconds: TimeInterval = 0
-    var contentOpacity: Double = 1.0
 
     /// What has gone wrong in the meeting, if anything. The panel is often the only
     /// part of Nscribe on screen during a call, so a problem has to show here too.
@@ -311,7 +297,6 @@ private struct MeetingIndicatorView: View {
                 controls
             }
         }
-        .opacity(model.contentOpacity)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .frame(width: MeetingIndicatorController.width, height: MeetingIndicatorController.height)
