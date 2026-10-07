@@ -392,3 +392,7 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   answer it shows the checks that bear on it, problems and, for troubleshooting, the
   checks that came out fine. The assistant is not given the setup; given it, the
   on-device model made up problems and blamed settings that were fine.
+- 2026-10-07 When Help knows what is wrong, a troubleshooting question is answered with
+  the article that fixes it, shown as written: "I like the article picking fix." Other
+  questions keep the model's answer. "Explain this" is dropped: "I don't think I want
+  to implement the explain this option."

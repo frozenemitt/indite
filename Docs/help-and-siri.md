@@ -58,7 +58,10 @@ articles.
 3. **Help that knows your setup**, replacing "settings as intents" and "setup checks".
    Shaped below.
 4. **The full set of articles** and the browsable list. Shipped in 1.1, 55 articles.
-   Onscreen awareness for "explain this" is not shaped.
+
+Dropped: onscreen awareness for "explain this". It would go through Siri, and Nscribe
+has few moments it would explain that an article or a tooltip does not already
+cover: "I don't think I want to implement the explain this option."
 
 Dropped: Siri changing Nscribe's settings. No Siri schema covers an app's settings,
 custom commands need fixed phrases, and the in-app assistant chose the right article
@@ -108,6 +111,11 @@ troubleshooting article, the checks on it that came out fine. An answer's own bu
 is left out when a check above covers it. The settings were cut from the sketch: only
 the model would have used them, and it could not be trusted with them. See Findings.
 
+When a question is about something not working and an urgent problem bears on it,
+the answer is the article that fixes that problem, shown as written, without the
+model. "My dictation key does nothing" with the Globe key setting wrong gets the
+Globe key article under the warning, not the Accessibility one.
+
 ## Decisions
 
 - 2026-10-06 Siri reads the documentation and acts on the app: "I would love for Siri to
@@ -117,8 +125,17 @@ the model would have used them, and it could not be trusted with them. See Findi
   this 1st slice with the Siri help window and see how it works."
 - 2026-10-06 Help that knows your setup replaces Siri changing settings: "I think I
   prefer this over the Siri route anyway."
+- 2026-10-07 A troubleshooting question with a problem Help found is answered from the
+  article that fixes the problem: "I like the article picking fix." "Explain this" is
+  dropped: "I don't think I want to implement the explain this option."
 
 ## Findings
+
+- 2026-10-07, the article switch. Given the Globe article first and "The dictation key
+  does nothing" after it, the model wrote from the second, whose title matched the
+  question; given the Globe article alone, it answered "no specific fix". Showing the
+  fix article as written was right in every case tried: ten switch decisions and six
+  whole answers, against made-up setups.
 
 - 2026-10-06, slice 3, twelve questions against made-up setups. Every way of giving
   the on-device model the setup made answers worse. As a tool of its own, it skipped
