@@ -138,11 +138,18 @@ extension HelpAssistant {
     /// model answered from the Accessibility article, under a warning about the Globe
     /// key. Only for troubleshooting: asked how to change the key while Accessibility
     /// was off, the person wants the steps, and the warning above says what is off.
+    ///
+    /// Troubleshooting if either the model's pick or the closest match by words is a
+    /// troubleshooting article. Asked "my dictation key isn't working", the model
+    /// picked "Change the dictation key" every time; the words found "The dictation
+    /// key does nothing".
     static func fixArticle(for question: String, picked: HelpArticle.ID?, setup: HelpSetup?) -> HelpArticle.ID? {
+        let byWords = HelpArticle.search(question).map(\.id)
         guard let setup,
-              let base = picked ?? HelpArticle.search(question).first?.id,
-              HelpArticle.article(id: base)?.topic == .troubleshooting else { return nil }
-        let bearing = Set([base] + HelpArticle.search(question).map(\.id))
+              let base = [picked, byWords.first].compactMap({ $0 })
+                .first(where: { HelpArticle.article(id: $0)?.topic == .troubleshooting })
+        else { return nil }
+        let bearing = Set([base] + byWords)
         return setup.checks(for: bearing).first { !$0.isFine && $0.isUrgent && $0.fixArticle != nil }?.fixArticle
     }
 
