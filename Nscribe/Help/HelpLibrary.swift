@@ -101,6 +101,10 @@ enum HelpLibrary {
             articles. Under it, "From" names the article it came from, and a button opens \
             the setting it mentions when there is one.
 
+            Help also checks how Nscribe is set up. When something it needs is off, such \
+            as Accessibility or the microphone, Help says so on its first screen with a \
+            button that opens the right place, and above any answer the problem bears on.
+
             Answers need Apple Intelligence. Without it, click "Browse all articles" to \
             read the articles by topic.
             """,
@@ -907,7 +911,8 @@ enum HelpLibrary {
             because each build is a new app to macOS. Remove Nscribe from the \
             Accessibility list and add it again.
             """,
-        topic: .troubleshooting
+        topic: .troubleshooting,
+        action: .accessibilitySettings
     )
 
     static let nothingHeard = HelpArticle(

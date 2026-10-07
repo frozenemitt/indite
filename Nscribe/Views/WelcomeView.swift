@@ -210,7 +210,7 @@ struct WelcomeView: View {
             }
         }
         .task {
-            showsGlobeKeySetting = settings.useGlobeKey && !Self.globeKeyDoesNothing
+            showsGlobeKeySetting = settings.useGlobeKey && !GlobalHotkeyMonitor.globeKeyDoesNothing
             while !Task.isCancelled {
                 refresh()
                 try? await Task.sleep(for: .seconds(1))
@@ -395,7 +395,7 @@ struct WelcomeView: View {
             microphoneAndSpeech = .notAsked
         }
 
-        globeKeyIsFree = Self.globeKeyDoesNothing
+        globeKeyIsFree = GlobalHotkeyMonitor.globeKeyDoesNothing
     }
 
     // MARK: - Actions
@@ -451,16 +451,6 @@ struct WelcomeView: View {
                 Text("to start, say a sentence, then press it again.")
             }
         }
-    }
-
-    /// Whether macOS's "Press 🌐 key to" setting is Do Nothing. Anything else also
-    /// opens the emoji picker, switches the input source or starts Apple's dictation on
-    /// every press. Missing means the setting was never changed, and the factory
-    /// choice is not Do Nothing.
-    private static var globeKeyDoesNothing: Bool {
-        let domain = "com.apple.HIToolbox" as CFString
-        CFPreferencesAppSynchronize(domain)
-        return (CFPreferencesCopyAppValue("AppleFnUsageType" as CFString, domain) as? Int) == 0
     }
 }
 #endif

@@ -22,6 +22,13 @@ final class HelpAssistant {
 
     var question = ""
     private(set) var state: State = .idle
+    /// The setup as last read: when Help opened or came forward, and at each question.
+    ///
+    /// Shown by Help beside the answer, never given to the model. Given it as a tool,
+    /// before the question, or after the articles, the model in turn skipped it,
+    /// stopped searching, recited it, made up problems, and blamed Accessibility on a
+    /// Mac where Accessibility was on. Help's own reading was right every time.
+    private(set) var setup: HelpSetup?
     private var task: Task<Void, Never>?
 
     private static let instructions = """
@@ -40,6 +47,7 @@ final class HelpAssistant {
         guard !question.isEmpty else { return }
         self.question = question
         task?.cancel()
+        refreshSetup()
 
         if let reason = FoundationModelsHelper.unavailabilityReason() {
             state = .failed(reason)
@@ -47,10 +55,22 @@ final class HelpAssistant {
         }
 
         state = .thinking
+        let setup = self.setup
         task = Task {
             // A fresh session for every question: each one stands alone, and a long
             // conversation would only crowd the small model's context.
             let pick = await Self.route(question)
+            // The fix article itself, not the model's account of it. Given the Globe
+            // article first, the model still wrote from "The dictation key does nothing"
+            // after it; given the Globe article alone, it answered "my key does nothing"
+            // with "no specific fix". Help already knows the problem and its fix.
+            if let fix = Self.fixArticle(for: question, picked: pick, setup: setup),
+               let article = HelpArticle.article(id: fix) {
+                guard !Task.isCancelled else { return }
+                state = .answered(article.body, sources: [fix])
+                Log.app.notice("Help assistant answered from the fix for a problem it found: \(fix, privacy: .public)")
+                return
+            }
             let tool = SearchHelpTool(question: question, pick: pick)
             let session = LanguageModelSession(tools: [tool], instructions: Self.instructions)
             do {
@@ -109,6 +129,37 @@ extension HelpAssistant {
             to: question, schema: schema, options: GenerationOptions(sampling: .greedy)
         ), let id = try? response.content.value(String.self), id != "none" else { return nil }
         return id
+    }
+
+    /// The article that fixes an urgent problem Help found, when the question is about
+    /// something not working and the problem bears on it; nil otherwise.
+    ///
+    /// Asked "my dictation key does nothing" with the Globe key setting wrong, the
+    /// model answered from the Accessibility article, under a warning about the Globe
+    /// key. Only for troubleshooting: asked how to change the key while Accessibility
+    /// was off, the person wants the steps, and the warning above says what is off.
+    ///
+    /// Troubleshooting if either the model's pick or the closest match by words is a
+    /// troubleshooting article. Asked "my dictation key isn't working", the model
+    /// picked "Change the dictation key" every time; the words found "The dictation
+    /// key does nothing".
+    static func fixArticle(for question: String, picked: HelpArticle.ID?, setup: HelpSetup?) -> HelpArticle.ID? {
+        let byWords = HelpArticle.search(question).map(\.id)
+        guard let setup,
+              let base = [picked, byWords.first].compactMap({ $0 })
+                .first(where: { HelpArticle.article(id: $0)?.topic == .troubleshooting })
+        else { return nil }
+        let bearing = Set([base] + byWords)
+        return setup.checks(for: bearing).first { !$0.isFine && $0.isUrgent && $0.fixArticle != nil }?.fixArticle
+    }
+
+    /// Read the setup again. Permissions change in System Settings while Help is open.
+    func refreshSetup() {
+        let now = HelpSetup.current()
+        guard now != setup else { return }
+        setup = now
+        let problems = now.problems.map(\.id).joined(separator: ", ")
+        Log.app.notice("Help: setup read, problems: \(problems.isEmpty ? "none" : problems, privacy: .public)")
     }
 
     /// Back to an empty field, with no answer.
