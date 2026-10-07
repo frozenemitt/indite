@@ -396,9 +396,10 @@ final class DictationOverlayController {
         // borderless transparent panel.
         let glass = PanelGlassView()
         glass.translatesAutoresizingMaskIntoConstraints = false
-        // Clear rather than regular: the regular style is mostly frost, and frost is
-        // what hides the refraction. Clear blurs far less and lets the edge bend what
-        // is behind it, which is the part that reads as glass rather than as fog.
+        // Clear rather than regular: regular frosts the windows behind, and the panel
+        // is there to let them show through. Measured on 2026-10-06, both styles blur
+        // alike at full Glass, and below it the sharp windows show through and hide
+        // the blur.
         glass.style = .clear
         // Refraction in Liquid Glass lives in the rim, not the interior, so a curve
         // this gentle put almost none of the panel inside it. A larger radius gives
