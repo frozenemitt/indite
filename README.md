@@ -103,7 +103,7 @@ Apple Intelligence turned on.
 
 <p align="center">
   <img src="Docs/Images/menu.png" width="363"
-       alt="Indite's menu: Start Dictation, Start Meeting, the rewrite style, the microphone, Meetings, Recent Dictations, Settings and Check for Updates">
+       alt="Indite's menu: Start Dictation, Start Meeting, the rewrite style, the microphone, Meetings, Recent Dictations, Help, Settings and Check for Updates">
 </p>
 
 ## FAQ
