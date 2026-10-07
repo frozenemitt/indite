@@ -366,9 +366,9 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
 - 2026-10-06 Help articles may name other companies' products, such as AirPods, Slack
   and Zoom, because people ask with those words: "Yeah, that's totally fine." The
   README still compares Nscribe to no one.
-- 2026-10-06 The README keeps "Click a word to hear it", though a click moves the
-  playhead and Play starts the sound: "People will understand that they need to click
-  play." The Play button's tooltip names ⌘↩.
+- 2026-10-06 Clicking a word moves the playhead and Play starts the sound; copy may say
+  a click plays it: "People will understand that they need to click play." The Play
+  button's tooltip names ⌘↩.
 - 2026-10-06 Nscribe transcribes in the Mac's language: the first preferred language
   Apple's recognizer supports, and US English when it supports none. Chosen over a
   Language menu in Settings: "Follow the Mac's language automatically." A rewrite is
