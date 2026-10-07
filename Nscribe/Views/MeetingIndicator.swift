@@ -17,7 +17,6 @@ import AppKit
 final class MeetingIndicatorController {
 
     private var panel: NSPanel?
-    private var glassView: NSGlassEffectView?
     private let model = MeetingIndicatorModel()
     private let settings: AppSettings
     /// Saves where the user drops the current panel. Replaced with the panel.
@@ -55,7 +54,6 @@ final class MeetingIndicatorController {
         watchForStranding()
         followScreenChanges()
         position(panel)
-        applyTint()
         panel?.orderFrontRegardless()
     }
 
@@ -97,22 +95,11 @@ final class MeetingIndicatorController {
         model.microphoneHeldReason = microphoneHeldReason
         model.seconds = seconds
         model.error = error
-        model.contentOpacity = settings.overlayContentOpacity
-        applyTint()
     }
 
     func hide() {
         panel?.orderOut(nil)
         model.spectrum = []
-    }
-
-    /// Thin the pane, not the clock. Same reasoning as the dictation panel: the
-    /// content is a sibling above the glass, so fading the glass leaves it alone.
-    private func applyTint() {
-        guard let glassView else { return }
-        let wanted = settings.overlayOpacity
-        guard abs(glassView.alphaValue - wanted) > 0.001 else { return }
-        glassView.alphaValue = wanted
     }
 
     private func makePanel() -> NSPanel {
@@ -149,10 +136,9 @@ final class MeetingIndicatorController {
 
         let glass = NSGlassEffectView()
         glass.translatesAutoresizingMaskIntoConstraints = false
-        glass.style = .clear
+        // Apple's Regular glass, as on the dictation panel, following light and dark.
+        glass.style = .regular
         glass.cornerRadius = Self.height / 2
-        glass.tintColor = NSColor.black.withAlphaComponent(0.22)
-        self.glassView = glass
 
         let container = NSView()
         container.addSubview(glass)
@@ -209,7 +195,6 @@ final class MeetingIndicatorController {
                       panel.isVisible, !panel.isOnActiveSpace else { return }
                 self.replacePanel()
                 self.position(self.panel)
-                self.applyTint()
                 self.panel?.orderFrontRegardless()
             }
         }
@@ -276,7 +261,6 @@ final class MeetingIndicatorModel {
     /// or a shortcut. Nil during the meeting's own resume, so the button keeps its name.
     var microphoneHeldReason: String?
     var seconds: TimeInterval = 0
-    var contentOpacity: Double = 1.0
 
     /// What has gone wrong in the meeting, if anything. The panel is often the only
     /// part of Nscribe on screen during a call, so a problem has to show here too.
@@ -311,11 +295,9 @@ private struct MeetingIndicatorView: View {
                 controls
             }
         }
-        .opacity(model.contentOpacity)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .frame(width: MeetingIndicatorController.width, height: MeetingIndicatorController.height)
-        .environment(\.colorScheme, .dark)
     }
 
     private var controls: some View {
@@ -346,7 +328,7 @@ private struct MeetingIndicatorView: View {
                       systemImage: model.isPaused ? "play.fill" : "pause.fill")
                     .labelStyle(.iconOnly)
                     .frame(width: 30, height: 30)
-                    .background(Circle().fill(.white.opacity(0.16)))
+                    .background(Circle().fill(.primary.opacity(0.12)))
                     .contentShape(Circle())
             }
             .disabled(!model.canPauseOrResume)
@@ -357,6 +339,7 @@ private struct MeetingIndicatorView: View {
             } label: {
                 Label("Stop", systemImage: "stop.fill")
                     .labelStyle(.iconOnly)
+                    .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
                     .background(Circle().fill(Color.red.opacity(0.85)))
                     .contentShape(Circle())
@@ -382,13 +365,13 @@ private struct MeetingIndicatorView: View {
             Button("Cancel") {
                 stopAsking()
             }
-            .buttonStyle(PillButtonStyle(fill: .white.opacity(0.16)))
+            .buttonStyle(PillButtonStyle(fill: .primary.opacity(0.12), label: .primary))
 
             Button("End") {
                 stopAsking()
                 model.stop()
             }
-            .buttonStyle(PillButtonStyle(fill: Color.red.opacity(0.85)))
+            .buttonStyle(PillButtonStyle(fill: Color.red.opacity(0.85), label: .white))
         }
     }
 
@@ -413,11 +396,12 @@ private struct MeetingIndicatorView: View {
 /// A capsule button for the pill's two answers, 30 points tall like its round ones.
 private struct PillButtonStyle: ButtonStyle {
     let fill: Color
+    let label: Color
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(label)
             .padding(.horizontal, 12)
             .frame(height: 30)
             .background(Capsule().fill(fill))

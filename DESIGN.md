@@ -46,8 +46,8 @@ live clock. No serif: see the decisions log.
 - Meetings: a list beside a page, with no third column. The list's commands sit
   directly above it. The page reads top to bottom: title and speakers, summary,
   transcript, and a playback bar along the bottom. See `Docs/meetings-rework.md`.
-- Floating panels: glass, draggable, on every desktop. The dictation panel follows the
-  system appearance; the meeting pill stays dark.
+- Floating panels: Apple's Regular glass, draggable, on every desktop, following the
+  system appearance.
 
 ## Elevation & Depth
 
@@ -341,3 +341,49 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   README: one name per thing (Rewriting, as the app says; Apple Intelligence tied to
   Foundation Models once), requirements before the steps, the window reading disclosed
   in Privacy and in the permissions table, and no "signed" used for two things.
+- 2026-10-06 The Help window opens on a question, not on an article: one field, what to
+  ask, three example questions, and the article list behind the sidebar button and a
+  "Browse all articles" link. Ask Nscribe is in the menu, on ⌘? and in Siri. "The
+  landing of the help window should just be a search bar with instructions to say
+  what you're looking for. I think the menu should be accessible as well, but I don't
+  want that to be the default."
+- 2026-10-06 Help has one field. Typing narrows the articles beneath it, Return asks the
+  assistant, and the answer sits above the matching articles, as the Help menu's search
+  works. No sidebar. Chosen over the field in the toolbar beside an article sidebar,
+  and over a conversation with the field at the bottom. "It's really awkward having 2
+  separate places to put your question." "Go with A."
+- 2026-10-06 Help follows the AI labs' own products, not a help-center index: "Look at
+  what anthropic and their other AI labs are doing on their websites. Those are
+  probably good models to follow." The articles are not listed under the field: "I
+  don't want to list all the articles on one page like this, but instead, I think
+  there should be a link to browse all articles manually, and then maybe like the
+  search bar would collapse at the top, so they could go back to the agentic search."
+  Rejected: titling each article as a question and asking it on click ("I'm not sure I
+  agree with this").
+- 2026-10-06 The menu says Help: "Help" in Nscribe's menu, and "Nscribe Help" on ⌘? in
+  the Help menu, replacing "Ask Nscribe…". "I do think it should say help, because
+  that's what people are looking for in the menu."
+- 2026-10-06 Help articles may name other companies' products, such as AirPods, Slack
+  and Zoom, because people ask with those words: "Yeah, that's totally fine." The
+  README still compares Nscribe to no one.
+- 2026-10-06 Clicking a word moves the playhead and Play starts the sound; copy may say
+  a click plays it: "People will understand that they need to click play." The Play
+  button's tooltip names ⌘↩.
+- 2026-10-06 Nscribe transcribes in the Mac's language: the first preferred language
+  Apple's recognizer supports, and US English when it supports none. Chosen over a
+  Language menu in Settings: "Follow the Mac's language automatically." A rewrite is
+  told the dictation's language when it is not English, because Clean Up turned
+  German and French dictations into English.
+- 2026-10-06 A Help article's settings button opens Settings at the tab the article
+  names: "make sure that the settings links go to the correct tab in the settings
+  window from the help article." "Record both sides of a call" opens Meetings, where
+  its switch is, rather than the macOS privacy pane.
+- 2026-10-06 Both floating panels use Apple's Regular glass, untinted, with no Glass or
+  Words and ribbon slider and no drawn rim. The clear glass, faded by the Glass slider,
+  let the text behind show through under the words, and Regular frosts it away. "Ok,
+  let's keep Regular." "Remove both sliders and switch the pill to Regular too." Tried
+  and turned down first: a blur switch that only frosted, tunable blur through private
+  window-server and Core Animation calls, Apple's private glass variants, and Bubbles'
+  bending rim over Regular's frost, which left a hard seam. This replaces the light
+  panel's tint and drawn rim. The pill follows light and dark mode too, replacing "the
+  meeting pill stays dark": "Light mode meeting pill is not adapting."

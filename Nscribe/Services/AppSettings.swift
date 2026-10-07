@@ -139,17 +139,6 @@ final class AppSettings {
         didSet { save("hotkeyActivationModeRaw", hotkeyActivationModeRaw) }
     }
 
-    /// How solid the dictation panel's glass is. Below about a third the words start
-    /// competing with whatever is behind them.
-    var overlayOpacity: Double {
-        didSet { save("overlayOpacity", overlayOpacity) }
-    }
-
-    /// How solid the words and the band are, separately from the pane behind them.
-    var overlayContentOpacity: Double {
-        didSet { save("overlayContentOpacity", overlayContentOpacity) }
-    }
-
     /// Where the user dragged the dictation panel, if they ever did.
     ///
     /// Absent means the default: bottom centre of whichever screen holds the pointer.
@@ -299,8 +288,6 @@ final class AppSettings {
         self.autoSubmitAfterInsert = UserDefaults.standard.object(forKey: "autoSubmitAfterInsert") as? Bool ?? false
         self.useSurroundingContext = UserDefaults.standard.object(forKey: "useSurroundingContext") as? Bool ?? false
         self.showDictationOverlay = UserDefaults.standard.object(forKey: "showDictationOverlay") as? Bool ?? true
-        self.overlayOpacity = UserDefaults.standard.object(forKey: "overlayOpacity") as? Double ?? 0.75
-        self.overlayContentOpacity = UserDefaults.standard.object(forKey: "overlayContentOpacity") as? Double ?? 1.0
         self.overlayOriginX = UserDefaults.standard.object(forKey: "overlayOriginX") as? Double
         self.overlayOriginY = UserDefaults.standard.object(forKey: "overlayOriginY") as? Double
         self.meetingIndicatorOriginX = UserDefaults.standard.object(forKey: "meetingIndicatorOriginX") as? Double
@@ -396,8 +383,6 @@ final class AppSettings {
         autoSubmitAfterInsert = false
         useSurroundingContext = false
         showDictationOverlay = true
-        overlayOpacity = 0.75
-        overlayContentOpacity = 1.0
         overlayOriginX = nil
         overlayOriginY = nil
         meetingIndicatorOriginX = nil

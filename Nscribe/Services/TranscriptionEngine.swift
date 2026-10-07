@@ -150,14 +150,6 @@ final class TranscriptionEngine {
 
     // MARK: - Configuration
 
-    private static let fallbackLocales = [
-        Locale(components: .init(languageCode: .english, script: nil, languageRegion: .unitedStates)),
-        Locale(components: .init(languageCode: .english, script: nil, languageRegion: .unitedKingdom)),
-        Locale(identifier: "en-US"),
-        Locale(identifier: "en"),
-        Locale.current
-    ]
-
     // MARK: - Initialization
 
     /// The one engine in the process.
@@ -794,22 +786,51 @@ final class TranscriptionEngine {
         return segments
     }
 
-    /// The first locale in `fallbackLocales` this system can actually transcribe.
+    /// The Mac's language, as a locale this system can transcribe: the first of the
+    /// person's preferred languages the recognizer supports, and US English when it
+    /// supports none of them. Meetings and imports use it too.
+    ///
+    /// Read from `Locale.preferredLanguages`, not `Locale.current`: the app is written
+    /// only in English, so `Locale.current` says English on a Mac set to German.
+    ///
     /// Resolved once per run. Asking the system which locales it can transcribe takes
     /// tens of milliseconds, and the answer cannot change while the app is open — but
     /// it was being asked again on every single key press, before the microphone
     /// opened, while the user waited to speak.
     private static var cachedLocale: Locale?
 
+    /// The language dictations are transcribed in, once it has been resolved.
+    static var language: Locale.Language? { cachedLocale?.language }
+
     func resolveSupportedLocale() async throws -> Locale {
         if let cached = Self.cachedLocale { return cached }
 
         let supported = await SpeechTranscriber.supportedLocales
+        func available(_ language: Locale.LanguageCode?, _ region: Locale.Region?) -> Locale? {
+            supported.first { $0.language.languageCode == language && $0.region == region }
+        }
 
-        for candidate in Self.fallbackLocales
-        where supported.contains(where: { $0.identifier(.bcp47) == candidate.identifier(.bcp47) }) {
-            Self.cachedLocale = candidate
-            return candidate
+        for identifier in Locale.preferredLanguages + ["en-US"] {
+            let language = Locale.Language(identifier: identifier)
+            var match = available(language.languageCode, language.region)
+            // The language's own country when the Mac's region is another: German set
+            // up in the United States is de-DE, where the recognizer's nearest match
+            // would be de-AT, and plain English is en-US rather than en-CA. Not for a
+            // region made of countries: Latin American Spanish is better served by the
+            // recognizer's nearest match, es-MX, than by the language's home, es-ES.
+            if match == nil, language.region?.subRegions.isEmpty ?? true {
+                let home = Locale.Language(
+                    components: .init(languageCode: language.languageCode, script: nil, region: nil)
+                ).maximalIdentifier
+                match = available(language.languageCode, Locale.Language(identifier: home).region)
+            }
+            if match == nil {
+                match = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: identifier))
+            }
+            if let match {
+                Self.cachedLocale = match
+                return match
+            }
         }
 
         throw TranscriptionEngineError.localeNotSupported

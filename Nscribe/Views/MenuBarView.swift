@@ -86,6 +86,9 @@ struct MenuBarView: View {
 
         Divider()
 
+        Button("Help") { HelpNavigator.shared.ask() }
+            .keyboardShortcut("?", modifiers: .command)
+
         Button("Settings…") {
             openSettings()
             WindowFronting.bringForward("com_apple_SwiftUI_Settings")
