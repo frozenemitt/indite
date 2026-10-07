@@ -392,17 +392,25 @@ enum HelpLibrary {
         id: "language",
         title: "Dictate in another language",
         body: """
-            Nscribe transcribes in your Mac's language: the first language under \
-            Preferred Languages, in System Settings, General, Language & Region, that \
-            Apple's speech recognizer supports. It supports German, Spanish, French, \
-            Italian, Portuguese, Japanese, Korean, Chinese, Hindi and others. If it \
-            supports none of your languages, Nscribe transcribes US English. Meetings and \
-            imported recordings use the same language.
+            Nscribe has no language setting of its own: it transcribes in your Mac's \
+            language. It takes the first language under Preferred Languages, in System \
+            Settings, General, Language & Region, that Apple's speech recognizer \
+            supports, such as German, Spanish, French, Italian, Portuguese, Japanese, \
+            Korean, Chinese or Hindi. If it supports none of them, Nscribe transcribes US \
+            English. Dictation, meetings and imported recordings all use that one \
+            language.
 
-            To dictate in another language, drag it to the top of Preferred Languages, \
-            then choose "Quit Nscribe" from Nscribe's menu and open Nscribe again. Apple \
-            downloads the speech model for a language the first time you dictate in it, \
-            so that first dictation can take longer to start.
+            To dictate in another language, or to switch between two, drag the one you \
+            want to the top of Preferred Languages. Then choose "Quit Nscribe" from \
+            Nscribe's menu and open Nscribe again: it picks its language when it opens. \
+            It hears one language at a time, so it cannot follow a dictation that mixes \
+            two. Apple downloads the speech model for a \
+            language the first time you dictate in it, so that first dictation can take \
+            longer to start.
+
+            Where Apple has a version of the language for your region, such as Swiss \
+            German or Canadian French, Nscribe uses it. Otherwise it uses the language's \
+            home version: German on a Mac set to the United States is Germany's German.
 
             Rewriting keeps your dictation in the language you spoke, and does not \
             translate it. Apple Intelligence, which does the rewriting, does not support \
