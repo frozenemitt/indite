@@ -341,3 +341,40 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   README: one name per thing (Rewriting, as the app says; Apple Intelligence tied to
   Foundation Models once), requirements before the steps, the window reading disclosed
   in Privacy and in the permissions table, and no "signed" used for two things.
+- 2026-10-06 The Help window opens on a question, not on an article: one field, what to
+  ask, three example questions, and the article list behind the sidebar button and a
+  "Browse all articles" link. Ask Nscribe is in the menu, on ⌘? and in Siri. "The
+  landing of the help window should just be a search bar with instructions to say
+  what you're looking for. I think the menu should be accessible as well, but I don't
+  want that to be the default."
+- 2026-10-06 Help has one field. Typing narrows the articles beneath it, Return asks the
+  assistant, and the answer sits above the matching articles, as the Help menu's search
+  works. No sidebar. Chosen over the field in the toolbar beside an article sidebar,
+  and over a conversation with the field at the bottom. "It's really awkward having 2
+  separate places to put your question." "Go with A."
+- 2026-10-06 Help follows the AI labs' own products, not a help-center index: "Look at
+  what anthropic and their other AI labs are doing on their websites. Those are
+  probably good models to follow." The articles are not listed under the field: "I
+  don't want to list all the articles on one page like this, but instead, I think
+  there should be a link to browse all articles manually, and then maybe like the
+  search bar would collapse at the top, so they could go back to the agentic search."
+  Rejected: titling each article as a question and asking it on click ("I'm not sure I
+  agree with this").
+- 2026-10-06 The menu says Help: "Help" in Nscribe's menu, and "Nscribe Help" on ⌘? in
+  the Help menu, replacing "Ask Nscribe…". "I do think it should say help, because
+  that's what people are looking for in the menu."
+- 2026-10-06 Help articles may name other companies' products, such as AirPods, Slack
+  and Zoom, because people ask with those words: "Yeah, that's totally fine." The
+  README still compares Nscribe to no one.
+- 2026-10-06 The README keeps "Click a word to hear it", though a click moves the
+  playhead and Play starts the sound: "People will understand that they need to click
+  play." The Play button's tooltip names ⌘↩.
+- 2026-10-06 Nscribe transcribes in the Mac's language: the first preferred language
+  Apple's recognizer supports, and US English when it supports none. Chosen over a
+  Language menu in Settings: "Follow the Mac's language automatically." A rewrite is
+  told the dictation's language when it is not English, because Clean Up turned
+  German and French dictations into English.
+- 2026-10-06 A Help article's settings button opens Settings at the tab the article
+  names: "make sure that the settings links go to the correct tab in the settings
+  window from the help article." "Record both sides of a call" opens Meetings, where
+  its switch is, rather than the macOS privacy pane.

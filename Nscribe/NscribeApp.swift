@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DockPresence.start()
         onReady?()
         AppUpdater.shared.showWhatsNewIfDue()
+        Task { await HelpIndex.refresh() }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -224,6 +225,23 @@ struct NscribeApp: App {
         }
         .defaultSize(width: 900, height: 600)
 
+        // The help articles, opened from the menu, from Spotlight and by Siri.
+        Window("Nscribe Help", id: HelpNavigator.windowID) {
+            HelpView()
+        }
+        // Narrow, as Help windows are: an answer reads best at a short line.
+        .defaultSize(width: 560, height: 620)
+        .defaultLaunchBehavior(.suppressed)
+        // The standard Help shortcut, while any Nscribe window is in front.
+        .commands {
+            CommandGroup(replacing: .help) {
+                // "Help", because that is the word people look for in a menu.
+                Button("Nscribe Help") { HelpNavigator.shared.ask() }
+                    .keyboardShortcut("?", modifiers: .command)
+                Button("Nscribe on GitHub") { NSWorkspace.shared.open(Self.repositoryURL) }
+            }
+        }
+
         Window("Recent Dictations", id: Self.historyWindowID) {
             DictationHistoryView()
                 .environment(settings)
@@ -264,14 +282,6 @@ struct NscribeApp: App {
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(.suppressed)
 
-        // The Help menu offered nothing. Help is the README, on GitHub.
-        .commands {
-            CommandGroup(replacing: .help) {
-                Button("Nscribe Help") {
-                    NSWorkspace.shared.open(Self.repositoryURL)
-                }
-            }
-        }
     }
 
     static let meetingsWindowID = "meetings"
@@ -461,6 +471,26 @@ struct NscribeShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Quick Transcribe",
             systemImageName: "mic"
+        )
+        AppShortcut(
+            intent: ShowHelpIntent(),
+            phrases: [
+                "Ask \(.applicationName)",
+                "Show \(.applicationName) help",
+                "Open \(.applicationName) help",
+                "Help with \(.applicationName)"
+            ],
+            shortTitle: "Nscribe Help",
+            systemImageName: "questionmark.circle"
+        )
+        AppShortcut(
+            intent: OpenHelpArticleIntent(),
+            phrases: [
+                "Open \(\.$target) in \(.applicationName)",
+                "Show \(\.$target) in \(.applicationName) help"
+            ],
+            shortTitle: "Help Article",
+            systemImageName: "book"
         )
     }
 }
