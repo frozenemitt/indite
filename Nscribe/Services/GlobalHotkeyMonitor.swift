@@ -209,6 +209,16 @@ final class GlobalHotkeyMonitor {
     /// Globe key did nothing. One instance makes the two the same object.
     static let shared = GlobalHotkeyMonitor()
 
+    /// Whether macOS's "Press 🌐 key to" setting is Do Nothing. Anything else also
+    /// opens the emoji picker, switches the input source or starts Apple's dictation on
+    /// every press. Missing means the setting was never changed, and the factory
+    /// choice is not Do Nothing.
+    static var globeKeyDoesNothing: Bool {
+        let domain = "com.apple.HIToolbox" as CFString
+        CFPreferencesAppSynchronize(domain)
+        return (CFPreferencesCopyAppValue("AppleFnUsageType" as CFString, domain) as? Int) == 0
+    }
+
     init() {
         let (stream, continuation) = AsyncStream.makeStream(of: HotkeyAction.self)
         emit = continuation

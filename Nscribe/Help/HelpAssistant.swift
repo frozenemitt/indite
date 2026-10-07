@@ -22,6 +22,13 @@ final class HelpAssistant {
 
     var question = ""
     private(set) var state: State = .idle
+    /// The setup as last read: when Help opened or came forward, and at each question.
+    ///
+    /// Shown by Help beside the answer, never given to the model. Given it as a tool,
+    /// before the question, or after the articles, the model in turn skipped it,
+    /// stopped searching, recited it, made up problems, and blamed Accessibility on a
+    /// Mac where Accessibility was on. Help's own reading was right every time.
+    private(set) var setup: HelpSetup?
     private var task: Task<Void, Never>?
 
     private static let instructions = """
@@ -40,6 +47,7 @@ final class HelpAssistant {
         guard !question.isEmpty else { return }
         self.question = question
         task?.cancel()
+        refreshSetup()
 
         if let reason = FoundationModelsHelper.unavailabilityReason() {
             state = .failed(reason)
@@ -109,6 +117,15 @@ extension HelpAssistant {
             to: question, schema: schema, options: GenerationOptions(sampling: .greedy)
         ), let id = try? response.content.value(String.self), id != "none" else { return nil }
         return id
+    }
+
+    /// Read the setup again. Permissions change in System Settings while Help is open.
+    func refreshSetup() {
+        let now = HelpSetup.current()
+        guard now != setup else { return }
+        setup = now
+        let problems = now.problems.map(\.id).joined(separator: ", ")
+        Log.app.notice("Help: setup read, problems: \(problems.isEmpty ? "none" : problems, privacy: .public)")
     }
 
     /// Back to an empty field, with no answer.

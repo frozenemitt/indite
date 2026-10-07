@@ -56,6 +56,7 @@ final class HelpNavigator {
 struct HelpView: View {
     @Bindable private var navigator = HelpNavigator.shared
     @Bindable private var assistant = HelpAssistant.shared
+    @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
         Group {
@@ -72,6 +73,36 @@ struct HelpView: View {
         }
         .navigationTitle("Nscribe Help")
         .frame(minWidth: 460, minHeight: 420)
+        // Read again whenever Help comes forward: the fix for most problems is made in
+        // System Settings, and coming back is when it has taken effect.
+        .onAppear { assistant.refreshSetup() }
+        .onChange(of: appearsActive) { _, active in
+            if active { assistant.refreshSetup() }
+        }
+    }
+}
+
+/// One check Help shows: a problem, boxed, with the button that fixes it, or a check
+/// that came out fine.
+private struct SetupNotice: View {
+    let check: HelpSetup.Check
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: check.isFine ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(check.isFine ? Color.green : Color.orange)
+            Text(check.sentence)
+                .foregroundStyle(check.isFine ? .secondary : .primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if !check.isFine, let action = check.action {
+                Button(action.title) { perform(action, openSettings: openSettings) }
+            }
+        }
+        .font(.callout)
+        .padding(check.isFine ? 0 : 10)
+        .background(check.isFine ? Color.clear : Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -115,11 +146,15 @@ private struct QuestionBox: View {
 }
 
 private struct LandingView: View {
+    @Bindable private var assistant = HelpAssistant.shared
+
     var body: some View {
         VStack(spacing: 18) {
             Spacer()
             Text("What can I help you with?")
                 .font(.title.weight(.semibold))
+            // What is wrong now, before anyone asks.
+            ForEach((assistant.setup?.problems ?? []).filter(\.isUrgent)) { SetupNotice(check: $0) }
             QuestionBox(placeholder: "Ask about Nscribe, or describe what isn't working")
             Button("Browse all articles") { HelpNavigator.shared.mode = .browse }
                 .buttonStyle(.link)
@@ -173,6 +208,14 @@ private struct AnswerView: View {
                 .controlSize(.small)
         case .answered(let text, let sources):
             let source = sources.first.flatMap(HelpArticle.article(id:))
+            let checks = shownChecks(for: sources)
+            // Help's own reading of this Mac, above the model's words. The model is
+            // told nothing of it; see `HelpAssistant.setup`.
+            if !checks.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(checks) { SetupNotice(check: $0) }
+                }
+            }
             // The model writes Markdown emphasis around setting names.
             Text((try? AttributedString(
                 markdown: text,
@@ -180,7 +223,9 @@ private struct AnswerView: View {
             )) ?? AttributedString(text))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-            if let action = source?.action {
+            // Not when a check above covers it: a problem there already offers the same
+            // button, and one that came out fine needs no fixing.
+            if let action = source?.action, !checks.contains(where: { $0.action == action }) {
                 Button(action.title) { perform(action, openSettings: openSettings) }
             }
             if let source {
@@ -196,6 +241,18 @@ private struct AnswerView: View {
             Text(message)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// The problems that bear on any article the answer drew on, and, when it is
+    /// troubleshooting, the checks on it that came out fine: "Accessibility is on"
+    /// under "my key does nothing" is half the answer.
+    private func shownChecks(for sources: [HelpArticle.ID]) -> [HelpSetup.Check] {
+        guard let setup = assistant.setup else { return [] }
+        var shown = setup.checks(for: Set(sources)).filter { !$0.isFine }
+        if let top = sources.first.flatMap(HelpArticle.article(id:)), top.topic == .troubleshooting {
+            shown += setup.checks(for: [top.id]).filter(\.isFine)
+        }
+        return shown
     }
 }
 
@@ -291,6 +348,12 @@ private func perform(_ action: HelpArticle.Action, openSettings: OpenSettingsAct
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
     case .screenRecordingSettings:
         SystemAudioCapture.openSystemSettings()
+    case .accessibilitySettings:
+        AccessibilityPermission.openSystemSettings()
+    case .microphoneSettings:
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+    case .speechSettings:
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition")!)
     }
 }
 

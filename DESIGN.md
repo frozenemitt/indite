@@ -387,3 +387,8 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   bending rim over Regular's frost, which left a hard seam. This replaces the light
   panel's tint and drawn rim. The pill follows light and dark mode too, replacing "the
   meeting pill stays dark": "Light mode meeting pill is not adapting."
+- 2026-10-06 Help knows the setup. Its opening screen lists what is wrong now, each
+  with the button that fixes it: "yes, show it on the opening screen too." Above an
+  answer it shows the checks that bear on it, problems and, for troubleshooting, the
+  checks that came out fine. The assistant is not given the setup; given it, the
+  on-device model made up problems and blamed settings that were fine.

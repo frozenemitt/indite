@@ -31,12 +31,18 @@ struct HelpArticle: Identifiable, Hashable, Sendable {
         case nscribeSettings(SettingsTab)
         case keyboardSettings
         case screenRecordingSettings
+        case accessibilitySettings
+        case microphoneSettings
+        case speechSettings
 
         var title: String {
             switch self {
             case .nscribeSettings: "Open Nscribe Settings"
             case .keyboardSettings: "Open Keyboard Settings"
             case .screenRecordingSettings: "Open Screen & System Audio Recording"
+            case .accessibilitySettings: "Open Accessibility Settings"
+            case .microphoneSettings: "Open Microphone Settings"
+            case .speechSettings: "Open Speech Recognition Settings"
             }
         }
     }

@@ -100,6 +100,14 @@ Settings sees it.
 **No-gos.** The model changing a setting. Siri. Anything from the person's
 dictations or meetings in what the model reads. New Settings UI.
 
+**As built (2026-10-06, branch setup-aware-help).** Help shows the checks itself; the
+model is told nothing about the setup. Help's opening screen lists every urgent
+problem with its button ("yes, show it on the opening screen too"). Above an answer it
+shows the problems that bear on the articles the answer drew on, and, for a
+troubleshooting article, the checks on it that came out fine. An answer's own button
+is left out when a check above covers it. The settings were cut from the sketch: only
+the model would have used them, and it could not be trusted with them. See Findings.
+
 ## Decisions
 
 - 2026-10-06 Siri reads the documentation and acts on the app: "I would love for Siri to
@@ -111,6 +119,16 @@ dictations or meetings in what the model reads. New Settings UI.
   prefer this over the Siri route anyway."
 
 ## Findings
+
+- 2026-10-06, slice 3, twelve questions against made-up setups. Every way of giving
+  the on-device model the setup made answers worse. As a tool of its own, it skipped
+  the tool and blamed Accessibility on a Mac where Accessibility was on. Put before the
+  question, it stopped searching the articles and invented settings ("the Keymap
+  setting"). Put after the articles, it recited the settings into unrelated answers,
+  invented problems ("it may fail to apply the new key combination") and still gave
+  the Accessibility fix when told Accessibility was already fine. Help's own reading
+  of which checks bore on an answer was right in all twelve. So Help shows the checks,
+  and the model answers from the articles alone, as in 1.1.
 
 - 2026-10-06, 1.1.444, Jonathan's Spotlight: typing "Ask Nscribe" lists the App
   Shortcut "Show Nscribe help.", the "Show Nscribe Help" action, and the help articles
