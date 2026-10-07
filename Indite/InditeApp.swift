@@ -44,6 +44,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 @main
 struct InditeApp: App {
+    /// The settings Nscribe left behind are copied in before anything reads a setting.
+    /// Stored properties are set up in the order they are written, so this runs ahead
+    /// of every service below.
+    private let settingsCarriedOver: Void = FirstName.carrySettingsOver()
+
     // MARK: - App Delegate
 
     #if os(macOS)

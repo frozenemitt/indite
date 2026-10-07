@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="Docs/Images/wordmark-dark.png">
-    <img src="Docs/Images/wordmark-light.png" width="320" height="186" alt="Indite">
+    <source media="(prefers-color-scheme: dark)" srcset="Docs/Images/wordmark-dark.svg">
+    <img src="Docs/Images/wordmark-light.svg" width="320" height="186" alt="Indite: its cursor icon, crossed by the ribbon that moves with your voice">
   </picture>
 </p>
 

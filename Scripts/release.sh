@@ -18,13 +18,10 @@
 # The app is signed with the Apple Development certificate the project already uses,
 # so every release keeps one identity and macOS keeps each user's permissions across
 # updates. The disk image is signed for Sparkle with the EdDSA key stored under the
-# account "nscribe", the app's first name, in the login Keychain. It was made once
-# with `generate_keys --account nscribe`, and its public half is SUPublicEDKey in
-# Configuration/Info.plist. Losing it means updates can no longer be signed.
-#
-# The bundle identifier, com.nscribe.app.macos, also keeps the first name. Sparkle
-# finds the new app by it, and installs it where the old one was, so a copy updated
-# from Nscribe keeps the file name Nscribe.app and every permission it was given.
+# account "indite" in the login Keychain, and its public half is SUPublicEDKey in
+# Configuration/Info.plist. Losing it means updates can no longer be signed. The key
+# was made under the account "nscribe", the app's first name; the first release after
+# the rename files a copy under "indite" and leaves the original where it is.
 #
 # Nothing is uploaded. The script ends by printing the command that creates the
 # GitHub release as a draft.
@@ -92,10 +89,30 @@ ditto "$app" "$staging/Indite.app"
 ln -s /Applications "$staging/Applications"
 hdiutil create -volname Indite -srcfolder "$staging" -format UDZO -quiet "$out/Indite.dmg"
 
+# The update key, under the account "indite", copied there from "nscribe" the first
+# time. Signing stops unless its public half is the one the app checks updates against.
+sparkle_bin="$build/SourcePackages/artifacts/sparkle/Sparkle/bin"
+if ! "$sparkle_bin/generate_keys" --account indite -p > /dev/null 2>&1 \
+    && "$sparkle_bin/generate_keys" --account nscribe -p > /dev/null 2>&1; then
+  # generate_keys will not export over an existing file, so it gets a fresh name in a
+  # folder only this user can read.
+  carry="$(mktemp -d)"
+  chmod 700 "$carry"
+  "$sparkle_bin/generate_keys" --account nscribe -x "$carry/key"
+  "$sparkle_bin/generate_keys" --account indite -f "$carry/key"
+  rm -P "$carry/key" 2>/dev/null || rm -f "$carry/key"
+  rmdir "$carry"
+fi
+expected=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" Configuration/Info.plist)
+if [ "$("$sparkle_bin/generate_keys" --account indite -p 2>/dev/null)" != "$expected" ]; then
+  echo "The key under the Keychain account \"indite\" is not the one SUPublicEDKey names."
+  exit 1
+fi
+
 # The appcast names this release alone, which is all Sparkle needs. The notes beside
 # the image become the text of the Software Update and What's New windows.
 cp "$whats_new" "$out/Indite.md"
-"$build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast" --account nscribe \
+"$sparkle_bin/generate_appcast" --account indite \
   --download-url-prefix "https://github.com/frozenemitt/indite/releases/download/v$version/" \
   --embed-release-notes -o "$out/appcast.xml" "$out"
 

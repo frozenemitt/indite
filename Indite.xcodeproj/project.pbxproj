@@ -367,9 +367,9 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.nscribe.app;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.nscribe.app.ios;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.nscribe.app.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = com.indite.app;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.indite.app.ios;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.indite.app.macos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -438,9 +438,9 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.nscribe.app;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.nscribe.app.ios;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.nscribe.app.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = com.indite.app;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.indite.app.ios;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.indite.app.macos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";

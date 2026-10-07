@@ -54,12 +54,14 @@ if ! xcodebuild -project Indite.xcodeproj -scheme Indite -configuration Release 
 fi
 
 app="$build/Build/Products/Release/Indite.app"
-# Quit by identity rather than by name, so a copy still called Nscribe quits too.
-osascript -e 'tell application id "com.nscribe.app.macos" to quit' > /dev/null 2>&1 || true
-# A copy under the app's first name would be a second Indite with the same identity.
+# Quit the running copy, and one still installed under the app's first name, Nscribe,
+# which it replaces.
+for id in com.indite.app.macos com.nscribe.app.macos; do
+  osascript -e "if application id \"$id\" is running then tell application id \"$id\" to quit" > /dev/null 2>&1 || true
+done
 rm -rf /Applications/Nscribe.app /Applications/Indite.app
 ditto "$app" /Applications/Indite.app
 touch /Applications/Indite.app
 open -a /Applications/Indite.app
 
-echo "Indite is in /Applications and running. Look for its N in the menu bar."
+echo "Indite is in /Applications and running. Look for its I in the menu bar."

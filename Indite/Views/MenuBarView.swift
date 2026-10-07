@@ -492,9 +492,9 @@ private enum MenuGlyph {
 /// One shape per state. A dictation and a meeting used to share the filled microphone,
 /// and a paused meeting showed the idle one.
 ///
-/// At rest the icon is the app icon's N: the two quotation marks and the chisel.
-/// While a dictation is heard, the same N is knocked out of a filled tile. Both are
-/// drawn by `Design/Icon/draw-icon.swift`, from the shapes the app icon is made of.
+/// At rest the icon is the app icon's I, the text cursor. While a dictation is heard,
+/// the same I is cut out of a filled tile. Both are drawn by
+/// `Design/Icon/draw-icon.swift`, from the shape the app icon is made of.
 struct MenuBarIcon: View {
     let isDictating: Bool
     let isRewriting: Bool

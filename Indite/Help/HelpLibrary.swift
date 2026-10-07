@@ -42,7 +42,7 @@ enum HelpLibrary {
 
             While you talk, a panel near the bottom of the screen shows the words as they \
             arrive. Indite starts listening when the start sound plays. You can also \
-            click Indite's N in the menu bar and choose "Start Dictation", then "Stop \
+            click Indite's I in the menu bar and choose "Start Dictation", then "Stop \
             Dictation" when you are done.
 
             The first time you dictate, macOS asks you to allow the microphone and speech \
@@ -56,16 +56,17 @@ enum HelpLibrary {
         id: "menu-bar",
         title: "Find Indite in the menu bar",
         body: """
-            If you can't find Indite after opening it, look for its N in the menu bar at \
-            the top of the screen. The app opens no window of its own and has no Dock \
-            icon: it joins the Dock and Command-Tab only while one of its windows is open.
+            If you can't find Indite after opening it, look for its I, a text cursor, in \
+            the menu bar at the top of the screen. The app opens no window of its own and \
+            has no Dock icon: it joins the Dock and Command-Tab only while one of its \
+            windows is open.
 
-            Click the N to open Indite's menu. Its first line says whether Indite is \
+            Click the I to open Indite's menu. Its first line says whether Indite is \
             ready and which key starts a dictation. Below it are "Start Dictation", "Start \
             Meeting", the Rewrite and Microphone choices, "Meetings", "Recent Dictations", \
             "Help", "Settings…" and "Check for Updates…".
 
-            The N changes shape with what Indite is doing. It sits in a filled square \
+            The I changes shape with what Indite is doing. It is cut out of a filled square \
             while you dictate, becomes a brain while your words are rewritten, and becomes \
             a record circle with the meeting's clock beside it during a meeting. A warning \
             triangle means the dictation key is not working.
@@ -93,7 +94,7 @@ enum HelpLibrary {
         id: "ask-indite",
         title: "Ask Indite a question",
         body: """
-            Click Indite's N in the menu bar and choose "Help", or choose "Indite Help" \
+            Click Indite's I in the menu bar and choose "Help", or choose "Indite Help" \
             from the Help menu while an Indite window is open. Type a question, or \
             describe what isn't working, and press Return.
 
@@ -179,7 +180,7 @@ enum HelpLibrary {
 
             To end a dictation and keep the words, let go of the dictation key, or press \
             it again if you chose "Press to start, press to stop". You can also click \
-            Indite's N in the menu bar and choose "Stop Dictation".
+            Indite's I in the menu bar and choose "Stop Dictation".
 
             If the words have already been typed, press Control-Option-Command-Z (⌃⌥⌘Z) \
             within two minutes to take them back.
@@ -254,7 +255,7 @@ enum HelpLibrary {
         title: "Choose the microphone",
         body: """
             To switch the microphone Indite uses for recording, such as to AirPods or a \
-            headset, click Indite's N in the menu bar, open the Microphone menu, and \
+            headset, click Indite's I in the menu bar, open the Microphone menu, and \
             choose it. Dictations and meetings both record from it. The same choice is in \
             Indite's Settings, under Dictation, as "Record from".
 
@@ -309,7 +310,7 @@ enum HelpLibrary {
             types the last dictation again at the cursor, with no rewrite and no Return \
             after it.
 
-            For an earlier one, click Indite's N in the menu bar and open "Recent \
+            For an earlier one, click Indite's I in the menu bar and open "Recent \
             Dictations", which lists the last five. Click one to type it at the cursor, or \
             Option-click it to copy it.
 
@@ -325,7 +326,7 @@ enum HelpLibrary {
         title: "Find an earlier dictation",
         body: """
             Indite keeps your last 100 dictations, so you can find an old one later. \
-            Click the N in the menu bar, open "Recent Dictations", and choose "Show All" \
+            Click the I in the menu bar, open "Recent Dictations", and choose "Show All" \
             to see them in a window you can search.
 
             Select a dictation and click "Copy", or click the "Insert into" button, which \
@@ -433,7 +434,7 @@ enum HelpLibrary {
             Indite rewrites each dictation with the Clean Up prompt unless you choose \
             another. Clean Up removes filler words and rephrases unclear sentences. If it \
             keeps rephrasing or rewording what you say, and you want your exact words, \
-            click the N in the menu bar, open the Rewrite menu, and choose Off.
+            click the I in the menu bar, open the Rewrite menu, and choose Off.
 
             To keep your words but still fix mistakes, choose Simple Clean instead. It \
             fixes only misheard words, repeated words and punctuation, and it puts back \
@@ -450,7 +451,7 @@ enum HelpLibrary {
         id: "choose-prompt",
         title: "Choose how dictations are rewritten",
         body: """
-            Click Indite's N in the menu bar, open the Rewrite menu, and choose a prompt. \
+            Click Indite's I in the menu bar, open the Rewrite menu, and choose a prompt. \
             The built-in prompts are Clean Up, Simple Clean, Summarize, Make Formal, Make \
             Casual and Fix Punctuation. To make a dictation sound more formal, choose Make \
             Formal. Summarize turns what you said into a short bulleted list. Off types \
@@ -576,9 +577,9 @@ enum HelpLibrary {
         id: "start-meeting",
         title: "Record a meeting",
         body: """
-            Click Indite's N in the menu bar and choose "Start Meeting". Indite starts \
+            Click Indite's I in the menu bar and choose "Start Meeting". Indite starts \
             recording without opening a window. A small pill shows the meeting's clock \
-            with Pause and Stop, and the menu bar shows the clock beside the N.
+            with Pause and Stop, and the menu bar shows the clock beside the I.
 
             To end the meeting, click Stop in the pill and then End, or choose "End \
             Meeting", then "End and Save", from the menu. Indite then separates the \
@@ -900,7 +901,7 @@ enum HelpLibrary {
             When you press the Globe key or your shortcut and nothing happens, Indite \
             most likely lacks Accessibility access, which it needs to notice the key. \
             Without it, the first line of Indite's menu says "The dictation key is not \
-            working." and the N in the menu bar becomes a warning triangle.
+            working." and the I in the menu bar becomes a warning triangle.
 
             Choose "Allow Accessibility Access…" from Indite's menu and turn Indite on \
             in the list macOS shows. The key starts working within a few seconds, with no \
@@ -921,7 +922,7 @@ enum HelpLibrary {
         body: """
             "Nothing was heard." means the dictation ended with no words. The panel names \
             the microphone it listened to, so check that it is the one you are speaking \
-            into. To choose another, click the N in the menu bar and open the Microphone \
+            into. To choose another, click the I in the menu bar and open the Microphone \
             menu. Indite starts listening when the start sound plays, so begin talking \
             after it.
 
@@ -987,7 +988,7 @@ enum HelpLibrary {
             Apple's model takes longer than 20 seconds, or when the model declines to \
             process the text. If "When something goes wrong" is on in the Feedback \
             settings, a notification gives the reason. To stop rewriting altogether, click \
-            the N in the menu bar, open the Rewrite menu, and choose Off.
+            the I in the menu bar, open the Rewrite menu, and choose Off.
             """,
         topic: .troubleshooting
     )

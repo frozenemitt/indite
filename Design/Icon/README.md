@@ -1,31 +1,28 @@
 # The app icon
 
-The icon is `Indite/AppIcon.icon`, an Icon Composer document: two quotation
-marks standing as the uprights of an N, and a carver's chisel lying across them as
-its diagonal. Each mark is one stroke, rounded at the head and narrowing to a
-rounded tail, leaning twelve degrees. The chisel is a plain bar whose edge is cut
-on a slant, lying at forty-five degrees over the marks as smoked glass, its butt
-at the top-left and its edge at the bottom-right. The tile is a shade of black and
-the shapes are white at two opacities. No color: the only color in Indite is the
-ribbon that moves with the voice.
+The icon is `Indite/AppIcon.icon`, an Icon Composer document: the I-beam text
+cursor, the I of Indite, white on a tile that is a shade of black. One stem, and two
+arms at each end that curve into it, drawn as one stroke with round ends. No
+crossbar and no color: the only color in Indite is the ribbon that moves with the
+voice, and the README's animated wordmark shows that ribbon as the cursor's crossbar.
 
 Xcode builds the icon from the document, because the target's app icon is named
 `AppIcon` and the document sits in the app's folder.
 
 ## Changing it
 
-The shapes come from `draw-icon.swift`, which writes the document's two SVG
-layers. The numbers at its top are the design: the marks' lean, taper, bend,
-width, height and spacing; the chisel's angle, length, width, outline and slant.
-From the repository's root:
+The shape comes from `draw-icon.swift`, which writes the document's SVG layer
+and the two menu bar images. The numbers at its top are the design: where the
+arms lie, how far they reach and bend, the stroke, and the cursor's size in the
+tile and in the menu bar. From the repository's root:
 
 ```bash
 swift Design/Icon/draw-icon.swift
 ```
 
-Everything else is the document's: the tile, the glass, the opacities, the
-shadows and the order of the layers. Open `Indite/AppIcon.icon` in Icon
-Composer to change those; it saves into `icon.json`.
+Everything else is the document's: the tile, the glass, the opacity and the
+shadow. Open `Indite/AppIcon.icon` in Icon Composer to change those; it saves
+into `icon.json`.
 
 To see the icon as macOS will draw it, without opening Icon Composer:
 

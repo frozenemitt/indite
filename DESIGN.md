@@ -76,9 +76,12 @@ rewriting ribbon still. No animation on menus or frequent actions.
 
 ## Imagery
 
-SF Symbols. The menu bar icon is the app icon's N, drawn as a template image, so
-state is carried by shape: the N at rest, the N knocked out of a filled tile while a
-dictation is heard, and symbols for the meeting, the rewrite and a failed key.
+SF Symbols. The app icon is the I-beam text cursor, white on a black tile, with no
+crossbar and no color. The menu bar icon is the same cursor drawn as a template image,
+so state is carried by shape: the cursor at rest, the cursor cut out of a filled tile
+while a dictation is heard, and symbols for the meeting, the rewrite and a failed key.
+The README's wordmark is the one place the icon moves: the ribbon runs across the
+cursor where a crossbar would be.
 
 ## Do's and Don'ts
 
@@ -403,9 +406,26 @@ dictation is heard, and symbols for the meeting, the rewrite and a failed key.
   Inscribe was given up first: a registered INSCRIBE mark covers dictation software.
   The project, target, scheme, source folder, module, code, logs, help, scripts and
   docs take the new name, and so does the folder in Application Support, which the
-  first launch as Indite moves with its store. The bundle identifier
-  com.nscribe.app.macos and the Keychain account holding the update key keep the first
-  name until Jonathan decides: a new identifier would leave every installed copy
-  unable to find its next update and would ask again for every permission. No domain:
-  "I don't want the domain, just host it on GitHub for now." The repository is to be
-  renamed indite on GitHub, which redirects the old address.
+  first launch as Indite moves with its store. No domain: "I don't want the domain,
+  just host it on GitHub for now." The repository is to be renamed indite on GitHub,
+  which redirects the old address.
+- 2026-10-07 The bundle identifier becomes com.indite.app.macos. "I think we can change
+  this because I don't think anyone has installed it besides Nora." A copy of Nscribe
+  cannot update itself into Indite, and macOS asks again for every permission, so the
+  few people who have Nscribe download Indite fresh. Indite's first launch copies over
+  the settings Nscribe left, once, and moves its meetings and recordings.
+- 2026-10-07 The update key moves to the Keychain account indite. "We can probably
+  change this one too, with no real consequence." The release script copies the key
+  from the nscribe account the first time it runs; the key itself stays the same, so
+  the public key in the app does not change.
+- 2026-10-07 The app icon and the menu bar icon are the lone I-beam cursor, replacing
+  the quotation-mark N. Chosen over the cursor beside a lowercase n, which reads as
+  "In" and comes close to LinkedIn's mark, and over the quotation marks around a
+  chisel: "I do really like the look of that single cursor, even without the quote, I
+  think it looks really smooth."
+- 2026-10-07 The README leads with the icon animated, the ribbon running across the
+  cursor as its crossbar; everywhere else the cursor stays plain. "I'd like for the
+  GitHub README to lead with the animated version of the I logo. Otherwise, keep it as
+  the simple I." The ribbon is drawn large: twice the tile's width, swelling to most
+  of the cursor's height. "Make the ribbon huge, and highly visible while animating
+  it." Drawn as an animated SVG so GitHub plays it.
