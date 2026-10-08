@@ -365,7 +365,8 @@ struct DictationHistoryView: View {
                 dictation.text,
                 targetApp: coordinator.appInFront,
                 restoreClipboard: settings.restoreClipboardAfterPaste,
-                autoSubmit: false
+                autoSubmit: false,
+                names: settings.vocabularyHints
             )
 
             // Reported as a notification rather than in-window text: the target app

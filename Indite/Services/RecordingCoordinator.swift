@@ -721,7 +721,8 @@ final class RecordingCoordinator {
                 restoreClipboard: settings.restoreClipboardAfterPaste,
                 autoSubmit: autoSubmit,
                 submitUsesShift: settings.useShiftReturnAfterInsert,
-                addSpace: settings.addSpaceAfterInsert && !autoSubmit
+                addSpace: settings.addSpaceAfterInsert && !autoSubmit,
+                names: settings.vocabularyHints
             )
             switch outcome {
             case .inserted(let appName):
@@ -775,7 +776,8 @@ final class RecordingCoordinator {
             text,
             targetApp: appInFront,
             restoreClipboard: settings.restoreClipboardAfterPaste,
-            autoSubmit: false
+            autoSubmit: false,
+            names: settings.vocabularyHints
         )
         switch outcome {
         case .inserted:

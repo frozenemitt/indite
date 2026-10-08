@@ -157,6 +157,8 @@ enum TextInsertionService {
     ///   - submitUsesShift: Send Shift+Return instead of Return, so chat apps add a
     ///     line break rather than sending the message.
     ///   - addSpace: Paste a space after the text, so the next words carry on from it.
+    ///   - names: Words the user has taught Indite, which keep their capitals when the
+    ///     text is fitted into the middle of a sentence.
     @discardableResult
     static func deliver(
         _ text: String,
@@ -164,7 +166,8 @@ enum TextInsertionService {
         restoreClipboard: Bool = true,
         autoSubmit: Bool = false,
         submitUsesShift: Bool = false,
-        addSpace: Bool = false
+        addSpace: Bool = false,
+        names: [String] = []
     ) async -> TextInsertionOutcome {
 
         guard !text.isEmpty else {
@@ -225,11 +228,36 @@ enum TextInsertionService {
         // Read before pasting, so the field can be compared against itself afterwards.
         let fieldBeforePaste = state(of: field)
 
+        // Fitted to the words on either side of the cursor: the recognizer writes
+        // every dictation as a whole sentence, wherever it lands. A field that does
+        // not say what it holds gets the text as it is. The log line gives counts and
+        // what changed, never the text, so it shows which apps report their fields.
+        let around = textAroundCursor(in: field, value: fieldBeforePaste.text)
+        let pasted = around.map {
+            CursorFit.fit(text, before: $0.before, after: $0.after, addSpace: addSpace, names: names)
+        } ?? (addSpace ? text + " " : text)
+        let inserted = pasted.trimmingCharacters(in: .whitespaces)
+        if let around {
+            log.notice("""
+                Fitted to the cursor in \(appName, privacy: .public): \
+                \(around.before.count, privacy: .public) chars before, \
+                \(around.after.count, privacy: .public) after; \
+                capital \(inserted.first == text.first ? "kept" : "lowered", privacy: .public), \
+                full stop \(text.hasSuffix(".") && !inserted.hasSuffix(".") ? "dropped" : "kept", privacy: .public)
+                """)
+        } else {
+            log.notice("""
+                \(appName, privacy: .public) did not report the text around the cursor \
+                (value \(fieldBeforePaste.text == nil ? "missing" : "present", privacy: .public), \
+                caret \(fieldBeforePaste.caret == nil ? "missing" : "present", privacy: .public)); pasted as is
+                """)
+        }
+
         // Marked as momentary when the user's clipboard goes back afterwards, so
         // clipboard managers do not keep every dictation.
         // The pasteboard holds the text by the time this returns: another process read
         // it straight after the write in 30 of 30 tries. So ⌘V goes at once.
-        let pasteChange = ClipboardService.copy(addSpace ? text + " " : text, transient: restoreClipboard)
+        let pasteChange = ClipboardService.copy(pasted, transient: restoreClipboard)
 
         // Kept for the log only: the app that actually receives the ⌘V.
         let frontAtPaste = NSWorkspace.shared.frontmostApplication
@@ -254,13 +282,13 @@ enum TextInsertionService {
             // went nowhere. In 2 of 49 dictations into Claude, the watched field stayed
             // empty with its caret at 0 for the whole wait.
             let after = state(of: field)
-            let landed = after.text?.contains(text) ?? false
+            let landed = after.text?.contains(inserted) ?? false
             let focusedNow = frontAtPaste.flatMap {
                 copyFocusedElement(of: AXUIElementCreateApplication($0.processIdentifier))
             }
             let sameElement = focusedNow.map { CFEqual($0, field) } ?? false
             let focusedNowText = focusedNow.flatMap { state(of: $0).text }
-            let landedInFocused = focusedNowText?.contains(text) ?? false
+            let landedInFocused = focusedNowText?.contains(inserted) ?? false
             let watched = describe(field)
             let focused = focusedNow.map { describe($0) } ?? "nothing"
             log.error("""
@@ -341,12 +369,29 @@ enum TextInsertionService {
     }
 
     private static func caretLocation(of field: AXUIElement) -> Int? {
+        selectedRange(of: field)?.location
+    }
+
+    private static func selectedRange(of field: AXUIElement) -> CFRange? {
         guard let raw = copyAttribute(field, kAXSelectedTextRangeAttribute as String),
               CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
 
         var range = CFRange()
         guard AXValueGetValue(raw as! AXValue, .cfRange, &range) else { return nil }
-        return range.location
+        return range
+    }
+
+    /// The field's text before the cursor and after it, leaving out any selection the
+    /// paste will replace. Nil when the field does not report its text and cursor.
+    ///
+    /// Accessibility counts in UTF-16 units, as NSString does.
+    private static func textAroundCursor(in field: AXUIElement, value: String?) -> (before: String, after: String)? {
+        guard let value, let selection = selectedRange(of: field) else { return nil }
+        let whole = value as NSString
+        guard selection.location >= 0, selection.length >= 0,
+              selection.location + selection.length <= whole.length else { return nil }
+        return (whole.substring(to: selection.location),
+                whole.substring(from: selection.location + selection.length))
     }
 
     /// Whether the ⌘V actually put the text into `field`.
