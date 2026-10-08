@@ -90,7 +90,12 @@ size. The resting line, the glows and the light mode edge grow with the band. A 
 band therefore fogs the tile more: at four and a half times, the white glow lightened
 the tile as much as the old drawing did. Nothing on the tile carries a filter. A
 filter sends the tile's gradient through an offscreen pass, and browsers bring it back
-grainy and streaked, so the shadow is a separate black copy of the tile behind it.
+grainy, so the shadow is a separate black copy of the tile behind it. Each layer of the
+ribbon carries its own animated outline rather than a `<use>` of a shared one: Safari
+repaints a `<use>` of an animated path only around the path, so the blurred glow left
+stale stripes across the tile. Judge the wordmark in Safari's live drawing, with the
+image in its own layer as GitHub places it; a snapshot redraws the whole image and
+hides the stripes.
 
 ## Do's and Don'ts
 
@@ -445,4 +450,8 @@ grainy and streaked, so the shadow is a separate black copy of the tile behind i
   as the old drawing. This replaces "the ribbon is drawn large" from 2026-10-07: at its
   loudest the ribbon now reaches 22 px of the tile's 102, where it reached 64. The glow
   stays white, as the app's does. The tile's shadow moved to a copy behind it, which
-  removed the grain and streaks across the tile.
+  removed the grain across the tile.
+- 2026-10-08 The stripes across the wordmark were Safari leaving old glow on screen, not
+  the shadow. "The bands still exist as much as ever." Each ribbon layer now animates
+  its own outline instead of a `<use>` of one, and the stripes are gone; the files grew
+  from 205 KB to 506 KB (dark) and 672 KB (light).
