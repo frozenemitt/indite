@@ -382,7 +382,8 @@ enum TextInsertionService {
     }
 
     /// The field's text before the cursor and after it, leaving out any selection the
-    /// paste will replace. Nil when the field does not report its text and cursor.
+    /// paste will replace. Nil when the field does not report its text and cursor, or
+    /// when its cursor does not count in the same characters as its text.
     ///
     /// Accessibility counts in UTF-16 units, as NSString does.
     private static func textAroundCursor(in field: AXUIElement, value: String?) -> (before: String, after: String)? {
@@ -390,8 +391,33 @@ enum TextInsertionService {
         let whole = value as NSString
         guard selection.location >= 0, selection.length >= 0,
               selection.location + selection.length <= whole.length else { return nil }
+
+        // Claude's message box, a Chromium editor, gives its text with a line break
+        // between paragraphs but counts the cursor without them. With the cursor on
+        // the empty third line of "First line here.⏎Second line too.⏎" it reported
+        // 32, not 34, so the text before it seemed to end in "too" and the dictation
+        // got a space in front and lost its full stop. The field's own text at the
+        // cursor's offsets is read back: if it is not the value's text there, the two
+        // count differently, and the cursor cannot be placed in the value.
+        let span = min(selection.location, 64)
+        if span > 0, let reported = string(in: field, from: selection.location - span, length: span),
+           reported != whole.substring(with: NSRange(location: selection.location - span, length: span)) {
+            log.notice("The field's cursor does not count in the same characters as its text; not fitting")
+            return nil
+        }
+
         return (whole.substring(to: selection.location),
                 whole.substring(from: selection.location + selection.length))
+    }
+
+    private static func string(in field: AXUIElement, from location: Int, length: Int) -> String? {
+        var range = CFRange(location: location, length: length)
+        guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
+        var value: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            field, kAXStringForRangeParameterizedAttribute as CFString, parameter, &value
+        ) == .success else { return nil }
+        return value as? String
     }
 
     /// Whether the ⌘V actually put the text into `field`.
