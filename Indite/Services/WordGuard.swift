@@ -167,7 +167,7 @@ enum WordGuard {
     }
 
     /// Words that take a capital only at the start of a sentence.
-    private static let commonWords: Set<String> = [
+    static let commonWords: Set<String> = [
         "a", "an", "the", "and", "but", "or", "so", "of", "to", "in", "on", "at", "for",
         "with", "it", "its", "it's", "this", "that", "these", "those", "we", "you",
         "they", "he", "she", "is", "are", "was", "were", "be", "let's", "let", "there",
