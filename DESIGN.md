@@ -83,6 +83,15 @@ while a dictation is heard, and symbols for the meeting, the rewrite and a faile
 The README's wordmark is the one place the icon moves: the ribbon runs across the
 cursor where a crossbar would be.
 
+The wordmark's ribbon is the app's ribbon, drawn by the rules in `ListeningBar.swift`:
+the same 48 bands, loudness curve, taper, resting line, glows and colors. Only its band
+is taller, three times the app's height for its length, so the swell reads at README
+size. The resting line, the glows and the light mode edge grow with the band. A taller
+band therefore fogs the tile more: at four and a half times, the white glow lightened
+the tile as much as the old drawing did. Nothing on the tile carries a filter. A
+filter sends the tile's gradient through an offscreen pass, and browsers bring it back
+grainy and streaked, so the shadow is a separate black copy of the tile behind it.
+
 ## Do's and Don'ts
 
 - 2026-10-01 Keep the stock macOS look. "I think I want to keep the stock macOS look,
@@ -429,3 +438,11 @@ cursor where a crossbar would be.
   the simple I." The ribbon is drawn large: twice the tile's width, swelling to most
   of the cursor's height. "Make the ribbon huge, and highly visible while animating
   it." Drawn as an animated SVG so GitHub plays it.
+- 2026-10-08 The wordmark's ribbon follows the app's, with a band three times the app's
+  height for its length. "It should definitely be easy to see." "3x looks good to me."
+  Chosen over the app's exact proportions, which swell to 7 px in the README, and over
+  bands two and four and a half times the app's; the larger one fogged the tile as much
+  as the old drawing. This replaces "the ribbon is drawn large" from 2026-10-07: at its
+  loudest the ribbon now reaches 22 px of the tile's 102, where it reached 64. The glow
+  stays white, as the app's does. The tile's shadow moved to a copy behind it, which
+  removed the grain and streaks across the tile.
