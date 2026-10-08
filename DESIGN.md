@@ -83,19 +83,19 @@ while a dictation is heard, and symbols for the meeting, the rewrite and a faile
 The README's wordmark is the one place the icon moves: the ribbon runs across the
 cursor where a crossbar would be.
 
-The wordmark's ribbon is the app's ribbon, drawn by the rules in `ListeningBar.swift`:
-the same 48 bands, loudness curve, taper, resting line, glows and colors. Only its band
-is taller, three times the app's height for its length, so the swell reads at README
-size. The resting line, the glows and the light mode edge grow with the band. A taller
-band therefore fogs the tile more: at four and a half times, the white glow lightened
-the tile as much as the old drawing did. Nothing on the tile carries a filter. A
-filter sends the tile's gradient through an offscreen pass, and browsers bring it back
-grainy, so the shadow is a separate black copy of the tile behind it. Each layer of the
-ribbon carries its own animated outline rather than a `<use>` of a shared one: Safari
-repaints a `<use>` of an animated path only around the path, so the blurred glow left
-stale stripes across the tile. Judge the wordmark in Safari's live drawing, with the
-image in its own layer as GitHub places it; a snapshot redraws the whole image and
-hides the stripes.
+The wordmark's ribbon is the app's ribbon, drawn by the rules in `ListeningBar.swift`
+(`Design/Icon/draw-wordmark.swift` writes it): the same 48 bands, loudness curve,
+taper, resting line, glows and colors. Only its band is taller, three times the app's
+height for its length, so the swell reads at README size. The resting line, the glows
+and the light mode edge grow with the band. A taller band therefore fogs the tile
+more: at four and a half times, the white glow lightened the tile as much as the old
+drawing did. Nothing on the tile carries a filter. A filter sends the tile's gradient
+through an offscreen pass, and browsers bring it back grainy, so the shadow is a
+separate black copy of the tile behind it. Each layer of the ribbon carries its own
+animated outline rather than a `<use>` of a shared one: Safari repaints a `<use>` of
+an animated path only around the path, so the blurred glow left stale stripes across
+the tile. Judge the wordmark in Safari's live drawing, with the image in its own layer
+as GitHub places it; a snapshot redraws the whole image and hides the stripes.
 
 ## Do's and Don'ts
 
