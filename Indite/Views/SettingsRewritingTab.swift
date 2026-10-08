@@ -346,7 +346,12 @@ struct PromptDetailView: View {
             Section {
                 Toggle("Keep my words", isOn: $keepsWords)
                     .disabled(!canEdit)
-                    .help("For prompts that correct rather than reword. Any word the model drops is put back, and only punctuation, capitals, repeated words and one-for-one word fixes get through.")
+
+                // Said under the switch, not in a tooltip: nobody could tell what it did
+                // from its name, and a tooltip shows only to someone already hovering.
+                Text("The AI may fix punctuation, capitals, a word said twice, or a word that was misheard. Any other word it drops or changes goes back to what you said. Turn this off for a prompt meant to reword you, such as Make Formal.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             // How the model picks its words. Editable for built-in prompts too, and

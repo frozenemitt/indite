@@ -14,7 +14,7 @@ enum HelpLibrary {
         microphone, stopsByItself, undoDictation, typeAgain, recentDictations, sounds,
         notifications, appProfiles, language,
         // Rewriting
-        keepMyWords, choosePrompt, customPrompt, promptAdvanced, surroundingContext,
+        keepMyWords, keepMyWordsSwitch, choosePrompt, customPrompt, promptAdvanced, surroundingContext,
         // Words and Spelling
         vocabulary, wordReplacements,
         // Meetings
@@ -464,6 +464,31 @@ enum HelpLibrary {
             foot of the Rewrite menu opens the same place.
             """,
         topic: .rewriting
+    )
+
+    static let keepMyWordsSwitch = HelpArticle(
+        id: "keep-my-words-switch",
+        title: "What \u{201C}Keep my words\u{201D} does",
+        body: """
+            Apple's on-device model sometimes drops or rewords what you said, even when \
+            a prompt tells it not to. "Keep my words" checks each rewrite against your \
+            dictation, word by word, and lets through only the changes a correction \
+            needs: punctuation, capitals, a word said twice by accident, and a word \
+            swapped for the one you meant, such as "their" for "there". A word the model \
+            dropped is put back, and a phrase it reworded goes back to what you said. If \
+            you say "update that yet" and the model returns "update that", Indite types \
+            "update that yet".
+
+            Leave it on for a prompt that corrects your dictation, such as Simple Clean \
+            or Fix Punctuation. Turn it off for a prompt meant to change your words, such \
+            as Make Formal or Summarize, or the check undoes the rewrite.
+
+            The switch is under each prompt's instructions: open Indite's Settings, \
+            choose Rewriting, and select the prompt. Built-in prompts have it set \
+            already, and a new prompt of your own starts with it off.
+            """,
+        topic: .rewriting,
+        action: .inditeSettings(.rewriting)
     )
 
     static let customPrompt = HelpArticle(
