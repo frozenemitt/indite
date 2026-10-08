@@ -6,7 +6,7 @@ import SwiftData
 /// What happens once the text is in the field. Stored as the three switches that came
 /// before it, so an existing choice carries over.
 private enum AfterTyping: Hashable {
-    case nothing, addSpace, pressReturn, pressShiftReturn
+    case nothing, pressReturn, pressShiftReturn
 }
 
 /// Which shortcut is waiting for a keystroke.
@@ -156,23 +156,21 @@ struct DictationSettingsView: View {
                 if typesText {
                     Toggle("Restore my previous clipboard afterwards", isOn: $settings.restoreClipboardAfterPaste)
 
-                    // One choice of four. It used to be a choice of three with a
-                    // switch underneath that appeared for one of them.
+                    // One choice of three. "Add a space" was a fourth until Indite
+                    // spaced each dictation from the words around the cursor itself.
                     Picker("After typing", selection: Binding(
                         get: {
                             if settings.autoSubmitAfterInsert {
                                 return settings.useShiftReturnAfterInsert ? AfterTyping.pressShiftReturn : .pressReturn
                             }
-                            return settings.addSpaceAfterInsert ? .addSpace : .nothing
+                            return .nothing
                         },
                         set: {
                             settings.autoSubmitAfterInsert = $0 == .pressReturn || $0 == .pressShiftReturn
                             settings.useShiftReturnAfterInsert = $0 == .pressShiftReturn
-                            settings.addSpaceAfterInsert = $0 == .addSpace
                         }
                     )) {
                         Text("Nothing").tag(AfterTyping.nothing)
-                        Text("Add a space").tag(AfterTyping.addSpace)
                         Text("Press Return").tag(AfterTyping.pressReturn)
                         Text("Press Shift-Return").tag(AfterTyping.pressShiftReturn)
                     }

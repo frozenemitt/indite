@@ -721,7 +721,6 @@ final class RecordingCoordinator {
                 restoreClipboard: settings.restoreClipboardAfterPaste,
                 autoSubmit: autoSubmit,
                 submitUsesShift: settings.useShiftReturnAfterInsert,
-                addSpace: settings.addSpaceAfterInsert && !autoSubmit,
                 names: settings.vocabularyHints
             )
             switch outcome {

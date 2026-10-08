@@ -156,7 +156,6 @@ enum TextInsertionService {
     ///   - autoSubmit: Press a Return key after inserting.
     ///   - submitUsesShift: Send Shift+Return instead of Return, so chat apps add a
     ///     line break rather than sending the message.
-    ///   - addSpace: Paste a space after the text, so the next words carry on from it.
     ///   - names: Words the user has taught Indite, which keep their capitals when the
     ///     text is fitted into the middle of a sentence.
     @discardableResult
@@ -166,7 +165,6 @@ enum TextInsertionService {
         restoreClipboard: Bool = true,
         autoSubmit: Bool = false,
         submitUsesShift: Bool = false,
-        addSpace: Bool = false,
         names: [String] = []
     ) async -> TextInsertionOutcome {
 
@@ -230,12 +228,14 @@ enum TextInsertionService {
 
         // Fitted to the words on either side of the cursor: the recognizer writes
         // every dictation as a whole sentence, wherever it lands. A field that does
-        // not say what it holds gets the text as it is. The log line gives counts and
-        // what changed, never the text, so it shows which apps report their fields.
+        // not say what it holds gets the text as it is, with a space after it so the
+        // next dictation does not run into it; none when Return is about to be
+        // pressed. The log line gives counts and what changed, never the text, so it
+        // shows which apps report their fields.
         let around = textAroundCursor(in: field, value: fieldBeforePaste.text)
         let pasted = around.map {
-            CursorFit.fit(text, before: $0.before, after: $0.after, addSpace: addSpace, names: names)
-        } ?? (addSpace ? text + " " : text)
+            CursorFit.fit(text, before: $0.before, after: $0.after, names: names)
+        } ?? (autoSubmit ? text : text + " ")
         let inserted = pasted.trimmingCharacters(in: .whitespaces)
         if let around {
             log.notice("""

@@ -18,11 +18,14 @@ enum CursorFit {
 
     /// `text` as it should be pasted between `before` and `after`.
     ///
-    /// - Parameters:
-    ///   - addSpace: Put a space after the text, so the next words carry on from it.
-    ///     Left off when the text after the cursor already starts with one.
-    ///   - names: Words the user has taught Indite, which keep their capitals.
-    static func fit(_ text: String, before: String, after: String, addSpace: Bool, names: [String]) -> String {
+    /// Spaced before when it lands against a word, and after only when a word follows
+    /// straight on. No space is left trailing at the end: the next dictation puts its
+    /// own in front. A trailing space at the end of a web text field is not drawn, so
+    /// a click at the end put the cursor in front of it, and the next words went in
+    /// before the space instead of after it.
+    ///
+    /// - Parameter names: Words the user has taught Indite, which keep their capitals.
+    static func fit(_ text: String, before: String, after: String, names: [String]) -> String {
         var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return text }
 
@@ -41,13 +44,7 @@ enum CursorFit {
             text = " " + text
         }
 
-        if let next = after.first {
-            if next.isLetter || next.isNumber {
-                text += " "
-            } else if addSpace, next != " ", next != "\t", !",.;:!?)".contains(next) {
-                text += " "
-            }
-        } else if addSpace {
+        if let next = after.first, next.isLetter || next.isNumber {
             text += " "
         }
         return text
