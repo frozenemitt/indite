@@ -24,12 +24,16 @@ enum CursorFit {
     /// a click at the end put the cursor in front of it, and the next words went in
     /// before the space instead of after it.
     ///
-    /// - Parameter names: Words the user has taught Indite, which keep their capitals.
-    static func fit(_ text: String, before: String, after: String, names: [String]) -> String {
+    /// - Parameters:
+    ///   - names: Words the user has taught Indite, which keep their capitals.
+    ///   - language: The language dictations are transcribed in. German gives every
+    ///     noun a capital, so a German first word keeps the one it came with.
+    static func fit(_ text: String, before: String, after: String, names: [String], language: Locale.Language?) -> String {
         var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return text }
 
-        if continuesSentence(before), let first = text.split(separator: " ").first,
+        if language?.languageCode != .german,
+           continuesSentence(before), let first = text.split(separator: " ").first,
            let initial = first.first, initial.isUppercase,
            !keepsCapital(String(first), in: text, before: before, names: names) {
             text = text.prefix(1).lowercased() + text.dropFirst()
@@ -40,26 +44,44 @@ enum CursorFit {
             text.removeLast()
         }
 
-        if endsWord(before), let first = text.first, !",.;:!?)".contains(first) {
+        if endsWord(before), let first = text.first, !",.;:!?)".contains(first),
+           !writtenWithoutSpaces(first), let last = before.last, !writtenWithoutSpaces(last) {
             text = " " + text
         }
 
-        if let next = after.first, next.isLetter || next.isNumber {
+        if let next = after.first, next.isLetter || next.isNumber, !writtenWithoutSpaces(next),
+           let last = text.last, !writtenWithoutSpaces(last) {
             text += " "
         }
         return text
+    }
+
+    /// Chinese, Japanese and Thai, which put no spaces between words.
+    static func writtenWithoutSpaces(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first?.value else { return false }
+        return (0x0E00...0x0E7F).contains(scalar)      // Thai
+            || (0x3000...0x30FF).contains(scalar)      // CJK punctuation, kana
+            || (0x3400...0x4DBF).contains(scalar)      // CJK extension A
+            || (0x4E00...0x9FFF).contains(scalar)      // CJK ideographs
+            || (0xFF00...0xFFEF).contains(scalar)      // full-width forms
     }
 
     /// Whether the text before the cursor stops in the middle of a sentence.
     ///
     /// Only a letter, digit, comma, semicolon or dash counts, looking past spaces and
     /// past closing quotes and brackets. A new line, a full stop, a colon or an emoji
-    /// all leave the dictation's capital alone.
+    /// all leave the dictation's capital alone, and so does a dash that starts its
+    /// line, which is a list item in Markdown.
     static func continuesSentence(_ before: String) -> Bool {
         let tail = before.reversed().drop { $0 == " " || $0 == "\t" }
         guard let end = tail.first, !end.isNewline else { return false }
-        guard let last = tail.drop(while: { "\"”’')]".contains($0) }).first else { return false }
-        return last.isLetter || last.isNumber || ",;–—-".contains(last)
+        let rest = tail.drop(while: { "\"”’')]".contains($0) })
+        guard let last = rest.first else { return false }
+        if "–—-".contains(last) {
+            guard let previous = rest.dropFirst().drop(while: { $0 == " " || $0 == "\t" }).first else { return false }
+            return previous.isLetter || previous.isNumber
+        }
+        return last.isLetter || last.isNumber || ",;".contains(last)
     }
 
     /// Whether the text before the cursor ends against a word, so the dictation needs a
@@ -108,8 +130,11 @@ enum CursorFit {
             }
         }
 
-        // The field already writes it with a capital where no sentence starts.
-        if capitalizedInsideSentence(bare, in: before) { return true }
+        // The field already writes it with a capital where no sentence starts. Not for
+        // a word like "The", which a title gives a capital anywhere.
+        if !WordGuard.commonWords.contains(bare.lowercased()), capitalizedInsideSentence(bare, in: before) {
+            return true
+        }
 
         let tagger = NLTagger(tagSchemes: [.nameType])
         tagger.string = text

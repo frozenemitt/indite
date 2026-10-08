@@ -234,8 +234,8 @@ enum TextInsertionService {
         // shows which apps report their fields.
         let around = textAroundCursor(in: field, value: fieldBeforePaste.text)
         let pasted = around.map {
-            CursorFit.fit(text, before: $0.before, after: $0.after, names: names)
-        } ?? (autoSubmit ? text : text + " ")
+            CursorFit.fit(text, before: $0.before, after: $0.after, names: names, language: TranscriptionEngine.language)
+        } ?? (autoSubmit || text.last.map(CursorFit.writtenWithoutSpaces) == true ? text : text + " ")
         let inserted = pasted.trimmingCharacters(in: .whitespaces)
         if let around {
             log.notice("""
