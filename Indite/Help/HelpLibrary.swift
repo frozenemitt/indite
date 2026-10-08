@@ -210,13 +210,12 @@ enum HelpLibrary {
 
     static let afterTyping = HelpArticle(
         id: "after-typing",
-        title: "Press Return or add a space after the words",
+        title: "Press Return after the words",
         body: """
             Indite can press a key after it types your words. Open Indite's Settings, \
             choose Dictation, and under "Where the Text Goes" set "After typing".
 
-            "Add a space" lets your next dictation carry on the sentence. "Press Return" \
-            hits Enter for you, which sends the message in a chat app such as Slack or \
+            "Press Return" hits Enter for you, which sends the message in a chat app such as Slack or \
             Messages. "Press Shift-Return" starts a new line and leaves the message \
             unsent. "Nothing" is the default. If your messages are being sent \
             automatically, choose "Nothing" or "Press Shift-Return" to stop it.
