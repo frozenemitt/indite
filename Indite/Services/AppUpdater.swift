@@ -160,13 +160,21 @@ extension AppUpdater: SPUUpdaterDelegate {
 
 extension AppUpdater: UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard response.notification.request.content.categoryIdentifier == Self.notificationCategory else { return }
+        let content = response.notification.request.content
+        if content.categoryIdentifier == CorrectionWatcher.category {
+            let name = content.userInfo["name"] as? String
+            let action = response.actionIdentifier
+            await MainActor.run { CorrectionWatcher.shared.respond(name: name, action: action) }
+            return
+        }
+        guard content.categoryIdentifier == Self.notificationCategory else { return }
         await MainActor.run { self.restartToUpdate() }
     }
 
     /// Shown even while Indite is the active app. Its other notifications keep the
     /// system's default, which is to stay quiet then.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        notification.request.content.categoryIdentifier == Self.notificationCategory ? [.banner, .list] : []
+        [Self.notificationCategory, CorrectionWatcher.category].contains(notification.request.content.categoryIdentifier)
+            ? [.banner, .list] : []
     }
 }

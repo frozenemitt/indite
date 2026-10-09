@@ -123,7 +123,7 @@ enum Vocabulary {
     }
 
     /// Letters in common, from 0 to 1: one less the edits between them over the longer.
-    private static func similarity(_ a: String, _ b: String) -> Double {
+    static func similarity(_ a: String, _ b: String) -> Double {
         let a = Array(key(a)), b = Array(key(b))
         guard !a.isEmpty, !b.isEmpty else { return a.count == b.count ? 1 : 0 }
         var row = Array(0...b.count)

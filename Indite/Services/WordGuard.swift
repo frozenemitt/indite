@@ -77,7 +77,7 @@ enum WordGuard {
     // MARK: - Words
 
     /// A word as written, the space that followed it, and the form compared.
-    private struct Word {
+    struct Word {
         var text: String
         var spaceAfter: String
         let key: String
@@ -86,7 +86,7 @@ enum WordGuard {
         var isRestored = false
     }
 
-    private static func words(in text: String) -> [Word] {
+    static func words(in text: String) -> [Word] {
         var result: [Word] = []
         var index = text.startIndex
         while index < text.endIndex {
@@ -179,7 +179,7 @@ enum WordGuard {
 
     // MARK: - Alignment
 
-    private enum Step {
+    enum Step {
         /// The word at this index of the rewrite matches what was said.
         case same(Int)
         /// Said words and rewrite words between two matches.
@@ -187,7 +187,7 @@ enum WordGuard {
     }
 
     /// The longest common run of words, as matches and the gaps between them.
-    private static func alignment(_ a: [String], _ b: [String]) -> [Step] {
+    static func alignment(_ a: [String], _ b: [String]) -> [Step] {
         let n = a.count, m = b.count
         var lengths = [Int32](repeating: 0, count: (n + 1) * (m + 1))
         for i in stride(from: n - 1, through: 0, by: -1) {
