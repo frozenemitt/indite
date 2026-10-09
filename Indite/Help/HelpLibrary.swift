@@ -570,6 +570,11 @@ enum HelpLibrary {
             shown in the window you are dictating into, such as the names in an email \
             thread. It reads them for that dictation only and keeps nothing.
 
+            Indite also learns from your fixes. When you correct a name it typed, such \
+            as "Pria" to "Priya", within two minutes of dictating it, a notification asks \
+            whether to add the name to the list. Click "Add to Words" to add it. Closing \
+            the notification tells Indite not to ask about that name again.
+
             For a word Indite gets wrong every time, add a rule under "Word Replacements" \
             on the same tab.
             """,
