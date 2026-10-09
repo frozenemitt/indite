@@ -1,3 +1,7 @@
-**Dictation fits the sentence you're in.** Dictate onto the end of a sentence and the words carry it on: the first word loses its capital, and the full stop goes when the sentence continues past the cursor. A space goes in front of the words when they need one. Names, "I" and the words in your Words list keep their capitals. This works in apps that tell Indite what is in the field, such as Claude; in other apps the words arrive as they did before.
+**Indite learns the names you correct.** When Indite mishears a name and you fix it by hand, such as "Pria" to "Priya", a notification asks whether to add it to your Words list. Add it, and Indite listens for that name from then on. Close the notification, and Indite won't ask about that name again.
 
-**"Add a space" is gone** from After typing, because each dictation now puts its own space in front. In a field that doesn't tell Indite what it holds, a space still goes after the words.
+**Simple Clean sees the names around your cursor.** With "Let the AI see what is already in the field" on, a prompt that keeps your words now gets only the names in the field, not its whole text. In testing it spelled those names right as often as before, and it mended sentences broken at pauses three times as often.
+
+**Dictating on a new line in Claude works.** On the second or a later line of a message, the words no longer get a stray space in front or lose their full stop, and they fit the sentence there like anywhere else.
+
+**"Keep my words" explains itself**, under the switch in the Rewriting settings and in Help.
