@@ -157,6 +157,7 @@ final class RecordingCoordinator {
         self.engine = engine
         self.aiProcessor = aiProcessor
         self.settings = settings
+        CorrectionWatcher.shared.settings = settings
         #if os(macOS)
         self.overlay = DictationOverlayController(settings: settings)
         // Checked as the observer below checks it, so Indite is never its own target.
@@ -727,6 +728,10 @@ final class RecordingCoordinator {
             case .inserted(let appName):
                 lastDestination = appName
                 if let problem { report(.problem(problem)) }
+                // Not after Return: the message has gone, and there is nothing left to correct.
+                if let insertion = TextInsertionService.lastInsertion {
+                    CorrectionWatcher.shared.watch(insertion)
+                }
             case .copiedToClipboard:
                 lastDestination = "Clipboard"
                 // The setting says type, and the words were copied. That is the one

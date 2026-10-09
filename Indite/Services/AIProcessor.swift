@@ -302,10 +302,29 @@ final class AIProcessor {
     private static func userPrompt(for prompt: Prompt, text: String, surroundingText: String?) -> String {
         let request = prompt.apply(to: text, note: languageNote)
 
+        guard let surroundingText, !surroundingText.isEmpty else { return request }
+
+        // A prompt that keeps the speaker's words gets only the names in the field.
+        // On 9 dictations with sentences broken at pauses, the field's whole text cut
+        // the breaks the model mended from 9 of 13 to 3, and on 8 dictations with a
+        // misheard name it put right 6; the names alone put right 7 and left the
+        // mending at 9. The model once copied the end of the field over a dictation.
+        if prompt.keepsWords {
+            let names = ScreenVocabulary.unusualWords(in: surroundingText, limit: 40)
+            guard !names.isEmpty else { return request }
+            return """
+                <names>
+                Names and terms already in the text the user is writing: \(names.joined(separator: ", ")). \
+                If the transcription has a sound-alike of one of them, use this spelling.
+                </names>
+
+                \(request)
+                """
+        }
+
         // Prepended, and fenced off in its own tags, so the model treats it as
         // background rather than as more text to rewrite. Without the fencing the
         // model tends to "clean up" the surrounding document too and hand it back.
-        guard let surroundingText, !surroundingText.isEmpty else { return request }
         return """
             <context>
             The user is dictating into a text field that already contains the \

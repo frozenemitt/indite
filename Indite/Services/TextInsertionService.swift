@@ -41,11 +41,14 @@ enum TextInsertionService {
     /// characters. The app knows what its undo means; guessing by selecting backwards
     /// breaks the moment autocorrect, an editor macro, or a text replacement has
     /// changed what actually landed.
-    struct LastInsertion: Sendable {
+    struct LastInsertion {
         let text: String
         let appName: String
         let processIdentifier: pid_t
         let at: Date
+        /// The field it went into, read again afterwards for corrections the user
+        /// makes by hand.
+        let field: AXUIElement
     }
 
     private(set) static var lastInsertion: LastInsertion?
@@ -343,7 +346,8 @@ enum TextInsertionService {
                 text: text,
                 appName: appName,
                 processIdentifier: app.processIdentifier,
-                at: Date()
+                at: Date(),
+                field: field
             )
         }
 
@@ -383,7 +387,7 @@ enum TextInsertionService {
 
     /// The field's text before the cursor and after it, leaving out any selection the
     /// paste will replace. Nil when the field does not report its text and cursor, or
-    /// when its cursor does not count in the same characters as its text.
+    /// when the cursor cannot be placed in that text.
     ///
     /// Accessibility counts in UTF-16 units, as NSString does.
     private static func textAroundCursor(in field: AXUIElement, value: String?) -> (before: String, after: String)? {
@@ -392,22 +396,77 @@ enum TextInsertionService {
         guard selection.location >= 0, selection.length >= 0,
               selection.location + selection.length <= whole.length else { return nil }
 
-        // Claude's message box, a Chromium editor, gives its text with a line break
-        // between paragraphs but counts the cursor without them. With the cursor on
-        // the empty third line of "First line here.⏎Second line too.⏎" it reported
-        // 32, not 34, so the text before it seemed to end in "too" and the dictation
-        // got a space in front and lost its full stop. The field's own text at the
-        // cursor's offsets is read back: if it is not the value's text there, the two
-        // count differently, and the cursor cannot be placed in the value.
+        // The field's own text at the cursor's offsets, read back. Where it is not
+        // the value's text there, the two count differently.
+        var cursor = selection.location
         let span = min(selection.location, 64)
         if span > 0, let reported = string(in: field, from: selection.location - span, length: span),
            reported != whole.substring(with: NSRange(location: selection.location - span, length: span)) {
-            log.notice("The field's cursor does not count in the same characters as its text; not fitting")
-            return nil
+            guard selection.length == 0,
+                  let placed = cursorCountedWithoutLineBreaks(selection.location, in: whole, field: field) else {
+                log.notice("The field's cursor could not be placed in its text; not fitting")
+                return nil
+            }
+            cursor = placed
         }
 
-        return (whole.substring(to: selection.location),
-                whole.substring(from: selection.location + selection.length))
+        return (whole.substring(to: cursor), whole.substring(from: cursor + selection.length))
+    }
+
+    /// Where a cursor sits in the field's text, for a field that counts the cursor
+    /// without the line breaks its text has.
+    ///
+    /// Claude's message box, a Chromium editor, gives its text with a line break
+    /// between paragraphs but counts the cursor without them. In "First line
+    /// here.⏎Second line too.⏎" it reported 32 both at the end of the second line and
+    /// on the empty third line, and 16 at the start of the second line. Counting the
+    /// characters that are not line breaks finds the spot up to the line breaks
+    /// there; which side of them the cursor is on, the paragraph the field says it is
+    /// in tells: empty on the empty line, the line before at the end of the second
+    /// line, the line after at its start.
+    private static func cursorCountedWithoutLineBreaks(_ offset: Int, in whole: NSString, field: AXUIElement) -> Int? {
+        let lineBreak = unichar(10)
+        var counted = 0
+        var index = 0
+        while counted < offset, index < whole.length {
+            if whole.character(at: index) != lineBreak { counted += 1 }
+            index += 1
+        }
+        guard counted == offset else { return nil }
+
+        // Read back as before, with the line breaks left out of the value's side.
+        let start = max(0, index - 64)
+        let window = whole.substring(with: NSRange(location: start, length: index - start))
+            .replacingOccurrences(of: "\n", with: "")
+        let windowLength = (window as NSString).length
+        guard windowLength == 0
+                || string(in: field, from: offset - windowLength, length: windowLength) == window else { return nil }
+
+        guard index < whole.length, whole.character(at: index) == lineBreak else { return index }
+        guard let paragraph = cursorParagraph(of: field)?.trimmingCharacters(in: .newlines) else { return nil }
+        if paragraph.isEmpty { return index + 1 }
+        switch (whole.substring(to: index).hasSuffix(paragraph), whole.substring(from: index + 1).hasPrefix(paragraph)) {
+        case (true, false): return index
+        case (false, true): return index + 1
+        default: return nil
+        }
+    }
+
+    /// The text of the paragraph the cursor is in, from the field's text markers,
+    /// which say where the cursor is without counting.
+    private static func cursorParagraph(of field: AXUIElement) -> String? {
+        guard let raw = copyAttribute(field, "AXSelectedTextMarkerRange"),
+              CFGetTypeID(raw) == AXTextMarkerRangeGetTypeID() else { return nil }
+        let cursor = AXTextMarkerRangeCopyStartMarker(raw as! AXTextMarkerRange)
+        var paragraph: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            field, "AXParagraphTextMarkerRangeForTextMarker" as CFString, cursor, &paragraph
+        ) == .success, let paragraph else { return nil }
+        var text: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            field, "AXStringForTextMarkerRange" as CFString, paragraph, &text
+        ) == .success else { return nil }
+        return text as? String
     }
 
     private static func string(in field: AXUIElement, from location: Int, length: Int) -> String? {
