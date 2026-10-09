@@ -7,7 +7,8 @@ import UserNotifications
 /// it on the Words list.
 ///
 /// For two minutes after each dictation, the field it went into is read every two
-/// seconds. A word of the dictation changed into a name, "Pria" into "Priya", is a
+/// seconds, whichever app is in front: the field is read directly, not the app the
+/// user is looking at. A word of the dictation changed into a name, "Pria" into "Priya", is a
 /// mishearing the user fixed; on the Words list the recognizer listens for it next
 /// time. Only one or two words swapped for one name count, and the name has to be
 /// spelled like what it replaced: rewording a phrase, or typing on after the
@@ -46,17 +47,22 @@ final class CorrectionWatcher {
         let typed = insertion.text
         let app = insertion.appName
         watching = Task { [weak self] in
+            // A read can land in the middle of typing, when "Pria" has become "Priy".
+            // Only a correction found on two reads in a row is offered.
+            var seen = Finding.none
             for _ in 0..<60 {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled else { return }
                 // Off the main thread: an app slow to answer would otherwise hold Indite.
                 guard let now = await Task.detached(priority: .utility, operation: { field.text() }).value else { return }
-                switch Self.correction(of: typed, in: now) {
+                let finding = Self.correction(of: typed, in: now)
+                switch finding {
                 case .none:
-                    continue
+                    seen = .none
                 case .gone:
                     return
                 case .found(let heard, let name):
+                    guard finding == seen else { seen = finding; continue }
                     self?.suggest(name, heard: heard, app: app)
                     return
                 }
