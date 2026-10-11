@@ -4,16 +4,7 @@ import FoundationModels
 
 // MARK: - Structured Output
 
-/// Constrains the model to return only the processed text — no commentary or preamble.
-/// The @Generable macro enforces a JSON schema at the token level, so the model
-/// physically cannot produce output outside this single field.
-@Generable
-struct TranscriptionResult {
-    @Guide(description: "The rewritten transcription text only, with no commentary or explanation")
-    var text: String
-}
-
-/// A meeting's title, constrained the same way.
+/// A meeting's title, constrained to a single field so the model cannot add commentary.
 @Generable
 struct MeetingTitle {
     @Guide(description: "A title of three to seven words naming what the meeting was about")
@@ -231,16 +222,20 @@ final class AIProcessor {
         }
 
         let userPrompt = Self.userPrompt(for: prompt, text: text, surroundingText: surroundingText)
-
-        // Use per-prompt generation settings with structured output
         let options = prompt.generationOptions()
 
+        // Plain text, not a @Generable result. Apple relaxes its sensitive-content
+        // screen only for plain-text answers; asked for a structured one, it screens
+        // as strictly as the default guardrails. On 2026-10-11 that strict screen
+        // refused 3 of 34 dictations, about religion, health insurance and anxiety
+        // over AI, before the model read a word. As plain text all three passed in 9
+        // of 9 tries, and none of the nine answers added a word of commentary.
         do {
-            let result: TranscriptionResult
+            let result: String
             if let onPartial {
                 let started = ContinuousClock.now
                 var reportedFirst = false
-                result = try await FoundationModelsHelper.streamTranscription(
+                result = try await FoundationModelsHelper.streamText(
                     session: session,
                     prompt: userPrompt,
                     options: options
@@ -253,14 +248,13 @@ final class AIProcessor {
                     onPartial(partial)
                 }
             } else {
-                result = try await FoundationModelsHelper.generateStructured(
+                result = try await FoundationModelsHelper.generateText(
                     session: session,
                     prompt: userPrompt,
-                    generating: TranscriptionResult.self,
                     options: options
                 )
             }
-            return keepingWords(of: text, in: try cleaned(result.text), for: prompt)
+            return keepingWords(of: text, in: try cleaned(result), for: prompt)
 
         // macOS 27 throws the top-level LanguageModelError for these failures, not the
         // deprecated LanguageModelSession.GenerationError.
@@ -268,22 +262,6 @@ final class AIProcessor {
             throw AIProcessorError.contextWindowExceeded
         } catch LanguageModelError.unsupportedLanguageOrLocale {
             throw AIProcessorError.languageNotSupported
-        } catch LanguageModelError.guardrailViolation {
-            // Guided generation doesn't benefit from the permissive guardrail level
-            // (see the comment on `permissiveModel`), so before giving up, ask once
-            // more for plain text, which does.
-            do {
-                let retried = try await FoundationModelsHelper.generateTextAfterGuardrailViolation(
-                    instructions: prompt.systemPrompt,
-                    prompt: userPrompt,
-                    options: options
-                )
-                let result = keepingWords(of: text, in: try cleaned(retried), for: prompt)
-                Log.ai.notice("Recovered from a guardrail violation by asking for plain text")
-                return result
-            } catch {
-                throw AIProcessorError.guardrailViolation
-            }
         } catch let error as AIProcessorError {
             // An empty result from `cleaned` reaches the caller as itself, not
             // wrapped by the clause below as a generic processing failure.
@@ -400,7 +378,6 @@ enum AIProcessorError: Error, LocalizedError {
     case languageNotSupported
     case appleIntelligenceUnavailable(String)
     case contextWindowExceeded
-    case guardrailViolation
     case processingFailed(String)
 
     var errorDescription: String? {
@@ -417,8 +394,6 @@ enum AIProcessorError: Error, LocalizedError {
             return reason
         case .contextWindowExceeded:
             return "The text is too long to process"
-        case .guardrailViolation:
-            return "Apple's on-device model declined to process this text."
         case .processingFailed(let reason):
             return "Processing failed: \(reason)"
         }

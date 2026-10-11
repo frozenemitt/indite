@@ -13,10 +13,9 @@ class FoundationModelsHelper {
     /// profanity or other language that default guardrails would reject.
     /// Apple's `.permissiveContentTransformations` is designed specifically for
     /// apps that transform existing user content (e.g. cleaning up transcriptions) —
-    /// but developers on Apple's own forums have confirmed it only relaxes the
-    /// checks applied to a plain `String` response, not to guided (`@Generable`)
-    /// output. A structured request can still trip the guardrail that the
-    /// equivalent free-text request would have passed; see `generateTextAfterGuardrailViolation`.
+    /// but Apple documents that it only relaxes the checks applied to a plain `String`
+    /// response. Any other response type is screened as strictly as the default
+    /// guardrails, and on macOS 27 that screen throws `LanguageModelError.refusal`.
     static let permissiveModel = SystemLanguageModel(
         guardrails: .permissiveContentTransformations
     )
@@ -62,55 +61,35 @@ class FoundationModelsHelper {
         try await session.respond(to: prompt, generating: type, options: options).content
     }
 
-    /// Generate the rewritten transcript, handing each partial version to `onPartial`
+    /// Generate a plain-text answer, handing each partial version to `onPartial`
     /// as it is written.
     ///
     /// Takes as long as asking for the whole answer at once — measured at 3.0–3.1 s
     /// either way for 733 characters — but the first words exist after about 0.7 s
     /// instead of at the end, so the panel can show them while the rest is written.
-    static func streamTranscription(
+    ///
+    /// The answer is returned as written. Measured on the macOS 27 model, 164
+    /// plain-text Clean Up and Summarize answers never opened with a preamble such
+    /// as "Here is the text:". A first line ending in a colon was always the user's
+    /// own content, like "Agenda for tomorrow:", so stripping one would delete real
+    /// text.
+    static func streamText(
         session: LanguageModelSession,
         prompt: String,
         options: GenerationOptions,
         onPartial: @MainActor (String) -> Void
-    ) async throws -> TranscriptionResult {
-        let stream = session.streamResponse(to: prompt, generating: TranscriptionResult.self, options: options)
+    ) async throws -> String {
+        let stream = session.streamResponse(to: prompt, options: options)
         for try await snapshot in stream {
             // A pass the deadline cancelled stops here, even if the stream goes on
             // yielding. Otherwise the old rewrite kept streaming into the next
             // dictation's panel.
             try Task.checkCancellation()
-            if let partial = snapshot.content.text, !partial.isEmpty {
-                onPartial(partial)
+            if !snapshot.content.isEmpty {
+                onPartial(snapshot.content)
             }
         }
         return try await stream.collect().content
-    }
-
-    // MARK: - Guardrail Recovery
-
-    /// Retry a guardrail-refused structured request as plain text.
-    ///
-    /// `.permissiveContentTransformations` does not relax the checks applied to
-    /// guided (`@Generable`) generation — only to a plain `String` response — so a
-    /// prompt that trips the guardrail as structured output can still often succeed
-    /// once asked for free text instead. Builds a fresh session with the same
-    /// instructions rather than reusing the failed one, since the refusal is now
-    /// part of that session's transcript and would colour every turn after it.
-    ///
-    /// The answer is returned as written. Measured on the macOS 27 model, 21
-    /// plain-text retries of seven guardrail-refused Clean Up and Summarize
-    /// requests, and 143 other plain-text answers, never opened with a preamble
-    /// such as "Here is the text:". A first line ending in a colon was always the
-    /// user's own content, like "Agenda for tomorrow:", so stripping one would
-    /// delete real text.
-    static func generateTextAfterGuardrailViolation(
-        instructions: String,
-        prompt: String,
-        options: GenerationOptions
-    ) async throws -> String {
-        let session = createSession(instructions: instructions)
-        return try await generateText(session: session, prompt: prompt, options: options)
     }
 
     // MARK: - Language Support
