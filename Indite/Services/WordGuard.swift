@@ -74,6 +74,24 @@ enum WordGuard {
         return Outcome(text: joined(output), restored: restored, removed: removed)
     }
 
+    /// The share of the words said that appear in the rewrite, each counted as often
+    /// as it was said.
+    ///
+    /// Order is ignored and nothing is lined up, so it costs one pass over each text
+    /// and has no word limit.
+    static func share(of said: String, keptIn rewrite: String) -> Double {
+        var available: [String: Int] = [:]
+        for word in words(in: rewrite) { available[word.key, default: 0] += 1 }
+        let saidKeys = words(in: said).map(\.key)
+        guard !saidKeys.isEmpty else { return 1 }
+        var kept = 0
+        for key in saidKeys where available[key, default: 0] > 0 {
+            available[key, default: 0] -= 1
+            kept += 1
+        }
+        return Double(kept) / Double(saidKeys.count)
+    }
+
     // MARK: - Words
 
     /// A word as written, the space that followed it, and the form compared.
