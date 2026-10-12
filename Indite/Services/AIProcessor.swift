@@ -254,7 +254,7 @@ final class AIProcessor {
                     options: options
                 )
             }
-            return keepingWords(of: text, in: try cleaned(result), for: prompt)
+            return try keepingWords(of: text, in: try cleaned(result), for: prompt)
 
         // macOS 27 throws the top-level LanguageModelError for these failures, not the
         // deprecated LanguageModelSession.GenerationError.
@@ -330,8 +330,22 @@ final class AIProcessor {
     }
 
     /// Hold a prompt that keeps the speaker's words to it; see `WordGuard`.
-    private func keepingWords(of said: String, in rewrite: String, for prompt: Prompt) -> String {
+    ///
+    /// An answer that lost most of what was said is not a correction, and is thrown
+    /// out whole rather than repaired. Apple documents that a plain-text request can
+    /// come back as a refusal sentence instead of an error, and repairing one word by
+    /// word let the refusal's words through as if they were misheard ones: "I can
+    /// help people" came back as "I can't help people". Measured on 2026-10-12, 64
+    /// real Simple Clean Better answers kept 75 to 100% of the words said, all but
+    /// three at least 95%, while 132 refusal sentences set against 22 dictations kept
+    /// at most 10%.
+    private func keepingWords(of said: String, in rewrite: String, for prompt: Prompt) throws -> String {
         guard prompt.keepsWords else { return rewrite }
+        let kept = WordGuard.share(of: said, keptIn: rewrite)
+        guard kept >= 0.5 else {
+            Log.ai.error("The answer kept \(Int(kept * 100), privacy: .public)% of the words said, so it was not used")
+            throw AIProcessorError.answerLostWords
+        }
         let outcome = WordGuard.apply(said: said, rewrite: rewrite)
         if outcome.restored > 0 || outcome.removed > 0 {
             Log.ai.notice("Word check put back \(outcome.restored, privacy: .public) words and took out \(outcome.removed, privacy: .public) added ones")
@@ -378,6 +392,7 @@ enum AIProcessorError: Error, LocalizedError {
     case languageNotSupported
     case appleIntelligenceUnavailable(String)
     case contextWindowExceeded
+    case answerLostWords
     case processingFailed(String)
 
     var errorDescription: String? {
@@ -394,6 +409,8 @@ enum AIProcessorError: Error, LocalizedError {
             return reason
         case .contextWindowExceeded:
             return "The text is too long to process"
+        case .answerLostWords:
+            return "The AI's answer left out most of what was said, so it was not used."
         case .processingFailed(let reason):
             return "Processing failed: \(reason)"
         }
