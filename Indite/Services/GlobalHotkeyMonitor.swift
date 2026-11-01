@@ -50,6 +50,9 @@ private enum HotkeyAction: Sendable {
     case tap
     /// Two quick taps: the recording goes on until the next press.
     case lock
+    /// A hold-to-talk press has turned out to be a dictation: held past a tap, or the
+    /// second press of a double tap. Until then it records without a sound or a panel.
+    case confirm
     /// The Globe key turned out to be a modifier for another key, so the recording it
     /// started was never meant. Cancelled without the stop sound.
     case abandon
@@ -111,7 +114,7 @@ private struct TapState: Sendable {
         if tapPending {
             tapPending = false
             isSecondTap = true
-            return nil
+            return .confirm
         }
         return .activate
     }
@@ -231,6 +234,9 @@ final class GlobalHotkeyMonitor {
 
     /// Recording should begin.
     var onActivate: (() -> Void)?
+    /// The recording that began is a dictation, not a tap, and can show itself.
+    /// Push-to-talk only.
+    var onConfirm: (() -> Void)?
     /// Recording should end and transcribe. Push-to-talk only.
     var onDeactivate: (() -> Void)?
     /// Recording should flip state. Toggle mode only.
@@ -590,6 +596,17 @@ final class GlobalHotkeyMonitor {
         }
     }
 
+    /// Show the recording once the key has been down longer than a tap. A tap, or a
+    /// Globe press that became Fn+Delete, never shows at all.
+    private func confirmIfStillHeld() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: TapState.tapLength)
+            guard let self else { return }
+            let held = tapState.withLock { $0.isKeyDown && !$0.globeUsedAsModifier }
+            if held { onConfirm?() }
+        }
+    }
+
     private func perform(_ action: HotkeyAction) {
         switch action {
         case .activate:
@@ -604,6 +621,10 @@ final class GlobalHotkeyMonitor {
                 Log.hotkey.error("a press followed a release within \(Self.chatterWindow, privacy: .public) — the Globe key is chattering")
             }
             onActivate?()
+            confirmIfStillHeld()
+
+        case .confirm:
+            onConfirm?()
 
         case .deactivate:
             lastRelease = .now

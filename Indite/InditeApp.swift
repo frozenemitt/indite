@@ -345,7 +345,10 @@ struct InditeApp: App {
         /// `GlobalHotkeyMonitor` decides which callbacks fire, so both live here.
         private func wireHotkeyCallbacks() {
             hotkeyMonitor.onActivate = {
-                Task { @MainActor in await coordinator.start() }
+                Task { @MainActor in await coordinator.start(announced: false) }
+            }
+            hotkeyMonitor.onConfirm = {
+                Task { @MainActor in coordinator.confirm() }
             }
             hotkeyMonitor.onDeactivate = {
                 Task { @MainActor in await coordinator.stopAndProcess() }
