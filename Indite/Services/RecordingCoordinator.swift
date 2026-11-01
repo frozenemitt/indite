@@ -53,6 +53,14 @@ final class RecordingCoordinator {
     private var activeProfile: AppProfile?
     #endif
 
+    /// Whether this dictation has shown itself with the start sound and the panel.
+    private var isAnnounced = false
+
+    /// Whether to show it as soon as the microphone is live. A hold-to-talk press
+    /// starts without, so that a tap shows nothing; `confirm()` sets it once the press
+    /// turns out to be a dictation.
+    private var announcesWhenLive = true
+
     /// Stops a recording that has run past `settings.maxRecordingSeconds`.
     private var maxDurationTask: Task<Void, Never>?
 
@@ -261,7 +269,9 @@ final class RecordingCoordinator {
         }
     }
 
-    func start() async {
+    /// - Parameter announced: Play the start sound and show the panel as soon as the
+    ///   microphone is live. False for a hold-to-talk press, which waits for `confirm()`.
+    func start(announced: Bool = true) async {
         // One start at a time. A press, release and press queued behind a busy main
         // thread used to run two starts together, and the second tore down the first.
         //
@@ -269,6 +279,8 @@ final class RecordingCoordinator {
         // A release that landed during that wait used to find no start in flight and
         // was dropped. The microphone then opened with nobody holding the key.
         guard startTask == nil else { return }
+        isAnnounced = false
+        announcesWhenLive = announced
         let task = Task { await self.begin() }
         startTask = task
         await task.value
@@ -327,12 +339,7 @@ final class RecordingCoordinator {
             return
         }
 
-        // Sounded only once capture is live, so the user does not talk over the gap:
-        // `startRecording` returns after the audio engine has started, and every
-        // buffer from that moment on is kept. Nothing may come before it, since the
-        // user waits for this sound to speak.
-        AudioFeedbackService.shared.playIfEnabled(.recordingStarted, settings: settings)
-        Log.dictation.notice("Start sound played")
+        if announcesWhenLive { announce() }
         startMaxDurationWatchdog()
 
         // Load the model while the user is still speaking. It has to be in memory
@@ -343,12 +350,6 @@ final class RecordingCoordinator {
             aiProcessor.prewarm(promptId: rewritePromptId)
         }
 
-        #if os(macOS)
-        if settings.showDictationOverlay {
-            overlay.show()
-            startOverlayTicker()
-        }
-        #endif
         Log.dictation.notice("Recording started")
 
         // Accessibility work on the target app, after the sound and the panel and
@@ -387,6 +388,33 @@ final class RecordingCoordinator {
         #else
         if usesAI {
             startPrefixWarmer()
+        }
+        #endif
+    }
+
+    /// Show a hold-to-talk recording: the key has been held past a tap, or pressed a
+    /// second time for a double tap. The microphone has been live since the press, so
+    /// nothing said before this is lost.
+    func confirm() {
+        announcesWhenLive = true
+        if isRecording { announce() }
+    }
+
+    /// The start sound and the panel, once per dictation.
+    private func announce() {
+        guard !isAnnounced else { return }
+        isAnnounced = true
+
+        // Sounded only once capture is live, so the user does not talk over the gap:
+        // `startRecording` returns after the audio engine has started, and every
+        // buffer from that moment on is kept.
+        AudioFeedbackService.shared.playIfEnabled(.recordingStarted, settings: settings)
+        Log.dictation.notice("Start sound played")
+
+        #if os(macOS)
+        if settings.showDictationOverlay {
+            overlay.show()
+            startOverlayTicker()
         }
         #endif
     }
@@ -624,7 +652,8 @@ final class RecordingCoordinator {
     /// Throw away an in-flight recording without producing any text.
     ///
     /// - Parameter quietly: Skip the stop sound, for a recording the user never meant
-    ///   to start, such as one begun by Globe pressed as part of Fn+Delete.
+    ///   to start, such as one begun by Globe pressed as part of Fn+Delete, or by a
+    ///   tap too short to hold any words.
     func cancel(quietly: Bool = false) async {
         if let startTask { await startTask.value }
         // Not while a stop is delivering: its words are already on their way.
@@ -645,7 +674,7 @@ final class RecordingCoordinator {
         if !quietly {
             AudioFeedbackService.shared.playIfEnabled(.recordingStopped, settings: settings)
         }
-        Log.dictation.notice("Recording cancelled\(quietly ? " — Globe was used as a modifier" : "", privacy: .public)")
+        Log.dictation.notice("Recording cancelled\(quietly ? " — the press was not a dictation" : "", privacy: .public)")
     }
 
     /// Stop the dictation under way for a quit, and keep its words in the history

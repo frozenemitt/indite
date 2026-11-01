@@ -29,7 +29,6 @@ struct HelpArticle: Identifiable, Hashable, Sendable {
     enum Action: Hashable, Sendable {
         /// Indite's Settings, at the tab the article names.
         case inditeSettings(SettingsTab)
-        case keyboardSettings
         case screenRecordingSettings
         case accessibilitySettings
         case microphoneSettings
@@ -38,7 +37,6 @@ struct HelpArticle: Identifiable, Hashable, Sendable {
         var title: String {
             switch self {
             case .inditeSettings: "Open Indite Settings"
-            case .keyboardSettings: "Open Keyboard Settings"
             case .screenRecordingSettings: "Open Screen & System Audio Recording"
             case .accessibilitySettings: "Open Accessibility Settings"
             case .microphoneSettings: "Open Microphone Settings"

@@ -139,22 +139,15 @@ struct ReleaseNotesView: View {
 /// A key drawn as a keycap, for where the windows say which key to press.
 struct KeyCap: View {
     let key: String
-    var showsGlobe = false
 
     var body: some View {
-        HStack(spacing: 3) {
-            if showsGlobe {
-                Image(systemName: "globe")
-            } else {
-                Text(key)
-            }
-        }
+        Text(key)
         .font(.callout.weight(.medium))
         .padding(.horizontal, 7)
         .frame(minWidth: 26, minHeight: 22)
         .background(.background, in: RoundedRectangle(cornerRadius: 5))
         .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator))
-        .accessibilityLabel(showsGlobe ? "Globe key" : key)
+        .accessibilityLabel(key)
     }
 }
 

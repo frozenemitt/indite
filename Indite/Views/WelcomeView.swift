@@ -43,10 +43,8 @@ struct WelcomeView: View {
     // Settings or in a macOS prompt, not here.
     @State private var hasAccessibility = false
     @State private var microphoneAndSpeech = PermissionState.notAsked
-    @State private var globeKeyIsFree = true
     /// Decided once, as setup opens, so the line stays and turns green when fixed
     /// rather than disappearing.
-    @State private var showsGlobeKeySetting = false
 
     @State private var practiceText = ""
 
@@ -169,9 +167,6 @@ struct WelcomeView: View {
 
                 Section("Try It") {
                     keyRow
-                    if showsGlobeKeySetting {
-                        globeKeyRow
-                    }
                     practiceBox
                 }
 
@@ -210,7 +205,6 @@ struct WelcomeView: View {
             }
         }
         .task {
-            showsGlobeKeySetting = settings.useGlobeKey && !GlobalHotkeyMonitor.globeKeyDoesNothing
             while !Task.isCancelled {
                 refresh()
                 try? await Task.sleep(for: .seconds(1))
@@ -277,7 +271,7 @@ struct WelcomeView: View {
             HStack(spacing: 10) {
                 Text("Dictation key")
                 Spacer()
-                KeyCap(key: settings.hotkeyDisplay, showsGlobe: settings.useGlobeKey)
+                KeyCap(key: settings.dictationKey.symbol)
                 Button(action: chooseKey) { Text("Change…").frame(maxWidth: .infinity) }
                     .frame(width: Self.rowButtonWidth)
             }
@@ -292,30 +286,6 @@ struct WelcomeView: View {
                 .frame(width: FamilyMetrics.iconColumn, height: 1)
             content()
         }
-    }
-
-    /// macOS's own use of the Globe key, shown only when it gets in the way.
-    private var globeKeyRow: some View {
-        HStack(spacing: FamilyMetrics.iconSpacing) {
-            Image(systemName: globeKeyIsFree ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .font(.system(size: 15))
-                .foregroundStyle(globeKeyIsFree ? AnyShapeStyle(.green) : AnyShapeStyle(.orange))
-                .frame(width: FamilyMetrics.iconColumn)
-            Text(globeKeyIsFree
-                 ? "The Globe key is free for Indite."
-                 : "macOS also uses the Globe key. Set “Press \(Image(systemName: "globe")) key to” to Do Nothing.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            // Kept in place, unseen, once the key is free, so the row keeps its height
-            // and nothing below it moves.
-            Button(action: openKeyboardSettings) { Text("Open Settings…").frame(maxWidth: .infinity) }
-                .frame(width: Self.rowButtonWidth)
-                .opacity(globeKeyIsFree ? 0 : 1)
-                .disabled(globeKeyIsFree)
-        }
-        .frame(minHeight: 36)
     }
 
     /// The place to try the key before the window closes. The words arrive as they
@@ -394,8 +364,6 @@ struct WelcomeView: View {
         } else {
             microphoneAndSpeech = .notAsked
         }
-
-        globeKeyIsFree = GlobalHotkeyMonitor.globeKeyDoesNothing
     }
 
     // MARK: - Actions
@@ -430,15 +398,11 @@ struct WelcomeView: View {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
     }
 
-    private func openKeyboardSettings() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
-    }
-
     // MARK: - Words
 
     /// What to do with the key, with the key drawn as a keycap.
     private var practicePrompt: some View {
-        let key = KeyCap(key: settings.hotkeyDisplay, showsGlobe: settings.useGlobeKey)
+        let key = KeyCap(key: settings.dictationKey.symbol)
         return HStack(spacing: 5) {
             switch settings.hotkeyActivationMode {
             case .pushToTalk:

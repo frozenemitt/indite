@@ -164,9 +164,10 @@ final class AppSettings {
         didSet { save("showMeetingIndicator", showMeetingIndicator) }
     }
 
-    /// Use the Globe / Fn key on its own instead of the key combination below.
-    var useGlobeKey: Bool {
-        didSet { save("useGlobeKey", useGlobeKey) }
+    /// Which Option key dictates: left, right or either. Stored as `OptionKey`'s raw
+    /// value.
+    var dictationKeyRaw: String {
+        didSet { save("dictationKeyRaw", dictationKeyRaw) }
     }
 
     /// Enable a second shortcut that takes back the last insertion.
@@ -174,7 +175,7 @@ final class AppSettings {
         didSet { save("undoHotkeyEnabled", undoHotkeyEnabled) }
     }
 
-    /// The undo shortcut. Always a combination — the Globe key is taken.
+    /// The undo shortcut. Always a combination of a key and modifiers.
     var undoHotkeyString: String {
         didSet { save("undoHotkeyString", undoHotkeyString) }
     }
@@ -237,13 +238,6 @@ final class AppSettings {
         didSet { save("maxRecordingSeconds", maxRecordingSeconds) }
     }
 
-    // MARK: - Hotkey Settings (macOS only)
-
-    /// The global hotkey combination (stored as string representation)
-    var hotkeyString: String {
-        didSet { save("hotkeyString", hotkeyString) }
-    }
-
     // MARK: - Initialization
 
     init() {
@@ -270,9 +264,12 @@ final class AppSettings {
         }
         UserDefaults.standard.removeObject(forKey: "playProcessingIndicator")
         self.processingSoundName = UserDefaults.standard.string(forKey: "processingSoundName") ?? "Bottle"
-        self.hotkeyString = UserDefaults.standard.string(forKey: "hotkeyString") ?? "⌃⌥⌘C"
         self.hotkeyActivationModeRaw = UserDefaults.standard.string(forKey: "hotkeyActivationModeRaw") ?? "pushToTalk"
-        self.useGlobeKey = UserDefaults.standard.object(forKey: "useGlobeKey") as? Bool ?? true
+        // The Globe key and a recorded combination were the choices until Option
+        // replaced both.
+        UserDefaults.standard.removeObject(forKey: "useGlobeKey")
+        UserDefaults.standard.removeObject(forKey: "hotkeyString")
+        self.dictationKeyRaw = UserDefaults.standard.string(forKey: "dictationKeyRaw") ?? "right"
         self.undoHotkeyEnabled = UserDefaults.standard.object(forKey: "undoHotkeyEnabled") as? Bool ?? true
         self.undoHotkeyString = UserDefaults.standard.string(forKey: "undoHotkeyString") ?? "⌃⌥⌘Z"
         self.retypeHotkeyEnabled = UserDefaults.standard.object(forKey: "retypeHotkeyEnabled") as? Bool ?? true
@@ -364,9 +361,8 @@ final class AppSettings {
         completeSoundName = "Glass"
         errorSoundName = "Basso"
         processingSoundName = "Bottle"
-        hotkeyString = "⌃⌥⌘C"
         hotkeyActivationModeRaw = "pushToTalk"
-        useGlobeKey = true
+        dictationKeyRaw = "right"
         undoHotkeyEnabled = true
         undoHotkeyString = "⌃⌥⌘Z"
         retypeHotkeyEnabled = true
@@ -446,48 +442,28 @@ extension AppSettings {
         set { outputModeRaw = newValue.rawValue }
     }
 
-    /// The trigger to hand `GlobalHotkeyMonitor`.
-    ///
-    /// Falls back to the Globe key when `hotkeyString` cannot be parsed, so a bad
-    /// custom combination leaves the user with a working hotkey rather than none.
-    var hotkeyTrigger: HotkeyTrigger {
-        guard !useGlobeKey else { return .globe }
-        guard let (keyCode, flags) = parseHotkeyForEventTap() else {
-            Log.settings.error("Could not parse '\(self.hotkeyString, privacy: .public)', falling back to the Globe key")
-            return .globe
-        }
-        return .combo(keyCode: keyCode, modifiers: flags)
+    /// The Option key that dictates, backed by `dictationKeyRaw`.
+    var dictationKey: OptionKey {
+        get { OptionKey(rawValue: dictationKeyRaw) ?? .right }
+        set { dictationKeyRaw = newValue.rawValue }
     }
 
-    /// `hotkeyString` as it should read on screen. The Space key is stored as a literal
-    /// space, which showed as a bare "⌃⌥⌘" and read as an unfinished binding.
-    var hotkeyDisplay: String {
-        hotkeyString.hasSuffix(" ") ? String(hotkeyString.dropLast()) + "Space" : hotkeyString
-    }
-
-    /// The undo binding to hand `GlobalHotkeyMonitor`: nil when switched off, when
-    /// unparseable, or when it is the dictation trigger. The monitor checks undo first,
-    /// so a clash silently stopped dictation. Dictation wins it now, and Settings says so.
+    /// The undo binding to hand `GlobalHotkeyMonitor`: nil when switched off or
+    /// unparseable.
     var undoHotkeyTrigger: HotkeyTrigger? {
         guard undoHotkeyEnabled,
               let (keyCode, flags) = parseHotkeyForEventTap(undoHotkeyString) else { return nil }
-        let undo = HotkeyTrigger.combo(keyCode: keyCode, modifiers: flags)
-        return undo == hotkeyTrigger ? nil : undo
+        return HotkeyTrigger(keyCode: keyCode, modifiers: flags)
     }
 
     /// The type-again binding to hand `GlobalHotkeyMonitor`: nil when switched off, when
-    /// unparseable, or when it is the dictation trigger or the undo one. Those two are
-    /// checked first, so a clash would leave this one silently dead; Settings says so.
+    /// unparseable, or when it is the undo one. Undo is checked first, so a clash would
+    /// leave this one silently dead; Settings says so.
     var retypeHotkeyTrigger: HotkeyTrigger? {
         guard retypeHotkeyEnabled,
               let (keyCode, flags) = parseHotkeyForEventTap(retypeHotkeyString) else { return nil }
-        let retype = HotkeyTrigger.combo(keyCode: keyCode, modifiers: flags)
-        return retype == hotkeyTrigger || retype == undoHotkeyTrigger ? nil : retype
-    }
-
-    /// Parse `hotkeyString` (e.g. "⌃⌥⌘C") into event-tap terms.
-    func parseHotkeyForEventTap() -> (keyCode: CGKeyCode, modifiers: CGEventFlags)? {
-        parseHotkeyForEventTap(hotkeyString)
+        let retype = HotkeyTrigger(keyCode: keyCode, modifiers: flags)
+        return retype == undoHotkeyTrigger ? nil : retype
     }
 
     func parseHotkeyForEventTap(_ string: String) -> (keyCode: CGKeyCode, modifiers: CGEventFlags)? {
@@ -523,7 +499,7 @@ extension AppSettings {
         return keyCodes[lowered]
     }
 
-    /// Write a captured keystroke the way `hotkeyString` stores it, e.g. "⌃⌥⌘C".
+    /// Write a captured keystroke the way a shortcut is stored, e.g. "⌃⌥⌘Z".
     ///
     /// Nil when the keystroke cannot be a trigger: a key outside the table above, or
     /// one pressed without ⌃, ⌥ or ⌘, which would swallow that plain keystroke in

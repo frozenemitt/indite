@@ -125,7 +125,7 @@ struct MenuBarView: View {
         if transcriptionEngine.isBusy, transcriptionEngine.owner == .shortcut {
             return "A shortcut is recording."
         }
-        let key = settings.useGlobeKey ? "the Globe key" : settings.hotkeyDisplay
+        let key = settings.dictationKey.phrase
         switch settings.hotkeyActivationMode {
         case .pushToTalk: return "Ready. Hold \(key) to dictate."
         case .toggle: return "Ready. Press \(key) to dictate."

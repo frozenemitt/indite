@@ -10,7 +10,8 @@ import OSLog
 
 /// How a hotkey starts and stops a recording.
 enum HotkeyActivationMode: String, CaseIterable, Identifiable, Sendable {
-    /// Hold the key to record, release to transcribe.
+    /// Hold the key to record, release to transcribe. Two quick taps keep it
+    /// recording until the next press.
     case pushToTalk
     /// Press once to start, press again to stop.
     case toggle
@@ -19,22 +20,76 @@ enum HotkeyActivationMode: String, CaseIterable, Identifiable, Sendable {
 
     var displayName: String {
         switch self {
-        case .pushToTalk: "Hold to talk"
+        case .pushToTalk: "Hold to talk, double-tap to keep listening"
         case .toggle: "Press to start, press to stop"
         }
     }
 }
 
-/// Which key activates recording.
-enum HotkeyTrigger: Equatable, Sendable {
-    /// The Globe / Fn key on its own.
-    case globe
-    /// A conventional key plus modifiers, e.g. ⌃⌥⌘C.
-    case combo(keyCode: CGKeyCode, modifiers: CGEventFlags)
+/// The Option key that dictates, pressed on its own.
+enum OptionKey: String, CaseIterable, Identifiable, Sendable {
+    case left, right, either
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .left: "Left Option"
+        case .right: "Right Option"
+        case .either: "Either Option key"
+        }
+    }
+
+    /// The key in a sentence: "Hold the right Option key to dictate."
+    var phrase: String {
+        switch self {
+        case .left: "the left Option key"
+        case .right: "the right Option key"
+        case .either: "either Option key"
+        }
+    }
+
+    /// How the key reads on a key cap.
+    var symbol: String {
+        switch self {
+        case .left: "Left ⌥"
+        case .right: "Right ⌥"
+        case .either: "⌥"
+        }
+    }
+
+    func matches(_ keyCode: CGKeyCode) -> Bool {
+        switch self {
+        case .left: keyCode == leftOptionKeyCode
+        case .right: keyCode == rightOptionKeyCode
+        case .either: keyCode == leftOptionKeyCode || keyCode == rightOptionKeyCode
+        }
+    }
 }
 
-private let fnKeyCode = CGKeyCode(kVK_Function)
+/// A key plus modifiers, e.g. ⌃⌥⌘Z: the undo and type-again shortcuts.
+struct HotkeyTrigger: Equatable, Sendable {
+    let keyCode: CGKeyCode
+    let modifiers: CGEventFlags
+}
+
+private let leftOptionKeyCode = CGKeyCode(kVK_Option)
+private let rightOptionKeyCode = CGKeyCode(kVK_RightOption)
 private let escapeKeyCode = CGKeyCode(kVK_Escape)
+
+/// The bits in an event's flags that say which Option key is down. The shared
+/// `.maskAlternate` stays set while either is held, so it cannot tell a release of one
+/// from the other.
+private let leftOptionDeviceBit: UInt64 = 0x20   // NX_DEVICELALTKEYMASK
+private let rightOptionDeviceBit: UInt64 = 0x40  // NX_DEVICERALTKEYMASK
+
+private func optionIsDown(_ keyCode: CGKeyCode, in flags: CGEventFlags) -> Bool {
+    let bit = keyCode == leftOptionKeyCode ? leftOptionDeviceBit : rightOptionDeviceBit
+    return flags.rawValue & bit != 0
+}
+
+/// Modifiers that make an Option press part of a shortcut rather than a dictation.
+private let otherModifiers: CGEventFlags = [.maskCommand, .maskControl, .maskShift, .maskSecondaryFn]
 
 /// Modifier bits we compare against, ignoring caps lock and device-specific noise.
 private let relevantModifiers: CGEventFlags = [
@@ -44,8 +99,16 @@ private let relevantModifiers: CGEventFlags = [
 /// What a tapped keystroke turned out to mean.
 private enum HotkeyAction: Sendable {
     case activate, deactivate, toggle, cancel, undo, retype
-    /// The Globe key turned out to be a modifier for another key, so the recording it
-    /// started was never meant. Cancelled without the stop sound.
+    /// A hold-to-talk press came up too soon to be a dictation. Dropped quietly unless
+    /// a second press follows and makes it the start of a lock.
+    case tap
+    /// Two quick taps: the recording goes on until the next press.
+    case lock
+    /// A hold-to-talk press has turned out to be a dictation: held past a tap, or the
+    /// second press of a double tap. Until then it records without a sound or a panel.
+    case confirm
+    /// The Option key turned out to be a modifier for another key or a click, so the
+    /// recording it started was never meant. Cancelled without the stop sound.
     case abandon
     /// The settings screen is waiting for a new binding, and this was the keystroke.
     case capture(keyCode: CGKeyCode, modifiers: CGEventFlags)
@@ -53,26 +116,114 @@ private enum HotkeyAction: Sendable {
 
 /// Everything the tap callback reads, kept where the tap's own thread can reach it.
 private struct TapState: Sendable {
-    var trigger: HotkeyTrigger = .globe
+    var dictationKey: OptionKey = .right
     var undoTrigger: HotkeyTrigger?
     var retypeTrigger: HotkeyTrigger?
     var activationMode: HotkeyActivationMode = .pushToTalk
     var isRecording = false
-    var isKeyDown = false
+    /// The Option key held down as the dictation key, left or right.
+    var heldKey: CGKeyCode?
+    var isKeyDown: Bool { heldKey != nil }
     var isCapturing = false
-    /// Another key went down while Globe was held: Fn+Delete, Fn+arrow, a Globe
-    /// shortcut. The release that follows must not act as a dictation's release.
-    var globeUsedAsModifier = false
-    /// Whether this Globe press started a recording rather than stopped one. Only a
-    /// start can be taken back when the press turns out to be a modifier.
+    /// Another key, modifier or click came while Option was held: ⌥E, ⌥Tab, ⌥⌘,
+    /// Option-drag. The release that follows must not act as a dictation's release.
+    var optionUsedAsModifier = false
+    /// Whether this press started a recording rather than stopped one. Only a start
+    /// can be taken back when the press turns out to be a modifier.
     var pressStartedRecording = false
+
+    // Hold to talk, with double-tap to lock.
+
+    /// When the trigger last went down.
+    var pressedAt: ContinuousClock.Instant?
+    /// A short tap came up and its recording is still running, waiting to see whether
+    /// a second press follows. Cleared by that press, or by the main actor when the
+    /// wait runs out, whichever takes the lock first.
+    var tapPending = false
+    /// This press followed a short tap. Released quickly, it locks the recording.
+    var isSecondTap = false
+    /// The recording is locked on, and the next press ends it.
+    var isLocked = false
+    /// This press ended a locked recording, so its release does nothing.
+    var pressEndsLock = false
+
+    /// Shorter than this, a hold is a tap: too short to have said anything after the
+    /// start sound. Also how long a tap waits for the second press of a double tap.
+    static let tapLength: Duration = .milliseconds(300)
+
+    /// A press of the dictation key, as the current mode reads it.
+    mutating func press(at now: ContinuousClock.Instant) -> HotkeyAction? {
+        // Toggle mode acts on the release, once the press is known not to be ⌥E or
+        // Option-drag. Acting on the press started and stopped recordings in the
+        // middle of typing.
+        guard activationMode == .pushToTalk else {
+            pressStartedRecording = false
+            return nil
+        }
+        pressedAt = now
+        pressStartedRecording = true
+        if isLocked {
+            isLocked = false
+            pressEndsLock = true
+            pressStartedRecording = false
+            return .deactivate
+        }
+        // The first tap's recording is still running, so this press carries it on
+        // rather than starting another.
+        if tapPending {
+            tapPending = false
+            isSecondTap = true
+            return .confirm
+        }
+        return .activate
+    }
+
+    /// A release of the dictation key, as the current mode reads it.
+    mutating func release(at now: ContinuousClock.Instant) -> HotkeyAction? {
+        guard activationMode == .pushToTalk else { return .toggle }
+        if pressEndsLock {
+            pressEndsLock = false
+            return nil
+        }
+        let wasTap = pressedAt.map { now - $0 < Self.tapLength } ?? false
+        if isSecondTap {
+            isSecondTap = false
+            if wasTap {
+                isLocked = true
+                return .lock
+            }
+            return .deactivate
+        }
+        if wasTap {
+            tapPending = true
+            return .tap
+        }
+        return .deactivate
+    }
+
+    /// Another key, modifier or click arrived while Option was held, so Option is a
+    /// modifier, and the recording its press began was never meant. A press that
+    /// stopped a recording has already delivered it, so there is nothing to take back.
+    mutating func useAsModifier() -> HotkeyAction? {
+        guard !optionUsedAsModifier else { return nil }
+        optionUsedAsModifier = true
+        return pressStartedRecording ? .abandon : nil
+    }
+
+    /// The press turned out to be a modifier for another key, and its release means
+    /// nothing. Whatever gesture it was part of is over.
+    mutating func releaseAsModifier() {
+        optionUsedAsModifier = false
+        isSecondTap = false
+        pressEndsLock = false
+    }
 }
 
 /// System-wide hotkey monitor built on a CGEventTap.
 ///
-/// Carbon's `RegisterEventHotKey` cannot bind the Globe/Fn key and gives no key-up
-/// callback, so it supports neither of the two things we need. An event tap sees the
-/// raw `.flagsChanged` stream, which carries both.
+/// Carbon's `RegisterEventHotKey` cannot bind a modifier key on its own and gives no
+/// key-up callback, so it supports neither of the two things we need. An event tap
+/// sees the raw `.flagsChanged` stream, which carries both.
 ///
 /// Requires Accessibility trust — `CGEvent.tapCreate` returns nil without it.
 ///
@@ -95,11 +246,11 @@ final class GlobalHotkeyMonitor {
 
     // MARK: - Configuration
 
-    /// The key that activates recording.
-    var trigger: HotkeyTrigger = .globe {
+    /// The Option key that dictates.
+    var dictationKey: OptionKey = .right {
         didSet {
-            let value = trigger
-            tapState.withLock { $0.trigger = value }
+            let value = dictationKey
+            tapState.withLock { $0.dictationKey = value }
         }
     }
 
@@ -134,7 +285,16 @@ final class GlobalHotkeyMonitor {
     var isRecording = false {
         didSet {
             let value = isRecording
-            tapState.withLock { $0.isRecording = value }
+            tapState.withLock { state in
+                state.isRecording = value
+                // Ended some other way — Escape, the time limit, the menu — so a lock
+                // or a waiting tap has nothing left to act on.
+                if !value {
+                    state.isLocked = false
+                    state.tapPending = false
+                    state.isSecondTap = false
+                }
+            }
         }
     }
 
@@ -142,6 +302,9 @@ final class GlobalHotkeyMonitor {
 
     /// Recording should begin.
     var onActivate: (() -> Void)?
+    /// The recording that began is a dictation, not a tap, and can show itself.
+    /// Push-to-talk only.
+    var onConfirm: (() -> Void)?
     /// Recording should end and transcribe. Push-to-talk only.
     var onDeactivate: (() -> Void)?
     /// Recording should flip state. Toggle mode only.
@@ -152,7 +315,7 @@ final class GlobalHotkeyMonitor {
     var onUndo: (() -> Void)?
     /// The last dictation should be typed again, where the cursor is now.
     var onRetype: (() -> Void)?
-    /// A recording started by the Globe key should be dropped quietly: the key was
+    /// A recording started by the Option key should be dropped quietly: the key was
     /// being used as a modifier.
     var onAbandon: (() -> Void)?
     /// A keystroke arrived while the settings screen was recording a new binding.
@@ -209,16 +372,6 @@ final class GlobalHotkeyMonitor {
     /// Globe key did nothing. One instance makes the two the same object.
     static let shared = GlobalHotkeyMonitor()
 
-    /// Whether macOS's "Press 🌐 key to" setting is Do Nothing. Anything else also
-    /// opens the emoji picker, switches the input source or starts Apple's dictation on
-    /// every press. Missing means the setting was never changed, and the factory
-    /// choice is not Do Nothing.
-    static var globeKeyDoesNothing: Bool {
-        let domain = "com.apple.HIToolbox" as CFString
-        CFPreferencesAppSynchronize(domain)
-        return (CFPreferencesCopyAppValue("AppleFnUsageType" as CFString, domain) as? Int) == 0
-    }
-
     init() {
         let (stream, continuation) = AsyncStream.makeStream(of: HotkeyAction.self)
         emit = continuation
@@ -250,10 +403,13 @@ final class GlobalHotkeyMonitor {
             return false
         }
 
+        // Clicks only to notice Option-click and Option-drag. None is ever swallowed.
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
-            (1 << CGEventType.keyUp.rawValue) |
-            (1 << CGEventType.flagsChanged.rawValue)
+            (1 << CGEventType.flagsChanged.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.rightMouseDown.rawValue) |
+            (1 << CGEventType.otherMouseDown.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -288,7 +444,7 @@ final class GlobalHotkeyMonitor {
 
         isRunning = true
         lastError = nil
-        Log.hotkey.notice("tap installed, trigger=\(String(describing: self.trigger), privacy: .public), mode=\(self.activationMode.rawValue, privacy: .public)")
+        Log.hotkey.notice("tap installed, key=\(self.dictationKey.rawValue, privacy: .public), mode=\(self.activationMode.rawValue, privacy: .public)")
         return true
     }
 
@@ -297,7 +453,7 @@ final class GlobalHotkeyMonitor {
         host?.invalidate()
         host = nil
         tapPort.withLockUnchecked { $0 = nil }
-        tapState.withLock { $0.isKeyDown = false }
+        tapState.withLock { $0.heldKey = nil }
         isRunning = false
     }
 
@@ -337,7 +493,7 @@ final class GlobalHotkeyMonitor {
             // Recording a new binding takes the keyboard whole, so the combination the
             // user presses cannot also fire the old hotkey or type into another app.
             // Modifiers on their own pass through: they are the user still assembling
-            // the combination, and the Globe key must not start a recording here.
+            // the combination, and Option must not start a recording here.
             if state.isCapturing {
                 guard type == .keyDown, !isRepeat else { return (type == .keyDown, nil) }
                 return (true, .capture(keyCode: keyCode, modifiers: flags))
@@ -345,77 +501,64 @@ final class GlobalHotkeyMonitor {
 
             switch type {
             case .flagsChanged:
-                guard case .globe = state.trigger, keyCode == fnKeyCode else { return (false, nil) }
-
-                // Swallowing the Globe key does not reach its "Press 🌐 to" action, which
-                // the system handles below the event tap. Setting that to "Do Nothing" in
-                // System Settings is what stops it.
-                //
-                // On a flagsChanged for the Fn key, the Fn bit tells press from release.
-                if flags.contains(.maskSecondaryFn) {
-                    guard !state.isKeyDown else { return (true, nil) }
-                    state.isKeyDown = true
-                    state.globeUsedAsModifier = false
-                    state.pressStartedRecording = !state.isRecording
-                    return (true, edge(pressed: true, mode: state.activationMode))
-                } else {
-                    guard state.isKeyDown else { return (true, nil) }
-                    state.isKeyDown = false
-                    if state.globeUsedAsModifier {
-                        state.globeUsedAsModifier = false
-                        return (true, nil)
+                // Option always reaches the app, so ⌥E, ⌥-arrow and Option-click work as
+                // they always have. The tap only watches it.
+                if let held = state.heldKey {
+                    if keyCode == held {
+                        guard !optionIsDown(keyCode, in: flags) else { return (false, nil) }
+                        state.heldKey = nil
+                        if state.optionUsedAsModifier {
+                            state.releaseAsModifier()
+                            return (false, nil)
+                        }
+                        return (false, state.release(at: .now))
                     }
-                    return (true, edge(pressed: false, mode: state.activationMode))
+                    // ⇧, ⌘, ⌃, Fn or the other Option while it is held: a shortcut.
+                    return (false, state.useAsModifier())
                 }
+
+                guard state.dictationKey.matches(keyCode), optionIsDown(keyCode, in: flags) else {
+                    return (false, nil)
+                }
+                // Pressed on top of another modifier, it is part of a shortcut from the
+                // start: ⌘⌥Esc, ⌃⌥⌘Z.
+                guard flags.intersection(otherModifiers).isEmpty else { return (false, nil) }
+                state.heldKey = keyCode
+                state.optionUsedAsModifier = false
+                return (false, state.press(at: .now))
 
             case .keyDown:
                 // Escape abandons an in-flight recording without producing text.
                 if keyCode == escapeKeyCode, state.isRecording { return (true, .cancel) }
 
-                // Any other key while Globe is held means Globe is a modifier — Fn+Delete,
-                // Fn+arrow keys, a Globe shortcut — and the recording its press started
-                // was never wanted. The key itself goes through to the app untouched.
-                // A press that stopped a toggle recording has already delivered it, so
-                // there is nothing to take back.
-                if case .globe = state.trigger, state.isKeyDown, !state.globeUsedAsModifier {
-                    state.globeUsedAsModifier = true
-                    let wasStart = state.activationMode == .pushToTalk || state.pressStartedRecording
-                    return (false, wasStart ? .abandon : nil)
+                // Any other key while Option is held means Option is a modifier — ⌥E,
+                // ⌥-arrow, ⌥Tab — and the recording its press started was never wanted.
+                // The key itself goes through to the app untouched. A locked recording
+                // is not held, so ⌘Tab and the rest reach it as ordinary keys.
+                if state.isKeyDown, !state.optionUsedAsModifier {
+                    return (false, state.useAsModifier())
                 }
 
                 // Checked before the record trigger so the two can never collide. The
                 // auto-repeat of a held undo shortcut is swallowed with it; letting it
                 // through sent the combination on to the app in front.
-                if case let .combo(undoKey, undoModifiers) = state.undoTrigger,
-                   keyCode == undoKey,
-                   flags.intersection(relevantModifiers) == undoModifiers.intersection(relevantModifiers) {
+                if let undo = state.undoTrigger,
+                   keyCode == undo.keyCode,
+                   flags.intersection(relevantModifiers) == undo.modifiers.intersection(relevantModifiers) {
                     return (true, isRepeat ? nil : .undo)
                 }
 
-                if case let .combo(retypeKey, retypeModifiers) = state.retypeTrigger,
-                   keyCode == retypeKey,
-                   flags.intersection(relevantModifiers) == retypeModifiers.intersection(relevantModifiers) {
+                if let retype = state.retypeTrigger,
+                   keyCode == retype.keyCode,
+                   flags.intersection(relevantModifiers) == retype.modifiers.intersection(relevantModifiers) {
                     return (true, isRepeat ? nil : .retype)
                 }
+                return (false, nil)
 
-                guard case let .combo(triggerKey, triggerModifiers) = state.trigger,
-                      keyCode == triggerKey,
-                      flags.intersection(relevantModifiers) == triggerModifiers.intersection(relevantModifiers)
-                else { return (false, nil) }
-
-                // Ignore the repeat stream produced by holding the key.
-                guard !isRepeat, !state.isKeyDown else { return (true, nil) }
-                state.isKeyDown = true
-                return (true, edge(pressed: true, mode: state.activationMode))
-
-            case .keyUp:
-                guard case let .combo(triggerKey, _) = state.trigger,
-                      keyCode == triggerKey,
-                      state.isKeyDown
-                else { return (false, nil) }
-
-                state.isKeyDown = false
-                return (true, edge(pressed: false, mode: state.activationMode))
+            case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+                // Option-click and Option-drag: Option is a modifier for the mouse.
+                guard state.isKeyDown else { return (false, nil) }
+                return (false, state.useAsModifier())
 
             default:
                 return (false, nil)
@@ -456,25 +599,18 @@ final class GlobalHotkeyMonitor {
 
     /// Send the release the tap missed, if the trigger key is no longer down.
     private nonisolated func releaseIfKeyIsUp() {
-        let (trigger, held) = tapState.withLock { ($0.trigger, $0.isKeyDown) }
-        guard held else { return }
-
-        let isDown: Bool = switch trigger {
-        case .globe:
-            CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn)
-        case let .combo(keyCode, _):
-            CGEventSource.keyState(.combinedSessionState, key: keyCode)
-        }
-        guard !isDown else { return }
+        guard let held = tapState.withLock({ $0.heldKey }),
+              !CGEventSource.keyState(.combinedSessionState, key: held)
+        else { return }
 
         let action = tapState.withLock { state -> HotkeyAction? in
             guard state.isKeyDown else { return nil }
-            state.isKeyDown = false
-            if state.globeUsedAsModifier {
-                state.globeUsedAsModifier = false
+            state.heldKey = nil
+            if state.optionUsedAsModifier {
+                state.releaseAsModifier()
                 return nil
             }
-            return edge(pressed: false, mode: state.activationMode)
+            return state.release(at: .now)
         }
         if let action {
             Log.hotkey.notice("trigger key was released while the tap was off — releasing now")
@@ -483,6 +619,35 @@ final class GlobalHotkeyMonitor {
     }
 
     // MARK: - Main Actor
+
+    /// Drop a short tap's recording once the wait for a second press runs out.
+    ///
+    /// The tap thread and this check share the lock, so a second press either claims
+    /// the recording before the wait ends or finds it gone, never both.
+    private func discardTapUnlessFollowed() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: TapState.tapLength)
+            guard let self else { return }
+            let unclaimed = tapState.withLock { state in
+                defer { state.tapPending = false }
+                return state.tapPending
+            }
+            guard unclaimed else { return }
+            Log.hotkey.notice("key tapped, not held — recording discarded")
+            onAbandon?()
+        }
+    }
+
+    /// Show the recording once the key has been down longer than a tap. A tap, or an
+    /// Option press that became ⌥E, never shows at all.
+    private func confirmIfStillHeld() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: TapState.tapLength)
+            guard let self else { return }
+            let held = tapState.withLock { $0.isKeyDown && !$0.optionUsedAsModifier }
+            if held { onConfirm?() }
+        }
+    }
 
     private func perform(_ action: HotkeyAction) {
         switch action {
@@ -495,9 +660,13 @@ final class GlobalHotkeyMonitor {
             // fault that stopped on its own, so the defence is gone and only the
             // reading of it remains.
             if let lastRelease, ContinuousClock.now - lastRelease < Self.chatterWindow {
-                Log.hotkey.error("a press followed a release within \(Self.chatterWindow, privacy: .public) — the Globe key is chattering")
+                Log.hotkey.error("a press followed a release within \(Self.chatterWindow, privacy: .public) — the dictation key is chattering")
             }
             onActivate?()
+            confirmIfStillHeld()
+
+        case .confirm:
+            onConfirm?()
 
         case .deactivate:
             lastRelease = .now
@@ -505,6 +674,14 @@ final class GlobalHotkeyMonitor {
 
         case .toggle:
             onToggle?()
+
+        case .tap:
+            lastRelease = .now
+            discardTapUnlessFollowed()
+
+        case .lock:
+            Log.hotkey.notice("double tap — recording locked until the next press")
+
         case .cancel: onCancel?()
         case .abandon: onAbandon?()
         case .undo: onUndo?()
@@ -514,16 +691,6 @@ final class GlobalHotkeyMonitor {
     }
 }
 
-/// Translate a physical press or release into the action the current mode wants.
-private func edge(pressed: Bool, mode: HotkeyActivationMode) -> HotkeyAction? {
-    switch mode {
-    case .pushToTalk:
-        pressed ? .activate : .deactivate
-    case .toggle:
-        // Only the press edge matters; the release is the user letting go.
-        pressed ? .toggle : nil
-    }
-}
 
 // MARK: - Tap Thread Host
 
