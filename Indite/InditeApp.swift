@@ -42,7 +42,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 #endif
 
+/// Where the process starts: the app, or with `mcp` as its argument the read-only
+/// server an agent reads meetings through, with no window, menu or microphone.
 @main
+enum Entry {
+    @MainActor
+    static func main() {
+        #if os(macOS)
+        if CommandLine.arguments.dropFirst().first == "mcp" {
+            do {
+                try MCPServer().run()
+            } catch {
+                FileHandle.standardError.write(Data("Indite could not open its store: \(error)\n".utf8))
+                exit(1)
+            }
+            exit(0)
+        }
+        #endif
+        InditeApp.main()
+    }
+}
+
 struct InditeApp: App {
     /// The settings Nscribe left behind are copied in before anything reads a setting.
     /// Stored properties are set up in the order they are written, so this runs ahead
