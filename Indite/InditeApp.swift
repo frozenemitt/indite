@@ -400,14 +400,13 @@ struct InditeApp: App {
 
         /// Apply the current settings to the monitor and install the tap.
         private func armHotkey() {
-            hotkeyMonitor.trigger = settings.hotkeyTrigger
+            hotkeyMonitor.dictationKey = settings.dictationKey
             hotkeyMonitor.activationMode = settings.hotkeyActivationMode
             hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
             hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
 
             let started = hotkeyMonitor.start()
-            let trigger = settings.useGlobeKey ? "Globe" : settings.hotkeyString
-            Log.app.notice("Hotkey \(trigger, privacy: .public) in \(settings.hotkeyActivationModeRaw, privacy: .public) mode, listening: \(started, privacy: .public)")
+            Log.app.notice("Hotkey \(settings.dictationKeyRaw, privacy: .public) Option in \(settings.hotkeyActivationModeRaw, privacy: .public) mode, listening: \(started, privacy: .public)")
 
             if let error = hotkeyMonitor.lastError {
                 Log.app.error("Hotkey error: \(error, privacy: .public)")

@@ -344,8 +344,6 @@ private func perform(_ action: HelpArticle.Action, openSettings: OpenSettingsAct
         SettingsTab.open(tab)
         openSettings()
         WindowFronting.bringForward("com_apple_SwiftUI_Settings")
-    case .keyboardSettings:
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
     case .screenRecordingSettings:
         SystemAudioCapture.openSystemSettings()
     case .accessibilitySettings:

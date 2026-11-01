@@ -12,9 +12,6 @@ struct HelpSetup: Equatable, Sendable {
     var accessibility: Bool
     /// Why the dictation key is not working although Accessibility is on.
     var keyError: String?
-    var usesGlobeKey: Bool
-    /// Whether macOS's "Press 🌐 key to" is Do Nothing.
-    var globeKeyDoesNothing: Bool
     var microphone: Permission
     var speech: Permission
     /// Why Apple Intelligence is not ready, or nil when it is.
@@ -58,15 +55,6 @@ struct HelpSetup: Equatable, Sendable {
                 sentence: keyError.map { "The dictation key isn't working. \($0)" } ?? "The dictation key is listening.",
                 action: .inditeSettings(.dictation), isUrgent: true, articles: keyArticles,
                 fixArticle: "key-does-nothing"))
-        }
-        if usesGlobeKey {
-            found.append(Check(
-                id: "globe", isFine: globeKeyDoesNothing,
-                sentence: globeKeyDoesNothing
-                    ? "macOS's \"Press 🌐 key to\" setting is Do Nothing, so macOS leaves the Globe key to Indite."
-                    : "macOS also acts on the Globe key, so each press opens emoji or switches your input source as well.",
-                action: .keyboardSettings, isUrgent: true,
-                articles: keyArticles.union(["globe-key-emoji"]), fixArticle: "globe-key-emoji"))
         }
         let microphoneSentence = switch microphone {
         case .allowed: "Indite is allowed to use the microphone."

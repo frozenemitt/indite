@@ -11,7 +11,7 @@ private enum AfterTyping: Hashable {
 
 /// Which shortcut is waiting for a keystroke.
 private enum CaptureTarget {
-    case dictation, undo, retype
+    case undo, retype
 }
 
 /// Everything about a dictation: the key that starts it, the microphone it hears,
@@ -35,24 +35,12 @@ struct DictationSettingsView: View {
             SetupStatusSection(tab: $tab)
 
             Section("Dictation Key") {
-                Toggle(isOn: $settings.useGlobeKey) {
-                    Label("Use the Globe key", systemImage: "globe")
-                }
-
-                if settings.useGlobeKey {
-                    Text("Set System Settings → Keyboard → “Press \(Image(systemName: "globe")) key to” to Do Nothing, or macOS will also switch your input source every time you dictate.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Button("Open Keyboard Settings") {
-                        NSWorkspace.shared.open(
-                            URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!
-                        )
+                Picker("Key", selection: $settings.dictationKeyRaw) {
+                    ForEach(OptionKey.allCases) { key in
+                        Text(key.displayName).tag(key.rawValue)
                     }
-                    .buttonStyle(.link)
-                } else {
-                    shortcutRow("Key combination", target: .dictation, display: settings.hotkeyDisplay)
                 }
+                .help("Option on its own. Typed with another key, as in ⌥E, or held for a click, it stays Option.")
 
                 Picker("Pressing it", selection: $settings.hotkeyActivationModeRaw) {
                     ForEach(HotkeyActivationMode.allCases) { mode in
@@ -70,18 +58,6 @@ struct DictationSettingsView: View {
 
                 if settings.undoHotkeyEnabled {
                     shortcutRow("Key combination", target: .undo, display: settings.undoHotkeyString)
-
-                    // Dictation wins when both use one shortcut. This caption is the
-                    // only sign that undo has stepped aside.
-                    if settings.undoHotkeyTrigger == nil {
-                        Label {
-                            Text("Off while dictation uses the same combination.")
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle")
-                                .foregroundStyle(.orange)
-                        }
-                        .font(.caption)
-                    }
                 }
             }
 
@@ -94,7 +70,7 @@ struct DictationSettingsView: View {
 
                     if settings.retypeHotkeyTrigger == nil {
                         Label {
-                            Text("Off while another key uses the same combination.")
+                            Text("Off while undo uses the same combination.")
                         } icon: {
                             Image(systemName: "exclamationmark.triangle")
                                 .foregroundStyle(.orange)
@@ -222,14 +198,7 @@ struct DictationSettingsView: View {
         .onChange(of: capturing) { _, target in
             if let target { startCapturing(target) } else { hotkeyMonitor.endCapture() }
         }
-        .onChange(of: settings.useGlobeKey) { _, _ in
-            // The recorder lives in the key combination row, which the Globe key hides.
-            // Left armed, capture would go on swallowing every keystroke on the Mac
-            // with nothing on screen to say why.
-            if capturing == .dictation { capturing = nil }
-            rearm()
-        }
-        .onChange(of: settings.hotkeyString) { _, _ in rearm() }
+        .onChange(of: settings.dictationKeyRaw) { _, _ in rearm() }
         .onChange(of: settings.hotkeyActivationModeRaw) { _, _ in rearm() }
         .onChange(of: settings.undoHotkeyEnabled) { _, _ in
             if capturing == .undo { capturing = nil }
@@ -292,7 +261,6 @@ struct DictationSettingsView: View {
             }
 
             switch target {
-            case .dictation: settings.hotkeyString = combination
             case .undo: settings.undoHotkeyString = combination
             case .retype: settings.retypeHotkeyString = combination
             }
@@ -302,7 +270,7 @@ struct DictationSettingsView: View {
 
     /// Push the current settings into the running tap.
     private func rearm() {
-        hotkeyMonitor.trigger = settings.hotkeyTrigger
+        hotkeyMonitor.dictationKey = settings.dictationKey
         hotkeyMonitor.activationMode = settings.hotkeyActivationMode
         hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
         hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger

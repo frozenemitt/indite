@@ -25,7 +25,7 @@ enum HelpLibrary {
         // Privacy and Permissions
         permissions, privacy, storedData,
         // Troubleshooting
-        globeKeyEmoji, keyDoesNothing, nothingHeard, copiedNotTyped, appleIntelligence,
+        keyDoesNothing, nothingHeard, copiedNotTyped, appleIntelligence,
         rewriteFailed, callAudioSilent, noSpeakerNames, microphoneBusy, diagnostics,
         resetSettings
     ]
@@ -37,8 +37,8 @@ enum HelpLibrary {
         title: "Dictate into any app",
         body: """
             Click where you want the text, such as in an email or a document. Then hold \
-            the Globe key (🌐), say what you want to write, and let go. Your words show up \
-            where the cursor is, in whichever app is in front.
+            the right Option key (⌥), say what you want to write, and let go. Your words \
+            show up where the cursor is, in whichever app is in front.
 
             While you talk, a panel near the bottom of the screen shows the words as they \
             arrive. Indite starts listening when the start sound plays. You can also \
@@ -138,15 +138,13 @@ enum HelpLibrary {
         id: "dictation-key",
         title: "Change the dictation key",
         body: """
-            You start talking to Indite by pressing the Globe key (🌐). You can use a key \
-            combination instead, such as Control-Option-D (⌃⌥D).
+            You start talking to Indite with an Option key (⌥) pressed on its own. It \
+            starts out as the right Option key. To use the left one, or either one, open \
+            Indite's Settings, choose Dictation, and pick it under "Key".
 
-            Open Indite's Settings, choose Dictation, and turn off "Use the Globe key". \
-            Click the button beside "Key combination", then press the shortcut you want. A \
-            shortcut needs a letter, number or punctuation key and at least two of Control \
-            (⌃), Option (⌥) and Command (⌘), so it cannot take over an everyday one like \
-            ⌘W. Press Escape instead to keep the key you had. The combination starts out \
-            as ⌃⌥⌘C.
+            Option still works as Option. Typing ⌥E for an accent, using ⌥ in a shortcut, \
+            or holding it while you click or drag throws the recording away without a \
+            sound, and the keystroke or click reaches the app as usual.
 
             The first line of Indite's menu names the key in use.
             """,
@@ -908,28 +906,11 @@ enum HelpLibrary {
 
     // MARK: - Troubleshooting
 
-    static let globeKeyEmoji = HelpArticle(
-        id: "globe-key-emoji",
-        title: "The Globe key opens the emoji picker",
-        body: """
-            macOS uses the Globe key (🌐) too. If pressing it opens the emoji picker with \
-            its emoji and smileys, or switches your keyboard or input source, open System \
-            Settings, choose Keyboard, and set "Press 🌐 key to" to Do Nothing. That \
-            setting belongs to macOS, not to Indite. The "Open Keyboard Settings" link in \
-            Indite's Dictation settings opens that page of System Settings.
-
-            The emoji picker is still on Control-Command-Space (⌃⌘Space), Apple's own \
-            default.
-            """,
-        topic: .troubleshooting,
-        action: .keyboardSettings
-    )
-
     static let keyDoesNothing = HelpArticle(
         id: "key-does-nothing",
         title: "The dictation key does nothing",
         body: """
-            When you press the Globe key or your shortcut and nothing happens, Indite \
+            When you press the dictation key and nothing happens, Indite \
             most likely lacks Accessibility access, which it needs to notice the key. \
             Without it, the first line of Indite's menu says "The dictation key is not \
             working." and the I in the menu bar becomes a warning triangle.
@@ -1102,7 +1083,7 @@ enum HelpLibrary {
         body: """
             Open Indite's Settings, choose About, click "Reset All Settings…", and then \
             click Reset. Every setting goes back to its default, and the dictation key \
-            becomes the Globe key again.
+            becomes the right Option key again.
 
             This also clears your word replacements, vocabulary, app profiles and recorded \
             key combinations. Your prompts are kept, and so are your recent dictations and \

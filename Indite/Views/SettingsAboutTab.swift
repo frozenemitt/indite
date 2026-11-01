@@ -96,9 +96,9 @@ struct AboutSettingsView: View {
     private func resetToDefaults() {
         settings.resetToDefaults()
         // The Dictation tab re-arms on its own changes, but it is not on screen here.
-        // Without this the old combination keeps firing and the restored one does
-        // nothing until the app is relaunched.
-        hotkeyMonitor.trigger = settings.hotkeyTrigger
+        // Without this the old key keeps firing and the restored one does nothing
+        // until the app is relaunched.
+        hotkeyMonitor.dictationKey = settings.dictationKey
         hotkeyMonitor.activationMode = settings.hotkeyActivationMode
         hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
         hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger

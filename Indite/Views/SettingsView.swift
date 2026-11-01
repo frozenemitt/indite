@@ -205,8 +205,7 @@ struct SetupStatusSection: View {
                       detail: hotkeyMonitor.lastError,
                       actionTitle: "Try Again") { hotkeyMonitor.start() }
         } else {
-            let key = settings.useGlobeKey ? "the Globe key" : settings.hotkeyDisplay
-            StatusRow(mark: .good, title: "Dictation key", detail: "Listening for \(key).")
+            StatusRow(mark: .good, title: "Dictation key", detail: "Listening for \(settings.dictationKey.phrase).")
         }
     }
 
