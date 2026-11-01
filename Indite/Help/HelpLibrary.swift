@@ -19,7 +19,7 @@ enum HelpLibrary {
         vocabulary, wordReplacements,
         // Meetings
         startMeeting, callAudio, meetingPill, speakerNames, oldMeetingSpeakers, correctTranscript, playback,
-        meetingSummary, importRecording, exportMeeting, deleteMeeting, searchMeetings,
+        meetingSummary, importRecording, exportMeeting, deleteMeeting, searchMeetings, agentAccess,
         // Siri and Shortcuts
         quickTranscribe, siriHelp,
         // Privacy and Permissions
@@ -809,6 +809,28 @@ enum HelpLibrary {
         topic: .meetings
     )
 
+    static let agentAccess = HelpArticle(
+        id: "agent-access",
+        title: "Let an AI agent read your meetings",
+        body: """
+            An agent such as Claude Code can read your meetings and recent dictations \
+            through Indite, so you can ask it what was decided in a meeting or where you \
+            said something. To connect Claude Code, run this once in Terminal:
+
+            claude mcp add indite -- /Applications/Indite.app/Contents/MacOS/Indite mcp
+
+            Other agents that support the Model Context Protocol connect the same way: \
+            they run /Applications/Indite.app/Contents/MacOS/Indite with the argument mcp.
+
+            The agent can list and search meetings, read a whole transcript with its \
+            summary and speaker names, and list recent dictations. It cannot change, \
+            delete or export anything, and it never sees recordings or meetings in \
+            Recently Deleted. Indite itself sends nothing, but whatever the agent reads \
+            goes wherever that agent sends it. For Claude Code, that is Anthropic.
+            """,
+        topic: .meetings
+    )
+
     // MARK: - Siri and Shortcuts
 
     static let quickTranscribe = HelpArticle(
@@ -881,6 +903,9 @@ enum HelpLibrary {
             daily check stops if you turn off "Update automatically" in Settings, under \
             About. The speaker models download from HuggingFace only when you click \
             "Install Models" in Settings, under Meetings.
+
+            An AI agent you connect yourself can read your meetings and dictations, and \
+            sends what it reads wherever it works. Nothing is shared until you connect one.
             """,
         topic: .privacy
     )
