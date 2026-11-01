@@ -624,7 +624,8 @@ final class RecordingCoordinator {
     /// Throw away an in-flight recording without producing any text.
     ///
     /// - Parameter quietly: Skip the stop sound, for a recording the user never meant
-    ///   to start, such as one begun by Globe pressed as part of Fn+Delete.
+    ///   to start, such as one begun by Globe pressed as part of Fn+Delete, or by a
+    ///   tap too short to hold any words.
     func cancel(quietly: Bool = false) async {
         if let startTask { await startTask.value }
         // Not while a stop is delivering: its words are already on their way.
@@ -645,7 +646,7 @@ final class RecordingCoordinator {
         if !quietly {
             AudioFeedbackService.shared.playIfEnabled(.recordingStopped, settings: settings)
         }
-        Log.dictation.notice("Recording cancelled\(quietly ? " — Globe was used as a modifier" : "", privacy: .public)")
+        Log.dictation.notice("Recording cancelled\(quietly ? " — the press was not a dictation" : "", privacy: .public)")
     }
 
     /// Stop the dictation under way for a quit, and keep its words in the history

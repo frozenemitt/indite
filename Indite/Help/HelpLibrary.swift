@@ -162,8 +162,10 @@ enum HelpLibrary {
             "Press to start, press to stop". Press the dictation key once to start, talk \
             with your hands free, and press it again to stop.
 
-            "Hold to talk", the default, listens only while you hold the key down and \
-            stops when you let go.
+            "Hold to talk", the default, listens while you hold the key down and stops \
+            when you let go. To talk hands-free in this mode too, tap the key twice \
+            quickly: Indite keeps listening after you let go, until you press the key \
+            once more.
 
             In either mode, Escape throws the dictation away.
             """,
