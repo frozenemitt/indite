@@ -109,12 +109,16 @@ Apple Intelligence turned on.
 ## FAQ
 
 **Which key starts dictation?**
-The Globe key (🌐) by default. You can change it to any key combination in Indite's
-settings.
+The right Option key (⌥), pressed on its own. Hold it while you talk, or tap it twice to
+keep listening until the next press. In Indite's settings you can choose the left Option
+key or either one. Typed with another key, as in ⌥E, or held for a click, Option stays
+Option.
 
-**Pressing Globe opens the emoji picker.**
-macOS uses the Globe key too. In System Settings → Keyboard, set "Press 🌐 key to" to *Do Nothing*.
-The emoji picker is still on Control-Command-Space (⌃⌘Space), Apple's own default.
+**Can an AI agent read my meetings?**
+Yes, if you connect one. For Claude Code, run
+`claude mcp add -s user indite -- /Applications/Indite.app/Contents/MacOS/Indite mcp`.
+The agent can list, search and read meetings and dictations, and change nothing. Indite
+sends nothing itself, but the agent sends what it reads wherever it works.
 
 **What permissions does it need?**
 
@@ -148,6 +152,8 @@ See [BUILDING.md](BUILDING.md) for Xcode builds, releases and the code layout.
 
 Built on [Swift Scribe](https://github.com/seamlesscompute/swift-scribe) by
 seamlesscompute (MIT). The dictation and meeting features are modeled on
-[voxtype](https://github.com/peteonrails/voxtype). Speaker separation uses
+[voxtype](https://github.com/peteonrails/voxtype). The Option key, the double-tap lock,
+the silent short tap and the agent access through MCP come from
+[Hex](https://github.com/anomalyco/hex) by Kit Langton. Speaker separation uses
 [FluidAudio](https://github.com/FluidInference/FluidAudio), and updates use
 [Sparkle](https://sparkle-project.org).
