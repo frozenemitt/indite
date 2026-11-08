@@ -28,8 +28,8 @@ final class Dictation {
     var promptName: String?
 
     /// How long the microphone listened, in seconds, from the moment it opened until
-    /// the dictation stopped. Recent Dictations divides the words by it for the
-    /// speaking speed.
+    /// the dictation stopped, leaving out any time the Mac slept. Recent Dictations
+    /// divides the words by it for the speaking speed.
     ///
     /// Nil for dictations kept before it was recorded, and for those made by a
     /// shortcut, which records for a set time whether or not anyone is still speaking.

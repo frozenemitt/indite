@@ -98,13 +98,18 @@ enum DictationHistory {
         var wordsThisWeek: Int
         /// When this week began, by the Mac's calendar and its first day of the week.
         var weekBegan: Date
-        /// Words a minute over the dictations that know how long they were spoken, or
-        /// nil while none does.
+        /// The median of the words a minute of each dictation that knows how long it
+        /// was spoken and holds at least `fewestTimedWords` words, or nil while none
+        /// does.
         var wordsPerMinute: Int?
         /// Days in a row with a dictation, counted back from today. A day with none yet
         /// does not end the run until it is over.
         var daysInARow: Int
     }
+
+    /// The fewest words a dictation needs for its speed to count. In a dictation of a
+    /// word or two, the moments before speaking and after it take up most of the time.
+    static let fewestTimedWords = 5
 
     /// Add up the dictations, or nil when there are none.
     ///
@@ -124,17 +129,15 @@ enum DictationHistory {
 
         var words = 0
         var wordsThisWeek = 0
-        var timedWords = 0
-        var timedSeconds: TimeInterval = 0
+        var wordsPerMinute: [Double] = []
         for dictation in dictations {
             let count = wordCount(dictation.rawText ?? dictation.text)
             words += count
             if dictation.createdAt >= weekBegan {
                 wordsThisWeek += count
             }
-            if let seconds = dictation.spokenDuration {
-                timedWords += count
-                timedSeconds += seconds
+            if let seconds = dictation.spokenDuration, seconds > 0, count >= fewestTimedWords {
+                wordsPerMinute.append(Double(count) * 60 / seconds)
             }
         }
 
@@ -143,7 +146,10 @@ enum DictationHistory {
             since: since,
             wordsThisWeek: wordsThisWeek,
             weekBegan: weekBegan,
-            wordsPerMinute: timedSeconds > 0 ? Int((Double(timedWords) * 60 / timedSeconds).rounded()) : nil,
+            // The median rather than all the words over all the time. One dictation
+            // left listening until the length limit would otherwise drag the speed down
+            // for as long as it is kept.
+            wordsPerMinute: median(wordsPerMinute).map { Int($0.rounded()) },
             daysInARow: daysInARow(days, today: day(of: now, in: calendar.timeZone))
         )
     }
@@ -152,6 +158,14 @@ enum DictationHistory {
     /// alone, such as a dash, is not a word.
     private static func wordCount(_ text: String) -> Int {
         text.split(whereSeparator: \.isWhitespace).count { $0.contains { $0.isLetter || $0.isNumber } }
+    }
+
+    /// The middle value, or the mean of the middle two, or nil when there are none.
+    private static func median(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        return sorted.count.isMultiple(of: 2) ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
     }
 
     // MARK: - Days with a dictation
