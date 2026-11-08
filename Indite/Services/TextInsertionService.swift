@@ -260,7 +260,15 @@ enum TextInsertionService {
         // clipboard managers do not keep every dictation.
         // The pasteboard holds the text by the time this returns: another process read
         // it straight after the write in 30 of 30 tries. So ⌘V goes at once.
-        let pasteChange = ClipboardService.copy(pasted, transient: restoreClipboard)
+        //
+        // A field with no cursor to read shows nothing when a paste lands: the body of
+        // a Mail message reports an empty value before and after. There the words go
+        // on the clipboard as a promise, and Mail collecting them is the sign that the
+        // paste arrived. Without it, all three dictations into Mail on the morning of
+        // 2026-11-08 ended as unconfirmed pastes.
+        let promise = fieldBeforePaste.caret == nil ? PromisedText(pasted) : nil
+        let pasteChange = promise.map { ClipboardService.offer($0, transient: restoreClipboard) }
+            ?? ClipboardService.copy(pasted, transient: restoreClipboard)
 
         // Kept for the log only: the app that actually receives the ⌘V.
         let frontAtPaste = NSWorkspace.shared.frontmostApplication
@@ -270,7 +278,7 @@ enum TextInsertionService {
             return .copiedToClipboard
         }
 
-        guard await pasteLanded(in: field, changedFrom: fieldBeforePaste) else {
+        guard await pasteLanded(in: field, changedFrom: fieldBeforePaste, collecting: promise) else {
             // The read-back says the field never moved, which has two very different
             // causes and the same appearance: the paste really did not land, or it
             // landed and this element did not report it — Electron fields update their
@@ -310,6 +318,12 @@ enum TextInsertionService {
                 transcript present: \(landedInFocused, privacy: .public)
                 """)
 
+            // Plain text from here on, not a promise, so a ⌘V the user presses later
+            // still works if Indite has quit by then.
+            if promise != nil, ClipboardService.changeCount == pasteChange {
+                ClipboardService.copy(pasted, transient: restoreClipboard)
+            }
+
             // The same element still has focus, nothing in it moved, and neither it nor
             // anything it sits inside is a text control. That is text one can select
             // and not type into, such as a web page or the messages of a chat, and the
@@ -319,6 +333,10 @@ enum TextInsertionService {
                 return .copiedToClipboard
             }
             return .pastedUnconfirmed
+        }
+
+        if promise?.wasCollected == true {
+            log.notice("\(appName, privacy: .public) collected the words from the clipboard")
         }
 
         if autoSubmit {
@@ -492,15 +510,16 @@ enum TextInsertionService {
     ///
     /// A field that changes in neither way counts as a failure. Being wrong there
     /// costs one clipboard left unrestored; being wrong the other way costs the user
-    /// their dictation.
-    private static func pasteLanded(in field: AXUIElement, changedFrom before: FieldState) async -> Bool {
+    /// their dictation. Words offered as a promise count as landed once the app
+    /// collects them.
+    private static func pasteLanded(in field: AXUIElement, changedFrom before: FieldState, collecting promise: PromisedText?) async -> Bool {
         // Generous, because waiting costs nothing here: the transcript is on the
         // clipboard for the whole of it, and the loop returns the instant the field
         // moves. A busy Electron field can take most of a second, and calling that a
         // failure loses the user their clipboard and their undo.
         for _ in 0..<40 {
             try? await Task.sleep(for: .milliseconds(30))
-            if state(of: field) != before { return true }
+            if promise?.wasCollected == true || state(of: field) != before { return true }
         }
         return false
     }
