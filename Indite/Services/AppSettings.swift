@@ -69,6 +69,16 @@ final class AppSettings {
         didSet { save("vocabularyHints", vocabularyHints) }
     }
 
+    /// Saved text that a spoken cue stands for, keyed by the cue: say "my calendar
+    /// link", and the link is typed.
+    ///
+    /// Apart from `wordReplacements` on purpose. A replacement runs before the AI pass,
+    /// so the model reads the corrected word. A snippet is expanded after it, so the
+    /// model never sees the saved text and cannot edit it; see `Snippets`.
+    var snippets: [String: String] {
+        didSet { save("snippets", snippets) }
+    }
+
     // MARK: - Audio Input
 
     /// CoreAudio UID of the microphone, or "default" to follow the system setting.
@@ -299,6 +309,7 @@ final class AppSettings {
         self.maxRecordingSeconds = UserDefaults.standard.object(forKey: "maxRecordingSeconds") as? Int ?? 600
         self.wordReplacements = UserDefaults.standard.dictionary(forKey: "wordReplacements") as? [String: String] ?? [:]
         self.vocabularyHints = UserDefaults.standard.stringArray(forKey: "vocabularyHints") ?? []
+        self.snippets = UserDefaults.standard.dictionary(forKey: "snippets") as? [String: String] ?? [:]
         self.inputDeviceUID = UserDefaults.standard.string(forKey: "inputDeviceUID") ?? "default"
         self.captureSystemAudioInMeetings = UserDefaults.standard.object(forKey: "captureSystemAudioInMeetings") as? Bool ?? false
         self.keepMeetingAudio = UserDefaults.standard.object(forKey: "keepMeetingAudio") as? Bool ?? true
@@ -393,6 +404,7 @@ final class AppSettings {
         maxRecordingSeconds = 600
         wordReplacements = [:]
         vocabularyHints = []
+        snippets = [:]
         inputDeviceUID = "default"
         captureSystemAudioInMeetings = false
         keepMeetingAudio = true

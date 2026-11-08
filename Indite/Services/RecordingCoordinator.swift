@@ -542,15 +542,20 @@ final class RecordingCoordinator {
             Log.dictation.notice("The dictation ended with press enter; Return follows the paste")
         }
 
+        // Snippets are expanded only after the AI pass, so the model never sees their
+        // saved text. This is the dictation as heard, for when no rewrite is used.
+        let snippets = settings.snippets
+        let asHeard = Snippets.expand(transcript, snippets: snippets)
+
         guard let promptId = rewritePromptId else {
             // Loaded at the start if rewriting was on then; switched off mid-recording
             // leaves it unused.
             aiProcessor.discardPrewarm()
-            await deliver(transcript, problem: problem, pressesReturn: pressesReturn)
-            finishHistory(entry, text: transcript, rawText: nil, promptName: nil)
+            await deliver(asHeard.text, problem: problem, pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0)
+            finishHistory(entry, text: asHeard.text, rawText: nil, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showTranscriptionCompleteIfEnabled(
-                characterCount: transcript.count,
+                characterCount: asHeard.text.count,
                 destination: lastDestination,
                 settings: settings
             )
@@ -609,23 +614,32 @@ final class RecordingCoordinator {
                 : error.localizedDescription
             Log.dictation.error("AI failed, delivering raw transcript: \(detail, privacy: .public)")
 
-            await deliver(transcript, problem: "Delivered as heard. The rewrite failed.", pressesReturn: pressesReturn)
-            finishHistory(entry, text: transcript, rawText: nil, promptName: nil)
+            await deliver(asHeard.text, problem: "Delivered as heard. The rewrite failed.",
+                          pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0)
+            finishHistory(entry, text: asHeard.text, rawText: nil, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showAIProcessingFailedIfEnabled(
-                characterCount: transcript.count,
+                characterCount: asHeard.text.count,
                 errorDetail: detail,
                 settings: settings
             )
             return
         }
 
-        await deliver(finalText, problem: problem, pressesReturn: pressesReturn)
-        let promptName = aiProcessor.promptConfiguration.prompt(withId: promptId)?.name
-        finishHistory(entry, text: finalText, rawText: transcript, promptName: promptName)
+        // A cue the model reworded can no longer be found, so the saved text it stands
+        // for would be lost. That dictation goes out as heard instead, with its cues
+        // expanded.
+        let keepsCues = Snippets.keepsCues(of: transcript, in: finalText, snippets: snippets)
+        if !keepsCues {
+            Log.dictation.notice("The rewrite reworded a snippet's cue, so the dictation goes out as heard")
+        }
+        let delivered = keepsCues ? Snippets.expand(finalText, snippets: snippets) : asHeard
+        await deliver(delivered.text, problem: problem, pressesReturn: pressesReturn, keepsText: delivered.expanded > 0)
+        let promptName = keepsCues ? aiProcessor.promptConfiguration.prompt(withId: promptId)?.name : nil
+        finishHistory(entry, text: delivered.text, rawText: keepsCues ? asHeard.text : nil, promptName: promptName)
         AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
         NotificationService.shared.showTranscriptionCompleteIfEnabled(
-            characterCount: finalText.count,
+            characterCount: delivered.text.count,
             destination: lastDestination,
             settings: settings
         )
@@ -741,7 +755,9 @@ final class RecordingCoordinator {
     ///     text has landed.
     ///   - pressesReturn: Press Return after the paste, whatever the settings say,
     ///     because the dictation ended with "press enter".
-    private func deliver(_ text: String, problem: String? = nil, pressesReturn: Bool = false) async {
+    ///   - keepsText: Paste the text's own characters unchanged, because it holds a
+    ///     snippet's saved text.
+    private func deliver(_ text: String, problem: String? = nil, pressesReturn: Bool = false, keepsText: Bool = false) async {
         #if os(macOS)
         // Dismissed before insertion: the panel is borderless and non-activating, but
         // leaving it up while text lands is visual noise at the wrong moment.
@@ -777,6 +793,7 @@ final class RecordingCoordinator {
                 autoSubmit: autoSubmit,
                 // The words asked for Return, not the Shift-Return the setting may choose.
                 submitUsesShift: !pressesReturn && settings.useShiftReturnAfterInsert,
+                keepsText: keepsText,
                 names: settings.vocabularyHints
             )
             switch outcome {

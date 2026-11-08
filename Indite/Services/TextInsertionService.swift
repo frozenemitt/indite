@@ -159,6 +159,8 @@ enum TextInsertionService {
     ///   - autoSubmit: Press a Return key after inserting.
     ///   - submitUsesShift: Send Shift+Return instead of Return, so chat apps add a
     ///     line break rather than sending the message.
+    ///   - keepsText: Paste the text's own characters unchanged and fit only the spaces
+    ///     around it, for text that holds a snippet's saved text.
     ///   - names: Words the user has taught Indite, which keep their capitals when the
     ///     text is fitted into the middle of a sentence.
     @discardableResult
@@ -168,6 +170,7 @@ enum TextInsertionService {
         restoreClipboard: Bool = true,
         autoSubmit: Bool = false,
         submitUsesShift: Bool = false,
+        keepsText: Bool = false,
         names: [String] = []
     ) async -> TextInsertionOutcome {
 
@@ -237,7 +240,8 @@ enum TextInsertionService {
         // shows which apps report their fields.
         let around = textAroundCursor(in: field, value: fieldBeforePaste.text)
         let pasted = around.map {
-            CursorFit.fit(text, before: $0.before, after: $0.after, names: names, language: TranscriptionEngine.language)
+            CursorFit.fit(text, before: $0.before, after: $0.after, names: names,
+                          language: TranscriptionEngine.language, keepingText: keepsText)
         } ?? (autoSubmit || text.last.map(CursorFit.writtenWithoutSpaces) == true ? text : text + " ")
         let inserted = pasted.trimmingCharacters(in: .whitespaces)
         if let around {
