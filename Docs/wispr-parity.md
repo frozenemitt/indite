@@ -81,24 +81,66 @@ the summary; action items; and a few templates run on a finished meeting.
 
 | # | Slice | Proposal | Size | State on 2026-11-08 |
 |---|---|---|---|---|
-| 1 | The AI pass answers with its corrections | 2 | medium, uphill | Bench next |
+| 1 | The AI pass answers with its corrections | 2 | medium, uphill | Failed its bench; see below |
+| 1a | Sentence breaks the recognizer makes at pauses | Jonathan, 2026-11-08 | medium, uphill | Committed: mends 27 of 80 cuts, joins no real end |
 | 2 | A layout level that keeps the words | 1 | medium, uphill | Not started |
 | 3 | Secure input warning | 4 | small, uphill | Not started |
 | 4 | Microphone order | 6 | small, uphill | Not started |
 | 5 | Your prompts on selected text | 3 | medium | Not started |
 | 6 | Spoken commands on a selection | 14 | large, uphill | Shaped after 5 |
-| 7 | A cue when the recording locks | 9 | small | Not started |
-| 8 | "Press enter" | 7 | small | Not started |
-| 9 | Snippets | 8 | small | Not started |
-| 10 | Mute during a dictation | 5 | small | Not started |
-| 11 | Panel hidden from screen sharing | 11 | small, uphill | Not started |
-| 12 | Mouse side button | 12 | small | Not started |
-| 13 | Words, speed and streak | 13 | small | Not started |
+| 7 | A cue when the recording locks | 9 | small | Merged; review fixes committed |
+| 8 | "Press enter" | 7 | small | Merged; review fixes in progress |
+| 9 | Snippets | 8 | small | Merged; review fixes in progress |
+| 10 | Mute during a dictation | 5 | small | Merged; review fixes committed |
+| 11 | Panel hidden from screen sharing | 11 | small | Merged; its capture test passed |
+| 12 | Mouse side button | 12 | small | Merged; review fixes committed |
+| 13 | Words, speed and streak | 13 | small | Merged; review fixes in progress |
 | 14 | Meeting names from the calendar | 10 | medium | Not started |
 | 15 | Two-hour warning | 10 | small | Not started |
 | 16 | Meeting notepad | 10 | medium | Not started |
 | 17 | Action items | 10 | small | Not started |
 | 18 | Meeting templates | 10 | medium | Not started |
+
+### What slice 1 found
+
+Apple's model cannot answer with only its corrections. Asked for a list of changes, it
+copied whole sentences on both sides of each line, so its answers grew longer than the
+dictation. Asked for a terse list, it invented fixes ("there" became "Obsidian"). Asked
+to answer NONE when nothing needed fixing, it did so in 2 to 15 of 30 runs, although
+today's prompt changed nothing in 52 of 60. Asked first whether a fix was needed, it said
+yes 60 times out of 60.
+
+The bench did show where the time goes. An answer of one word comes back in about
+150 ms whatever the dictation's length; writing the text out runs at about 230
+characters a second. The one route left to speed is to paste the words as heard at once
+and replace them when the AI's version differs. That changes how a dictation feels, so
+it waits for Jonathan.
+
+### What slice 1a is about
+
+Jonathan, 2026-11-08: the recognizer ends a sentence at a pause and capitalizes the
+next word, and the AI pass leaves the fragments. Indite's pause rule deletes a mark only
+before a lowercase word, so these survive it. In his last 100 dictations the recognizer
+broke 207 times before a capital; two labelers agreed on 204 of 207 that 40 of those
+cut one sentence in two. Today's prompt mends 16 of those 80 cases over two runs and
+joins no real break.
+
+Committed: worked examples added to every prompt that keeps the speaker's words
+(`AIProcessor.sentenceBreakNote`), and a check that puts back a full stop the model
+turned into a bare comma between two sentences (`WordGuard.keepingSentenceBreaks`).
+Together they mend 27 of 80 and join no real end; the note costs about 0.1 s. Rejected
+on the same bench: marking breaks as pauses (joined 45 real ends), one plain sentence
+of instruction (28 joined, 21 as comma splices), asking the model about one break at a
+time (all one answer or all the other), and part-of-speech rules alone (10 of 40). Two
+of Jonathan's three examples ("dictation. But it shouldn't", "consider that.
+Punctuation is") are mended by no version.
+
+### Fixes found on the way
+
+- A press of the dictation key during a recording it did not start, from the menu or a
+  mouse button, now ends and delivers that recording. It used to cancel it silently.
+- A key let go before any audio arrived no longer plays the error sound and blames the
+  microphone (twice on 2026-11-08).
 
 ## Rabbit holes
 
@@ -140,9 +182,20 @@ the summary; action items; and a few templates run on a finished meeting.
 
 ## Awaiting Jonathan
 
-His four comments on the report, assessed on 2026-11-08, each a proposal of its own:
+His four comments on the report, assessed on 2026-11-08, each a proposal of its own.
+The report's "Your comments" section has the evidence.
 
-- Keeping dictation audio, so a failed dictation can be retried.
-- Noticing a dead microphone during the dictation, not after it.
-- Shorter shortcuts, as in Wispr Flow.
-- Learning words from corrections the way Wispr Flow does.
+- **Keeping dictation audio**, so a dictation can be transcribed again. A lossless file
+  per history entry, kept exactly as long as the entry: about 31 MB per 100 dictations.
+  Open: its own switch or "Keep recent dictations", and whether it expires sooner.
+- **A dead microphone noticed during the dictation.** Exact digital zeros for 1 s, where
+  Wispr Flow waits 5 s; a muted microphone, zero input volume or a closed lid named at
+  once. Open: switch to the next ranked microphone mid-dictation, or only warn.
+- **Shorter shortcuts.** Undo to ⌃⌘Z is free. Type again to ⌃⌘V collides with Wispr
+  Flow's own paste-last on his Mac. Open: which app owns ⌃⌘V.
+- **Learning from corrections.** Catch the edit as Wispr Flow does (accessibility
+  notifications, the text around the dictation, one judgment of the last copy when the
+  watch ends) and keep Indite's own rule. Open: ask first, or add with Undo.
+
+And one from slice 1: paste the words as heard at once and replace them when the AI's
+version differs, for speed.
