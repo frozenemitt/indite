@@ -14,6 +14,11 @@ import CoreAudio
 /// undone. A crash or a force quit in between leaves it saved, and the next launch puts
 /// the sound back from it: a Mac left silent by an app that is no longer running has
 /// nothing on screen to explain it.
+///
+/// A device that is not connected when its sound is due back keeps its record, and gets
+/// its sound back at the next restore that finds it: the end of the next dictation, or
+/// the next launch. Deleting the record then left AirPods put away mid-dictation muted
+/// for good, since Core Audio reapplies a device's last mute when it reconnects.
 enum OutputMute {
 
     /// What was changed, and on which device: enough to undo it after a relaunch.
@@ -24,9 +29,13 @@ enum OutputMute {
         /// For a device with no mute switch, the volume each of its controls had before
         /// it was turned down, by element. Nil when the device was muted.
         let volumes: [AudioObjectPropertyElement: Float32]?
+
+        /// When the change was made.
+        let madeAt: Date
     }
 
-    private static let defaultsKey = "outputMuteChange"
+    /// The changes not yet undone, by device UID.
+    private static let defaultsKey = "outputMuteChanges"
 
     /// Silence the default output device, unless it is silent already.
     static func mute() {
@@ -37,7 +46,9 @@ enum OutputMute {
 
         // Saved first, so there is no moment when the Mac is silent and nothing on disk
         // says why.
-        UserDefaults.standard.set(try? JSONEncoder().encode(change), forKey: defaultsKey)
+        var changes = savedChanges()
+        changes[uid] = change
+        save(changes)
 
         if let volumes = change.volumes {
             Log.audio.notice("Turning \(name, privacy: .public) down for the dictation")
@@ -50,27 +61,53 @@ enum OutputMute {
         }
     }
 
-    /// Undo what `mute()` changed, if it changed anything.
-    static func restore() {
-        guard let saved = UserDefaults.standard.data(forKey: defaultsKey) else { return }
-        defer { UserDefaults.standard.removeObject(forKey: defaultsKey) }
+    /// Undo what `mute()` changed, on every device that is connected.
+    ///
+    /// - Parameter maxAge: Undo only changes made this recently, and forget older ones.
+    ///   At launch the sound may have been muted on purpose since Indite stopped, and an
+    ///   hour-old change is more likely put right by hand than still waiting.
+    static func restore(madeWithin maxAge: TimeInterval? = nil) {
+        var changes = savedChanges()
+        guard !changes.isEmpty else { return }
 
-        guard let change = try? JSONDecoder().decode(Change.self, from: saved),
-              let device = AudioDeviceCatalog.resolveDeviceID(uid: change.deviceUID) else {
-            Log.audio.notice("The device a dictation muted is gone, so there is no sound to put back")
-            return
-        }
-        let name = AudioDeviceCatalog.stringProperty(kAudioObjectPropertyName, for: device) ?? change.deviceUID
-        Log.audio.notice("Putting back the sound of \(name, privacy: .public)")
-
-        if let volumes = change.volumes {
-            // A control the user has turned up since is left where they put it.
-            for (element, volume) in volumes
-            where read(kAudioDevicePropertyVolumeScalar, of: device, element: element, as: Float32(0)) == 0 {
-                write(volume, kAudioDevicePropertyVolumeScalar, to: device, element: element, name: name)
+        for (uid, change) in changes {
+            if let maxAge, Date.now.timeIntervalSince(change.madeAt) > maxAge {
+                Log.audio.notice("A dictation's mute is more than an hour old, so the sound is left as it is now")
+                changes[uid] = nil
+                continue
             }
+            guard let device = AudioDeviceCatalog.resolveDeviceID(uid: uid) else {
+                Log.audio.notice("The device a dictation muted is not connected; its sound goes back when it is")
+                continue
+            }
+            let name = AudioDeviceCatalog.stringProperty(kAudioObjectPropertyName, for: device) ?? uid
+            Log.audio.notice("Putting back the sound of \(name, privacy: .public)")
+
+            if let volumes = change.volumes {
+                // A control the user has turned up since is left where they put it.
+                for (element, volume) in volumes
+                where read(kAudioDevicePropertyVolumeScalar, of: device, element: element, as: Float32(0)) == 0 {
+                    write(volume, kAudioDevicePropertyVolumeScalar, to: device, element: element, name: name)
+                }
+            } else {
+                write(UInt32(0), kAudioDevicePropertyMute, to: device, element: kAudioObjectPropertyElementMain, name: name)
+            }
+            changes[uid] = nil
+        }
+        save(changes)
+    }
+
+    private static func savedChanges() -> [String: Change] {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+              let changes = try? JSONDecoder().decode([String: Change].self, from: data) else { return [:] }
+        return changes
+    }
+
+    private static func save(_ changes: [String: Change]) {
+        if changes.isEmpty {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
         } else {
-            write(UInt32(0), kAudioDevicePropertyMute, to: device, element: kAudioObjectPropertyElementMain, name: name)
+            UserDefaults.standard.set(try? JSONEncoder().encode(changes), forKey: defaultsKey)
         }
     }
 
@@ -84,7 +121,7 @@ enum OutputMute {
                 Log.audio.notice("\(name, privacy: .public) was muted already, so the dictation leaves it alone")
                 return nil
             }
-            return Change(deviceUID: uid, volumes: nil)
+            return Change(deviceUID: uid, volumes: nil, madeAt: .now)
         }
 
         let volumes = volumeControls(of: device)
@@ -96,7 +133,7 @@ enum OutputMute {
             Log.audio.notice("\(name, privacy: .public) was turned down already, so the dictation leaves it alone")
             return nil
         }
-        return Change(deviceUID: uid, volumes: volumes)
+        return Change(deviceUID: uid, volumes: volumes, madeAt: .now)
     }
 
     /// The device's volume controls that can be set, with their values: the main one,
