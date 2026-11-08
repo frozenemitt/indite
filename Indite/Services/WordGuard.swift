@@ -449,3 +449,67 @@ enum WordGuard {
         return steps
     }
 }
+
+// MARK: - Sentence Breaks
+
+extension WordGuard {
+
+    /// Words that can carry a sentence on after a comma.
+    static let continuingWords: Set<String> = [
+        "and", "but", "so", "or", "nor", "yet", "because", "whereas", "which",
+        "although", "though", "unless", "while",
+    ]
+
+    /// Put back a full stop that the model turned into a comma between two sentences.
+    ///
+    /// The recognizer ends a sentence at every pause and capitalizes the next word, so
+    /// some of its full stops cut one sentence in two, and a prompt that keeps the
+    /// speaker's words is told to join those pieces. Apple's model joins too eagerly.
+    /// On Jonathan's last 100 dictations, which two labelers agreed held 40 such cuts
+    /// among 207 breaks, told to join them it mended 33 of 80 over two runs but also
+    /// ran 28 of 330 real sentence ends together, 21 of them with a bare comma: "I
+    /// tweaked it myself, can you please take a look?"
+    ///
+    /// A comma join stays only before a word that carries the sentence on, such as
+    /// "and", "but" or "because". A join with no punctuation stays, since that is how a
+    /// fragment rejoins its sentence: "articulate the width of that uncertainty". With
+    /// this check the same runs mended 24 of 80 and joined 7 real ends, each with a
+    /// comma before "and", "but", "so" or "or".
+    ///
+    /// - Returns: The rewrite with those full stops back, and how many were put back.
+    static func keepingSentenceBreaks(said: String, rewrite: String) -> (text: String, putBack: Int) {
+        let saidWords = words(in: said)
+        var output = words(in: rewrite)
+        guard saidWords.count > 1, output.count > 1,
+              saidWords.count <= maximumWords, output.count <= maximumWords else { return (rewrite, 0) }
+
+        // Where each said word landed in the rewrite, for the words it kept.
+        var landed: [Int: Int] = [:]
+        var next = 0
+        for step in alignment(saidWords.map(\.key), output.map(\.key)) {
+            switch step {
+            case .same(let j):
+                landed[next] = j
+                next += 1
+            case .changed(let said, _):
+                if let last = said.last { next = last + 1 }
+            }
+        }
+
+        var putBack = 0
+        for i in 0..<(saidWords.count - 1) {
+            guard let mark = saidWords[i].text.last, ".?!".contains(mark),
+                  let first = saidWords[i + 1].text.first, first.isUppercase,
+                  let j = landed[i], landed[i + 1] == j + 1,
+                  output[j].text.hasSuffix(","),
+                  !continuingWords.contains(saidWords[i + 1].key) else { continue }
+            output[j].text.removeLast()
+            output[j].text.append(mark)
+            if let start = output[j + 1].text.first, start.isLowercase {
+                output[j + 1].text = start.uppercased() + output[j + 1].text.dropFirst()
+            }
+            putBack += 1
+        }
+        return putBack == 0 ? (rewrite, 0) : (joined(output), putBack)
+    }
+}
