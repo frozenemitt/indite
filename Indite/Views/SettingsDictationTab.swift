@@ -119,6 +119,9 @@ struct DictationSettingsView: View {
                     }
                 }
                 .help("So a key that sticks cannot record for ever.")
+
+                Toggle("Mute the Mac while you dictate", isOn: $settings.muteWhileDictating)
+                    .help("Music, videos and calls go quiet until the dictation ends. Indite's start and stop sounds still play.")
             }
 
             Section("Where the Text Goes") {

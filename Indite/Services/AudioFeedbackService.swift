@@ -49,13 +49,20 @@ final class AudioFeedbackService {
     // MARK: - Public API
 
     /// Play a feedback sound if enabled, using the user's chosen sound
-    func playIfEnabled(_ sound: Sound, settings: AppSettings) {
-        guard settings.playFeedbackSounds else { return }
+    ///
+    /// - Returns: How long the sound lasts, or zero when none plays, for anything that
+    ///   has to wait until it has been heard.
+    @discardableResult
+    func playIfEnabled(_ sound: Sound, settings: AppSettings) -> TimeInterval {
+        guard settings.playFeedbackSounds else { return 0 }
         #if os(iOS)
         AudioServicesPlaySystemSound(sound.systemSoundID)
+        return 0
         #elseif os(macOS)
         let soundId = settings.soundId(for: sound)
-        SoundCatalog.shared.makeNSSound(for: soundId)?.play()
+        guard let nsSound = SoundCatalog.shared.makeNSSound(for: soundId) else { return 0 }
+        nsSound.play()
+        return nsSound.duration
         #endif
     }
 

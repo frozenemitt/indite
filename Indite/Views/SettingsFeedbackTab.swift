@@ -22,6 +22,11 @@ struct FeedbackSettingsView: View {
             Section("Panels") {
                 Toggle("Show the words as you dictate", isOn: $settings.showDictationOverlay)
 
+                if settings.showDictationOverlay {
+                    Toggle("Hide the dictation panel from screen sharing", isOn: $settings.hideDictationPanelFromCaptures)
+                        .help("Screenshots and screen recordings leave it out too. The meeting pill stays visible, because whether the people on a call can see that they are being recorded is a question of their consent.")
+                }
+
                 if settings.showDictationOverlay || settings.showMeetingIndicator {
                     // Both panels. It used to put back the dictation panel alone, and
                     // a meeting pill dragged onto a display since unplugged had no way

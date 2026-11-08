@@ -76,6 +76,14 @@ final class AppSettings {
         didSet { save("inputDeviceUID", inputDeviceUID) }
     }
 
+    /// Mute the Mac's sound while a dictation records.
+    ///
+    /// Off by default: it silences whatever else is playing, a call included, and only
+    /// the user knows whether that is in the way.
+    var muteWhileDictating: Bool {
+        didSet { save("muteWhileDictating", muteWhileDictating) }
+    }
+
     /// Record what the Mac is playing alongside the microphone, during meetings.
     ///
     /// Off by default: it needs its own macOS permission, and it records everyone on
@@ -211,6 +219,15 @@ final class AppSettings {
         didSet { save("showDictationOverlay", showDictationOverlay) }
     }
 
+    /// Keep the dictation panel out of screen sharing, screenshots and screen recordings.
+    ///
+    /// Off by default, so a picture of the screen shows what was on it, as a bug report
+    /// or a demonstration needs. The meeting pill has no such setting: whether the people
+    /// on a call can see that they are being recorded is a question of their consent.
+    var hideDictationPanelFromCaptures: Bool {
+        didSet { save("hideDictationPanelFromCaptures", hideDictationPanelFromCaptures) }
+    }
+
     /// Show the AI what is already in the field being dictated into.
     ///
     /// Reads the focused field's existing text, so a dictated reply can match the
@@ -279,6 +296,7 @@ final class AppSettings {
         self.autoSubmitAfterInsert = UserDefaults.standard.object(forKey: "autoSubmitAfterInsert") as? Bool ?? false
         self.useSurroundingContext = UserDefaults.standard.object(forKey: "useSurroundingContext") as? Bool ?? false
         self.showDictationOverlay = UserDefaults.standard.object(forKey: "showDictationOverlay") as? Bool ?? true
+        self.hideDictationPanelFromCaptures = UserDefaults.standard.object(forKey: "hideDictationPanelFromCaptures") as? Bool ?? false
         self.overlayOriginX = UserDefaults.standard.object(forKey: "overlayOriginX") as? Double
         self.overlayOriginY = UserDefaults.standard.object(forKey: "overlayOriginY") as? Double
         self.meetingIndicatorOriginX = UserDefaults.standard.object(forKey: "meetingIndicatorOriginX") as? Double
@@ -289,6 +307,7 @@ final class AppSettings {
         self.wordReplacements = UserDefaults.standard.dictionary(forKey: "wordReplacements") as? [String: String] ?? [:]
         self.vocabularyHints = UserDefaults.standard.stringArray(forKey: "vocabularyHints") ?? []
         self.inputDeviceUID = UserDefaults.standard.string(forKey: "inputDeviceUID") ?? "default"
+        self.muteWhileDictating = UserDefaults.standard.object(forKey: "muteWhileDictating") as? Bool ?? false
         self.captureSystemAudioInMeetings = UserDefaults.standard.object(forKey: "captureSystemAudioInMeetings") as? Bool ?? false
         self.keepMeetingAudio = UserDefaults.standard.object(forKey: "keepMeetingAudio") as? Bool ?? true
         self.summarizeMeetingsAtEnd = UserDefaults.standard.object(forKey: "summarizeMeetingsAtEnd") as? Bool ?? true
@@ -372,6 +391,7 @@ final class AppSettings {
         autoSubmitAfterInsert = false
         useSurroundingContext = false
         showDictationOverlay = true
+        hideDictationPanelFromCaptures = false
         overlayOriginX = nil
         overlayOriginY = nil
         meetingIndicatorOriginX = nil
@@ -382,6 +402,7 @@ final class AppSettings {
         wordReplacements = [:]
         vocabularyHints = []
         inputDeviceUID = "default"
+        muteWhileDictating = false
         captureSystemAudioInMeetings = false
         keepMeetingAudio = true
         summarizeMeetingsAtEnd = true

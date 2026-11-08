@@ -341,6 +341,10 @@ struct InditeApp: App {
             // The coordinator keeps finished dictations, which needs the open store.
             coordinator.modelContext = InditeApp.modelContainer.mainContext
 
+            // A dictation that muted the Mac and never ended, because Indite crashed or
+            // was force quit, left the sound off.
+            OutputMute.restore()
+
             // Ask for notification permission at launch. Otherwise the first banner is
             // what creates the service, and it is posted before the request is answered,
             // so the system drops it.
