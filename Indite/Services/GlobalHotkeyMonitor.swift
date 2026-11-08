@@ -175,6 +175,9 @@ private struct TapState: Sendable {
     var isLocked = false
     /// This press ended a locked recording, so its release does nothing.
     var pressEndsLock = false
+    /// This press came during a recording the key did not start, from the menu or a
+    /// mouse side button, so its release ends that recording.
+    var pressEndsOtherRecording = false
 
     /// Shorter than this, a hold is a tap: too short to have said anything after the
     /// start sound. Also how long a tap waits for the second press of a double tap.
@@ -204,6 +207,17 @@ private struct TapState: Sendable {
             isSecondTap = true
             return .confirm
         }
+        // A recording the key did not start, from the menu or a mouse side button,
+        // ends on the release, as toggle mode ends one, once the press is known not
+        // to be ⌥E or Option-drag. The press used to start a second recording, which
+        // the coordinator refused with the error sound; a quick release then counted
+        // as a tap, and when no second tap followed, the running recording was
+        // cancelled without a sound and its words were lost.
+        if isRecording {
+            pressStartedRecording = false
+            pressEndsOtherRecording = true
+            return nil
+        }
         return .activate
     }
 
@@ -213,6 +227,10 @@ private struct TapState: Sendable {
         if pressEndsLock {
             pressEndsLock = false
             return nil
+        }
+        if pressEndsOtherRecording {
+            pressEndsOtherRecording = false
+            return .deactivate
         }
         let wasTap = pressedAt.map { now - $0 < Self.tapLength } ?? false
         if isSecondTap {
@@ -245,6 +263,7 @@ private struct TapState: Sendable {
         optionUsedAsModifier = false
         isSecondTap = false
         pressEndsLock = false
+        pressEndsOtherRecording = false
     }
 }
 
