@@ -318,6 +318,21 @@ final class GlobalHotkeyMonitor {
         }
     }
 
+    /// Forget a lock or a waiting tap that has no recording behind it, because the
+    /// recording its press asked for was refused.
+    ///
+    /// The tap learns that a recording ended from the coordinator's state, which a
+    /// refused start never changes. A double tap during a rewrite or a meeting left
+    /// the lock set, and the next press read as the end of it and did nothing.
+    func forgetGesture() {
+        tapState.withLock { state in
+            state.isLocked = false
+            state.tapPending = false
+            state.isSecondTap = false
+            state.pressEndsLock = false
+        }
+    }
+
     /// Optional second binding that takes back the last insertion.
     var undoTrigger: HotkeyTrigger? {
         didSet {
@@ -618,6 +633,14 @@ final class GlobalHotkeyMonitor {
                     return (true, isRepeat ? nil : .retype)
                 }
                 return (false, nil)
+
+            case .otherMouseDown where button == state.swallowedButton && button != state.mouseButton?.eventNumber:
+                // A press of a button whose last release never reached the tap: the tap
+                // was off or rebuilt, or a shortcut was being recorded. That release is
+                // owed nothing now, and this click goes through whole.
+                state.swallowedButton = nil
+                guard state.isKeyDown else { return (false, nil) }
+                return (false, state.useAsModifier())
 
             case .otherMouseDown where button == state.mouseButton?.eventNumber:
                 // The side button that dictates: a click starts a dictation and the

@@ -43,7 +43,20 @@ final class RecordingCoordinator {
     /// Mutes the Mac once the start sound has been heard, when the setting asks for it.
     /// Cancelled by `unmute()`, so a dictation that ends sooner mutes nothing.
     @ObservationIgnored private var muteTask: Task<Void, Never>?
+
+    /// Whether this dictation has muted the Mac yet, so a lock sound knows whether it
+    /// can still be heard.
+    @ObservationIgnored private var hasMuted = false
     #endif
+
+    /// The lock sound, waiting for the start sound to finish. Cancelled when the
+    /// dictation ends.
+    @ObservationIgnored private var lockSoundTask: Task<Void, Never>?
+
+    /// Called when the key asked for a recording that does not exist: a start refused
+    /// because the engine is busy or a dictation is still being delivered, or a lock
+    /// with no recording to lock. The hotkey then forgets the lock or the waiting tap.
+    var onNoRecording: (() -> Void)?
 
     #if os(macOS)
     /// Whoever was frontmost when recording began — the app the text belongs to.
@@ -298,9 +311,14 @@ final class RecordingCoordinator {
         // A release that landed during that wait used to find no start in flight and
         // was dropped. The microphone then opened with nobody holding the key.
         guard startTask == nil else { return }
-        isAnnounced = false
-        isLocked = false
-        announcesWhenLive = announced
+        // A start that will be refused, because a dictation is already recording, must
+        // leave that dictation's state alone. Resetting it here let the running
+        // dictation announce itself a second time and schedule a second mute.
+        if !isRecording {
+            isAnnounced = false
+            isLocked = false
+            announcesWhenLive = announced
+        }
         let task = Task { await self.begin() }
         startTask = task
         await task.value
@@ -316,6 +334,7 @@ final class RecordingCoordinator {
         guard !isDelivering else {
             Log.dictation.notice("Still delivering the last dictation")
             AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
+            onNoRecording?()
             return
         }
 
@@ -328,6 +347,7 @@ final class RecordingCoordinator {
             report(.problem(engine.owner == .meeting
                             ? "A meeting is using the microphone."
                             : "Indite is already recording."))
+            onNoRecording?()
             return
         }
 
@@ -428,9 +448,13 @@ final class RecordingCoordinator {
     /// takes up to 470 ms. The start sound has not played yet then, so the lock waits
     /// for it rather than sounding first.
     func lock() {
-        guard startTask != nil || isRecording else { return }
+        // A lock queued behind a stop, or behind a refused start, has nothing to lock.
+        guard startTask != nil || isRecording, !isDelivering else {
+            onNoRecording?()
+            return
+        }
         isLocked = true
-        if isAnnounced { announceLock() }
+        if isAnnounced { announceLock(after: 0) }
     }
 
     /// The start sound and the panel, once per dictation.
@@ -445,24 +469,53 @@ final class RecordingCoordinator {
         Log.dictation.notice("Start sound played")
 
         #if os(macOS)
-        if settings.muteWhileDictating { mute(after: startSound) }
-
         if settings.showDictationOverlay {
             overlay.show()
             startOverlayTicker()
         }
         #endif
 
-        if isLocked { announceLock() }
+        if isLocked {
+            // Locked before the microphone was live, which a slow start allows. The lock
+            // sound follows the start sound instead of starting with it: both sit near
+            // 700 Hz, and played together the lock is not heard.
+            announceLock(after: startSound)
+        } else {
+            #if os(macOS)
+            // A double tap locks at most one tap after this press, so the mute also waits
+            // that long. Muting sooner played the lock sound into a silent Mac whenever
+            // the start sound was shorter than the tap, or set to None.
+            if settings.muteWhileDictating { mute(after: max(startSound, Self.lockWindow)) }
+            #endif
+        }
     }
 
     /// The lock sound, and the lock in the panel.
-    private func announceLock() {
-        AudioFeedbackService.shared.playIfEnabled(.recordingLocked, settings: settings)
+    ///
+    /// - Parameter delay: How long to wait before the sound, for a start sound still
+    ///   playing. The lock shows in the panel at once.
+    private func announceLock(after delay: TimeInterval) {
         #if os(macOS)
         if settings.showDictationOverlay { overlay.showLocked() }
         #endif
+        lockSoundTask?.cancel()
+        lockSoundTask = Task {
+            if delay > 0 {
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+            }
+            let lockSound = AudioFeedbackService.shared.playIfEnabled(.recordingLocked, settings: settings)
+            #if os(macOS)
+            // The Mac goes quiet only once the lock sound has been heard. A mute that has
+            // already landed stays: the lock still shows in the panel.
+            if settings.muteWhileDictating, !hasMuted { mute(after: lockSound) }
+            #endif
+        }
     }
+
+    /// How long after a press its double tap can still lock the recording: the 300 ms a
+    /// tap may last, and a margin for the event to reach the main actor.
+    private static let lockWindow: TimeInterval = 0.5
 
     /// Stop, transcribe, optionally run the AI pass, then deliver the text.
     func stopAndProcess() async {
@@ -485,6 +538,8 @@ final class RecordingCoordinator {
         prefixWarmer?.cancel()
         prefixWarmer = nil
 
+        lockSoundTask?.cancel()
+        lockSoundTask = nil
         #if os(macOS)
         unmute()
         #endif
@@ -751,6 +806,8 @@ final class RecordingCoordinator {
         maxDurationTask?.cancel()
         maxDurationTask = nil
 
+        lockSoundTask?.cancel()
+        lockSoundTask = nil
         #if os(macOS)
         stopOverlayTicker()
         overlay.hide()
@@ -787,6 +844,8 @@ final class RecordingCoordinator {
         maxDurationTask = nil
         prefixWarmer?.cancel()
         prefixWarmer = nil
+        lockSoundTask?.cancel()
+        lockSoundTask = nil
         #if os(macOS)
         stopOverlayTicker()
         overlay.hide()
@@ -1002,19 +1061,34 @@ final class RecordingCoordinator {
     /// No meeting can be recording the Mac's sound meanwhile. The engine runs one session
     /// at a time and this dictation holds it, so a meeting cannot start, or resume from a
     /// pause, until the dictation has stopped and `unmute()` has run.
-    private func mute(after startSound: TimeInterval) {
+    private func mute(after sound: TimeInterval) {
+        // One pending mute at a time. A second one scheduled over the first, without
+        // cancelling it, outlived `unmute()` and silenced the Mac after the dictation.
+        muteTask?.cancel()
+        // The wait covers the audible part of a sound, not all of a long file. Every
+        // system sound falls 40 dB within 725 ms (Glass is the slowest; Funk takes
+        // 535 ms), while their files run to 1.65 s and 2.16 s, which left the first two
+        // seconds of a dictation unmuted.
+        let wait = min(sound, Self.longestMuteWait)
         muteTask = Task {
-            try? await Task.sleep(for: .seconds(startSound))
-            guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: .seconds(wait))
+            // Ended while waiting: `unmute()` has run, and nothing would put this back.
+            guard !Task.isCancelled, isRecording, !isDelivering else { return }
             OutputMute.mute()
+            hasMuted = true
         }
     }
+
+    /// The longest a mute waits for a sound to play out: past the 725 ms in which the
+    /// slowest system sound falls 40 dB.
+    private static let longestMuteWait: TimeInterval = 0.8
 
     /// Give the Mac its sound back. Called before the stop sound, so the stop sound is
     /// heard.
     private func unmute() {
         muteTask?.cancel()
         muteTask = nil
+        hasMuted = false
         OutputMute.restore()
     }
     #endif

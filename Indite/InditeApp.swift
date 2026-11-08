@@ -342,8 +342,9 @@ struct InditeApp: App {
             coordinator.modelContext = InditeApp.modelContainer.mainContext
 
             // A dictation that muted the Mac and never ended, because Indite crashed or
-            // was force quit, left the sound off.
-            OutputMute.restore()
+            // was force quit, left the sound off. Only a recent one is undone: after an
+            // hour, the sound may since have been muted on purpose.
+            OutputMute.restore(madeWithin: 3600)
 
             // Ask for notification permission at launch. Otherwise the first banner is
             // what creates the service, and it is posted before the request is answered,
@@ -376,6 +377,9 @@ struct InditeApp: App {
             }
             hotkeyMonitor.onLock = {
                 Task { @MainActor in coordinator.lock() }
+            }
+            coordinator.onNoRecording = { [hotkeyMonitor] in
+                hotkeyMonitor.forgetGesture()
             }
             hotkeyMonitor.onDeactivate = {
                 Task { @MainActor in await coordinator.stopAndProcess() }
