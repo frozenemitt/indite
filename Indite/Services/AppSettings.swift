@@ -76,6 +76,14 @@ final class AppSettings {
         didSet { save("inputDeviceUID", inputDeviceUID) }
     }
 
+    /// Mute the Mac's sound while a dictation records.
+    ///
+    /// Off by default: it silences whatever else is playing, a call included, and only
+    /// the user knows whether that is in the way.
+    var muteWhileDictating: Bool {
+        didSet { save("muteWhileDictating", muteWhileDictating) }
+    }
+
     /// Record what the Mac is playing alongside the microphone, during meetings.
     ///
     /// Off by default: it needs its own macOS permission, and it records everyone on
@@ -289,6 +297,7 @@ final class AppSettings {
         self.wordReplacements = UserDefaults.standard.dictionary(forKey: "wordReplacements") as? [String: String] ?? [:]
         self.vocabularyHints = UserDefaults.standard.stringArray(forKey: "vocabularyHints") ?? []
         self.inputDeviceUID = UserDefaults.standard.string(forKey: "inputDeviceUID") ?? "default"
+        self.muteWhileDictating = UserDefaults.standard.object(forKey: "muteWhileDictating") as? Bool ?? false
         self.captureSystemAudioInMeetings = UserDefaults.standard.object(forKey: "captureSystemAudioInMeetings") as? Bool ?? false
         self.keepMeetingAudio = UserDefaults.standard.object(forKey: "keepMeetingAudio") as? Bool ?? true
         self.summarizeMeetingsAtEnd = UserDefaults.standard.object(forKey: "summarizeMeetingsAtEnd") as? Bool ?? true
@@ -382,6 +391,7 @@ final class AppSettings {
         wordReplacements = [:]
         vocabularyHints = []
         inputDeviceUID = "default"
+        muteWhileDictating = false
         captureSystemAudioInMeetings = false
         keepMeetingAudio = true
         summarizeMeetingsAtEnd = true

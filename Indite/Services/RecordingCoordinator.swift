@@ -39,6 +39,10 @@ final class RecordingCoordinator {
     /// twenty a second for the level band's sake; the text is only handed over when it
     /// has actually changed, so the cost of the faster tick is one number.
     private var overlayTicker: Task<Void, Never>?
+
+    /// Mutes the Mac once the start sound has been heard, when the setting asks for it.
+    /// Cancelled by `unmute()`, so a dictation that ends sooner mutes nothing.
+    @ObservationIgnored private var muteTask: Task<Void, Never>?
     #endif
 
     #if os(macOS)
@@ -408,10 +412,12 @@ final class RecordingCoordinator {
         // Sounded only once capture is live, so the user does not talk over the gap:
         // `startRecording` returns after the audio engine has started, and every
         // buffer from that moment on is kept.
-        AudioFeedbackService.shared.playIfEnabled(.recordingStarted, settings: settings)
+        let startSound = AudioFeedbackService.shared.playIfEnabled(.recordingStarted, settings: settings)
         Log.dictation.notice("Start sound played")
 
         #if os(macOS)
+        if settings.muteWhileDictating { mute(after: startSound) }
+
         if settings.showDictationOverlay {
             overlay.show()
             startOverlayTicker()
@@ -437,6 +443,9 @@ final class RecordingCoordinator {
         prefixWarmer?.cancel()
         prefixWarmer = nil
 
+        #if os(macOS)
+        unmute()
+        #endif
         AudioFeedbackService.shared.playIfEnabled(.recordingStopped, settings: settings)
 
         #if os(macOS)
@@ -664,6 +673,7 @@ final class RecordingCoordinator {
         #if os(macOS)
         stopOverlayTicker()
         overlay.hide()
+        unmute()
         #endif
 
         prefixWarmer?.cancel()
@@ -699,6 +709,7 @@ final class RecordingCoordinator {
         #if os(macOS)
         stopOverlayTicker()
         overlay.hide()
+        unmute()
         #endif
         aiProcessor.discardPrewarm()
 
@@ -888,6 +899,34 @@ final class RecordingCoordinator {
     private func stopOverlayTicker() {
         overlayTicker?.cancel()
         overlayTicker = nil
+    }
+
+    // MARK: - The Mac's Sound
+
+    /// Mute the Mac once the start sound has played through it.
+    ///
+    /// The start sound plays through the device being muted, so the mute waits for the
+    /// sound's length. Waiting no longer is enough: the last 200 ms of every system sound
+    /// is at least 51 dB below its peak, 66 dB for Morse, the default, so a headset still
+    /// playing out the end when the mute lands loses nothing anyone would hear.
+    ///
+    /// No meeting can be recording the Mac's sound meanwhile. The engine runs one session
+    /// at a time and this dictation holds it, so a meeting cannot start, or resume from a
+    /// pause, until the dictation has stopped and `unmute()` has run.
+    private func mute(after startSound: TimeInterval) {
+        muteTask = Task {
+            try? await Task.sleep(for: .seconds(startSound))
+            guard !Task.isCancelled else { return }
+            OutputMute.mute()
+        }
+    }
+
+    /// Give the Mac its sound back. Called before the stop sound, so the stop sound is
+    /// heard.
+    private func unmute() {
+        muteTask?.cancel()
+        muteTask = nil
+        OutputMute.restore()
     }
     #endif
 

@@ -248,7 +248,7 @@ enum AudioDeviceCatalog {
         return list.contains { $0.mNumberChannels > 0 }
     }
 
-    private static func stringProperty(
+    static func stringProperty(
         _ selector: AudioObjectPropertySelector,
         for deviceID: AudioDeviceID
     ) -> String? {
