@@ -219,6 +219,15 @@ final class AppSettings {
         didSet { save("showDictationOverlay", showDictationOverlay) }
     }
 
+    /// Keep the dictation panel out of screen sharing, screenshots and screen recordings.
+    ///
+    /// Off by default, so a picture of the screen shows what was on it, as a bug report
+    /// or a demonstration needs. The meeting pill has no such setting: whether the people
+    /// on a call can see that they are being recorded is a question of their consent.
+    var hideDictationPanelFromCaptures: Bool {
+        didSet { save("hideDictationPanelFromCaptures", hideDictationPanelFromCaptures) }
+    }
+
     /// Show the AI what is already in the field being dictated into.
     ///
     /// Reads the focused field's existing text, so a dictated reply can match the
@@ -287,6 +296,7 @@ final class AppSettings {
         self.autoSubmitAfterInsert = UserDefaults.standard.object(forKey: "autoSubmitAfterInsert") as? Bool ?? false
         self.useSurroundingContext = UserDefaults.standard.object(forKey: "useSurroundingContext") as? Bool ?? false
         self.showDictationOverlay = UserDefaults.standard.object(forKey: "showDictationOverlay") as? Bool ?? true
+        self.hideDictationPanelFromCaptures = UserDefaults.standard.object(forKey: "hideDictationPanelFromCaptures") as? Bool ?? false
         self.overlayOriginX = UserDefaults.standard.object(forKey: "overlayOriginX") as? Double
         self.overlayOriginY = UserDefaults.standard.object(forKey: "overlayOriginY") as? Double
         self.meetingIndicatorOriginX = UserDefaults.standard.object(forKey: "meetingIndicatorOriginX") as? Double
@@ -381,6 +391,7 @@ final class AppSettings {
         autoSubmitAfterInsert = false
         useSurroundingContext = false
         showDictationOverlay = true
+        hideDictationPanelFromCaptures = false
         overlayOriginX = nil
         overlayOriginY = nil
         meetingIndicatorOriginX = nil

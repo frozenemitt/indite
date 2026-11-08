@@ -137,6 +137,9 @@ final class DictationOverlayController {
         if panel == nil || panel?.isOnActiveSpace == false {
             replacePanel()
         }
+        // Read at every showing, so the switch in Settings reaches a panel built before
+        // it was turned.
+        panel?.sharingType = sharingType
         watchForStranding()
         followScreenChanges()
 
@@ -315,6 +318,16 @@ final class DictationOverlayController {
 
     // MARK: - Panel
 
+    /// Whether other apps may capture the panel, by the user's choice.
+    ///
+    /// `.none` keeps it out of shared screens, screenshots and recordings alike. Measured
+    /// on macOS 27.2 with a magenta panel: `screencapture -R`, `SCScreenshotManager` and
+    /// the first frame of an `SCStream` held none of its color, while the same panel at
+    /// the default `.readOnly` filled all three.
+    private var sharingType: NSWindow.SharingType {
+        settings.hideDictationPanelFromCaptures ? .none : .readOnly
+    }
+
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.width, height: Self.minimumHeight),
@@ -340,6 +353,9 @@ final class DictationOverlayController {
         // Stays up when Indite is hidden, which would otherwise take the panel away
         // in the middle of a dictation.
         panel.canHide = false
+        // Set here as well as on showing: a panel rebuilt mid-dictation, when a desktop
+        // change strands the old one, is ordered front without being shown again.
+        panel.sharingType = sharingType
 
         // The SwiftUI content swallows the mouse, so `isMovableByWindowBackground`
         // never sees a click and the panel could not be dragged at all. This view sits
