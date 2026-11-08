@@ -2,13 +2,15 @@ import SwiftUI
 
 // MARK: - Words Settings
 
-/// The words Indite should know, and the ones it should always write differently.
+/// The words Indite should know, the ones it should always write differently, and the
+/// saved text a spoken cue stands for.
 struct WordsSettingsView: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var vocabularyText = ""
     @State private var replacements: [ReplacementRow] = []
     @State private var selectedReplacement: ReplacementRow.ID?
+    @State private var snippets: [SnippetRow] = []
 
     /// One editable row. Carries its own identity so SwiftUI does not reshuffle
     /// text fields as the user types a key that collides with another row.
@@ -16,6 +18,13 @@ struct WordsSettingsView: View {
         let id = UUID()
         var spoken: String
         var written: String
+    }
+
+    /// One editable snippet, with an identity of its own for the same reason.
+    struct SnippetRow: Identifiable, Equatable {
+        let id = UUID()
+        var cue: String
+        var text: String
     }
 
     var body: some View {
@@ -86,9 +95,51 @@ struct WordsSettingsView: View {
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
             }
+
+            Section("Snippets") {
+                Text("Say the cue in a dictation, and Indite types the text exactly as you wrote it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if hasDuplicateCues {
+                    Label {
+                        Text("Two snippets have the same cue. Only one of them will be typed.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    }
+                    .font(.caption)
+                }
+            }
+
+            // A section for each, as the Apps tab gives each profile one. A table's
+            // text field holds a single line, while saved text can run to several, as an
+            // address or a signature does. In the editor, Return starts a new line.
+            ForEach($snippets) { $snippet in
+                Section {
+                    TextField("Cue", text: $snippet.cue, prompt: Text("my calendar link"))
+
+                    TextEditor(text: $snippet.text)
+                        .font(.body)
+                        .frame(minHeight: 60)
+
+                    Button("Remove Snippet", role: .destructive) {
+                        snippets.removeAll { $0.id == snippet.id }
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+
+            Section {
+                Button("Add Snippet", systemImage: "plus") {
+                    snippets.append(SnippetRow(cue: "", text: ""))
+                }
+                .buttonStyle(.borderless)
+            }
         }
         .formStyle(.grouped)
         .onAppear(perform: load)
+        .onChange(of: snippets) { _, _ in commitSnippets() }
     }
 
     private func removeSelectedReplacement() {
@@ -102,6 +153,9 @@ struct WordsSettingsView: View {
         replacements = settings.wordReplacements
             .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
             .map { ReplacementRow(spoken: $0.key, written: $0.value) }
+        snippets = settings.snippets
+            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { SnippetRow(cue: $0.key, text: $0.value) }
     }
 
     /// Whether two rows share a heard word, ignoring case the way matching itself
@@ -128,5 +182,27 @@ struct WordsSettingsView: View {
             result[spoken] = written
         }
         settings.wordReplacements = result
+    }
+
+    /// Whether two snippets share a cue, ignoring case as matching does. Only one of
+    /// them can be typed, and nothing else says which.
+    private var hasDuplicateCues: Bool {
+        let cues = snippets
+            .map { $0.cue.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty }
+        return Set(cues).count != cues.count
+    }
+
+    /// Rebuild the stored snippets from the rows. A row is kept once it has a cue and
+    /// some text. The text is stored exactly as written, with its spaces and line
+    /// breaks, because that is how it is typed.
+    private func commitSnippets() {
+        var result: [String: String] = [:]
+        for row in snippets {
+            let cue = row.cue.trimmingCharacters(in: .whitespaces)
+            guard !cue.isEmpty, !row.text.isEmpty else { continue }
+            result[cue] = row.text
+        }
+        settings.snippets = result
     }
 }

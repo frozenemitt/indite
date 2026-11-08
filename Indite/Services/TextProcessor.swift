@@ -60,6 +60,34 @@ enum TextProcessor {
         options: [.caseInsensitive]
     )
 
+    // MARK: - Press Enter
+
+    /// `text` without the "press enter" or "press return" it ends with, or nil when it
+    /// does not end with one.
+    ///
+    /// Capitals and the punctuation around the words do not matter. A mark that ended
+    /// the sentence after them goes back onto the words before, so "See you then press
+    /// enter." leaves "See you then." The words have to follow others: a dictation of
+    /// "press enter" alone leaves nothing to type before the Return.
+    static func removingPressEnter(from text: String) -> String? {
+        let whole = text as NSString
+        guard let match = pressEnter.firstMatch(in: text, range: NSRange(location: 0, length: whole.length)) else {
+            return nil
+        }
+        let rest = whole.substring(to: match.range.location)
+        guard rest.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        let mark = whole.substring(with: match.range(at: 1))
+        guard let last = rest.last, !".!?…".contains(last) else { return rest }
+        return rest + mark
+    }
+
+    /// "press enter" or "press return" at the end of the text, with the spaces, commas
+    /// or dashes before it and the sentence mark after it.
+    private static let pressEnter = try! NSRegularExpression(
+        pattern: "[\\s,;:–—-]*(?<![\\p{L}\\p{N}_])press\\s+(?:enter|return)([.!?…]*)\\s*$",
+        options: [.caseInsensitive]
+    )
+
     // MARK: - Word Replacements
 
     /// Case-insensitive whole-word substitution.

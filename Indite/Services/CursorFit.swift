@@ -28,11 +28,16 @@ enum CursorFit {
     ///   - names: Words the user has taught Indite, which keep their capitals.
     ///   - language: The language dictations are transcribed in. German gives every
     ///     noun a capital, so a German first word keeps the one it came with.
-    static func fit(_ text: String, before: String, after: String, names: [String], language: Locale.Language?) -> String {
-        var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    ///   - keepingText: Leave every character of the text as it is, and fit only the
+    ///     spaces around it. For a dictation that holds a snippet, whose saved text has
+    ///     to arrive as it was written, with its capitals, its full stop and any line
+    ///     break at either end.
+    static func fit(_ text: String, before: String, after: String, names: [String], language: Locale.Language?,
+                    keepingText: Bool = false) -> String {
+        var text = keepingText ? text : text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return text }
 
-        if language?.languageCode != .german,
+        if !keepingText, language?.languageCode != .german,
            continuesSentence(before), let first = text.split(separator: " ").first,
            let initial = first.first, initial.isUppercase,
            !keepsCapital(String(first), in: text, before: before, names: names) {
@@ -40,17 +45,18 @@ enum CursorFit {
         }
 
         // A sentence the text after the cursor goes on with does not end here.
-        if carriesOn(after), text.hasSuffix("."), !text.hasSuffix("..") {
+        if !keepingText, carriesOn(after), text.hasSuffix("."), !text.hasSuffix("..") {
             text.removeLast()
         }
 
-        if endsWord(before), let first = text.first, !",.;:!?)".contains(first),
+        // Kept text can start or end with a line break, which needs no space beside it.
+        if endsWord(before), let first = text.first, !first.isWhitespace, !",.;:!?)".contains(first),
            !writtenWithoutSpaces(first), let last = before.last, !writtenWithoutSpaces(last) {
             text = " " + text
         }
 
         if let next = after.first, next.isLetter || next.isNumber, !writtenWithoutSpaces(next),
-           let last = text.last, !writtenWithoutSpaces(last) {
+           let last = text.last, !last.isWhitespace, !writtenWithoutSpaces(last) {
             text += " "
         }
         return text

@@ -226,6 +226,11 @@ enum HelpLibrary {
             unsent. "Nothing" is the default. If your messages are being sent \
             automatically, choose "Nothing" or "Press Shift-Return" to stop it.
 
+            To send a single dictation, end it with "press enter" or "press return". \
+            Indite types the words before them and then presses Return. A message you \
+            meant to end with those words is sent without them; to stop that, turn off \
+            the switch below "After typing".
+
             To press Return in one app only, add a profile for that app in the Apps tab \
             and set "Press Return after typing" to Yes. Once Return has been pressed, the \
             undo key cannot take the dictation back.
