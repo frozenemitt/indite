@@ -540,6 +540,15 @@ final class RecordingCoordinator {
                 )
                 report(.problem(engineError.localizedDescription))
                 Log.dictation.error("Recognition failed: \(engineError, privacy: .public)")
+            } else if !engine.receivedAudio, (spokenDuration ?? 0) < 0.5 {
+                // Let go before the microphone's first buffer arrived, so nothing was
+                // recorded and nothing failed. On 2026-11-08 two recordings ended 17
+                // and 56 ms after they started, and each played the error sound and
+                // blamed the microphone for what was an accidental tap.
+                #if os(macOS)
+                overlay.hide()
+                #endif
+                Log.dictation.notice("The recording ended before any audio arrived, so there is nothing to deliver")
             } else {
                 AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
                 NotificationService.shared.showErrorIfEnabled(

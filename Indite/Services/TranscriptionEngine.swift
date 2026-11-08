@@ -61,6 +61,12 @@ final class TranscriptionEngine {
     /// Behind a lock because the audio loop reads it off the main actor.
     @ObservationIgnored private let spectrumWanted = OSAllocatedUnfairLock(initialState: false)
 
+    /// Whether the microphone has delivered any audio in this session, or in the last
+    /// one once it has stopped. The first buffer takes about 100 ms to arrive, so a key
+    /// let go before then recorded nothing at all.
+    var receivedAudio: Bool { audioArrived.withLock { $0 } }
+    @ObservationIgnored private let audioArrived = OSAllocatedUnfairLock(initialState: false)
+
     var publishesSpectrum: Bool {
         get { spectrumWanted.withLock { $0 } }
         set { spectrumWanted.withLock { $0 = newValue } }
@@ -285,6 +291,8 @@ final class TranscriptionEngine {
         spectrumWanted.withLock { $0 = publishesSpectrum }
         let spectrumWanted = self.spectrumWanted
         let transcribedChannel = self.transcribedChannel
+        let audioArrived = self.audioArrived
+        audioArrived.withLock { $0 = false }
 
         audioProcessingTask = Task.detached(priority: .userInitiated) { [weak self] in
             let converter = BufferConverter()
@@ -294,6 +302,7 @@ final class TranscriptionEngine {
 
             for await audioData in audioStream {
                 bufferCount += 1
+                if bufferCount == 1 { audioArrived.withLock { $0 = true } }
 
                 // Hand the untouched buffer to any second consumer before conversion,
                 // so diarization sees the same audio the transcriber does.
