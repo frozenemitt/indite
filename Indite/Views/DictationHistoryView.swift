@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import SwiftData
 
@@ -27,6 +28,9 @@ struct DictationHistoryView: View {
     /// The dictation deleted last, held for a few seconds so it can be put back.
     @State private var lastDeleted: DeletedDictation?
     @State private var undoTimeout: Task<Void, Never>?
+    /// The start of today, for the line above the list. Set again whenever the day
+    /// changes, since the week and the days in a row depend on it.
+    @State private var today = Calendar.current.startOfDay(for: .now)
 
     /// What it takes to put a deleted dictation back as it was.
     private struct DeletedDictation {
@@ -76,7 +80,7 @@ struct DictationHistoryView: View {
 
             HistoryTotals(
                 limit: settings.keepDictationHistory ? settings.dictationHistoryLimit : nil,
-                today: Calendar.current.startOfDay(for: .now)
+                today: today
             )
 
             if dictations.isEmpty {
@@ -119,6 +123,16 @@ struct DictationHistoryView: View {
             }
         }
         .frame(minWidth: 600, minHeight: 320)
+        // The day changes at midnight, which the system reports on waking when the Mac
+        // slept through it, and when the Mac moves to another time zone. Either may be
+        // posted from another thread.
+        .onReceive(
+            NotificationCenter.default.publisher(for: .NSCalendarDayChanged)
+                .merge(with: NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange))
+                .receive(on: DispatchQueue.main)
+        ) { _ in
+            today = Calendar.current.startOfDay(for: .now)
+        }
         .navigationTitle("Recent Dictations")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search dictations")
         .toolbar {
