@@ -61,6 +61,10 @@ final class RecordingCoordinator {
     /// turns out to be a dictation.
     private var announcesWhenLive = true
 
+    /// Whether a double tap has locked this dictation on, so it goes on after the key
+    /// comes up.
+    private var isLocked = false
+
     /// Stops a recording that has run past `settings.maxRecordingSeconds`.
     private var maxDurationTask: Task<Void, Never>?
 
@@ -280,6 +284,7 @@ final class RecordingCoordinator {
         // was dropped. The microphone then opened with nobody holding the key.
         guard startTask == nil else { return }
         isAnnounced = false
+        isLocked = false
         announcesWhenLive = announced
         let task = Task { await self.begin() }
         startTask = task
@@ -400,6 +405,18 @@ final class RecordingCoordinator {
         if isRecording { announce() }
     }
 
+    /// Say that a double tap has locked the recording on: the lock sound, and a lock
+    /// in the panel until the recording ends.
+    ///
+    /// The second tap can come up before the microphone is live, since starting it
+    /// takes up to 470 ms. The start sound has not played yet then, so the lock waits
+    /// for it rather than sounding first.
+    func lock() {
+        guard startTask != nil || isRecording else { return }
+        isLocked = true
+        if isAnnounced { announceLock() }
+    }
+
     /// The start sound and the panel, once per dictation.
     private func announce() {
         guard !isAnnounced else { return }
@@ -416,6 +433,16 @@ final class RecordingCoordinator {
             overlay.show()
             startOverlayTicker()
         }
+        #endif
+
+        if isLocked { announceLock() }
+    }
+
+    /// The lock sound, and the lock in the panel.
+    private func announceLock() {
+        AudioFeedbackService.shared.playIfEnabled(.recordingLocked, settings: settings)
+        #if os(macOS)
+        if settings.showDictationOverlay { overlay.showLocked() }
         #endif
     }
 

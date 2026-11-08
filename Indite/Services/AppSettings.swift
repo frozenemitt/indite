@@ -33,6 +33,20 @@ final class AppSettings {
         didSet { save("startSoundName", startSoundName) }
     }
 
+    /// Sound to play when a double tap locks the recording on.
+    ///
+    /// Tink by default, chosen to sit with Morse and Pop, the start and stop sounds.
+    /// Measured on macOS 27's files, the loudest frequency in all three is near 700 Hz
+    /// (Tink 703, Morse 668, Pop 680), so the lock sounds like one of the set. Tink is
+    /// also the shortest system sound: it falls 40 dB below its peak within 40 ms, where
+    /// Morse takes 120 ms and Pop 210 ms. The lock plays as the second tap comes up, a
+    /// moment after the start sound and with the microphone recording, so a click that
+    /// short barely runs into the start sound and leaves little of itself in the
+    /// dictation.
+    var lockSoundName: String {
+        didSet { save("lockSoundName", lockSoundName) }
+    }
+
     /// Sound to play when recording stops
     var stopSoundName: String {
         didSet { save("stopSoundName", stopSoundName) }
@@ -254,6 +268,7 @@ final class AppSettings {
         self.playFeedbackSounds = UserDefaults.standard.object(forKey: "playFeedbackSounds") as? Bool ?? true
         self.showNotifications = UserDefaults.standard.object(forKey: "showNotifications") as? Bool ?? true
         self.startSoundName = UserDefaults.standard.string(forKey: "startSoundName") ?? "Morse"
+        self.lockSoundName = UserDefaults.standard.string(forKey: "lockSoundName") ?? "Tink"
         self.stopSoundName = UserDefaults.standard.string(forKey: "stopSoundName") ?? "Pop"
         self.completeSoundName = UserDefaults.standard.string(forKey: "completeSoundName") ?? "Glass"
         self.errorSoundName = UserDefaults.standard.string(forKey: "errorSoundName") ?? "Basso"
@@ -357,6 +372,7 @@ final class AppSettings {
         playFeedbackSounds = true
         showNotifications = true
         startSoundName = "Morse"
+        lockSoundName = "Tink"
         stopSoundName = "Pop"
         completeSoundName = "Glass"
         errorSoundName = "Basso"
@@ -397,6 +413,7 @@ final class AppSettings {
     func soundId(for sound: AudioFeedbackService.Sound) -> String {
         switch sound {
         case .recordingStarted: return startSoundName
+        case .recordingLocked: return lockSoundName
         case .recordingStopped: return stopSoundName
         case .processingComplete: return completeSoundName
         case .error: return errorSoundName

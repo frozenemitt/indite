@@ -45,6 +45,11 @@ struct FeedbackSettingsView: View {
                         sounds: soundCatalog.allSounds
                     )
                     SoundPickerRow(
+                        label: "Recording locked",
+                        selection: $settings.lockSoundName,
+                        sounds: soundCatalog.allSounds
+                    )
+                    SoundPickerRow(
                         label: "Recording stopped",
                         selection: $settings.stopSoundName,
                         sounds: soundCatalog.allSounds
@@ -141,6 +146,7 @@ struct FeedbackSettingsView: View {
             // delete still stranded the user's sound choice on a file that was
             // never removed.
             if settings.startSoundName == id { settings.startSoundName = "Morse" }
+            if settings.lockSoundName == id { settings.lockSoundName = "Tink" }
             if settings.stopSoundName == id { settings.stopSoundName = "Pop" }
             if settings.completeSoundName == id { settings.completeSoundName = "Glass" }
             if settings.errorSoundName == id { settings.errorSoundName = "Basso" }

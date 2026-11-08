@@ -370,6 +370,9 @@ struct InditeApp: App {
             hotkeyMonitor.onConfirm = {
                 Task { @MainActor in coordinator.confirm() }
             }
+            hotkeyMonitor.onLock = {
+                Task { @MainActor in coordinator.lock() }
+            }
             hotkeyMonitor.onDeactivate = {
                 Task { @MainActor in await coordinator.stopAndProcess() }
             }

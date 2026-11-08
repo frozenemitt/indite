@@ -163,7 +163,8 @@ enum HelpLibrary {
             "Hold to talk", the default, listens while you hold the key down and stops \
             when you let go. To talk hands-free in this mode too, tap the key twice \
             quickly: Indite keeps listening after you let go, until you press the key \
-            once more.
+            once more. A short sound says it has locked, and a lock shows in the \
+            dictation panel for as long as it listens.
 
             In either mode, Escape throws the dictation away.
             """,

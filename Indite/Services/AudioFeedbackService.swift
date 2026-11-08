@@ -16,6 +16,9 @@ final class AudioFeedbackService {
 
     enum Sound {
         case recordingStarted
+        /// A double tap of the dictation key kept the recording going after the key
+        /// came up.
+        case recordingLocked
         case recordingStopped
         case processingComplete
         case error
@@ -25,6 +28,8 @@ final class AudioFeedbackService {
             switch self {
             case .recordingStarted:
                 return 1113  // begin_record.caf
+            case .recordingLocked:
+                return 1057  // Tink, as on the Mac
             case .recordingStopped:
                 return 1114  // end_record.caf
             case .processingComplete:

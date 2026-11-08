@@ -305,6 +305,9 @@ final class GlobalHotkeyMonitor {
     /// The recording that began is a dictation, not a tap, and can show itself.
     /// Push-to-talk only.
     var onConfirm: (() -> Void)?
+    /// Two quick taps locked the recording on, and the next press ends it.
+    /// Push-to-talk only.
+    var onLock: (() -> Void)?
     /// Recording should end and transcribe. Push-to-talk only.
     var onDeactivate: (() -> Void)?
     /// Recording should flip state. Toggle mode only.
@@ -681,6 +684,7 @@ final class GlobalHotkeyMonitor {
 
         case .lock:
             Log.hotkey.notice("double tap — recording locked until the next press")
+            onLock?()
 
         case .cancel: onCancel?()
         case .abandon: onAbandon?()
