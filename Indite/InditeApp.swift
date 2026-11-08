@@ -90,7 +90,7 @@ struct InditeApp: App {
     /// because App Intents are built by the system and cannot be handed the app's
     /// dependencies — without this a shortcut could not write to history at all.
     static let modelContainer: ModelContainer = {
-        let schema = Schema(versionedSchema: MeetingSchemaV2.self)
+        let schema = Schema(versionedSchema: MeetingSchemaV3.self)
         do {
             // A file of our own, never the default. The Mac app is not sandboxed, so the
             // default is the shared ~/Library/Application Support/default.store — a file

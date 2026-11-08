@@ -20,7 +20,7 @@ struct MCPServer {
     private static let protocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]
 
     init() throws {
-        let schema = Schema(versionedSchema: MeetingSchemaV2.self)
+        let schema = Schema(versionedSchema: MeetingSchemaV3.self)
         let config = ModelConfiguration(schema: schema, url: AppFolder.store, allowsSave: false)
         let container = try ModelContainer(
             for: schema,
