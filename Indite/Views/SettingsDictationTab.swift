@@ -151,6 +151,9 @@ struct DictationSettingsView: View {
                         Text("Press Shift-Return").tag(AfterTyping.pressShiftReturn)
                     }
                     .help("Return sends the message in a chat app. Shift-Return starts a new line and leaves it unsent.")
+
+                    Toggle("Press Return when a dictation ends with \u{201C}press enter\u{201D}", isOn: $settings.pressEnterSubmits)
+                        .help("A dictation that ends with \u{201C}press enter\u{201D} or \u{201C}press return\u{201D} is typed without those words and sent, even when you meant to write them.")
                 }
             }
 

@@ -233,6 +233,16 @@ final class AppSettings {
         didSet { save("useShiftReturnAfterInsert", useShiftReturnAfterInsert) }
     }
 
+    /// Press Return after the paste when a dictation ends with "press enter" or "press
+    /// return", for that dictation only. The words themselves are left out.
+    ///
+    /// On by default, so the command works without a visit to Settings. A dictation
+    /// meant to end with those words is sent without them; the setting's help warns of
+    /// that.
+    var pressEnterSubmits: Bool {
+        didSet { save("pressEnterSubmits", pressEnterSubmits) }
+    }
+
     /// Safety cap on a single recording, in seconds.
     var maxRecordingSeconds: Int {
         didSet { save("maxRecordingSeconds", maxRecordingSeconds) }
@@ -285,6 +295,7 @@ final class AppSettings {
         self.meetingIndicatorOriginY = UserDefaults.standard.object(forKey: "meetingIndicatorOriginY") as? Double
         self.showMeetingIndicator = UserDefaults.standard.object(forKey: "showMeetingIndicator") as? Bool ?? true
         self.useShiftReturnAfterInsert = UserDefaults.standard.object(forKey: "useShiftReturnAfterInsert") as? Bool ?? false
+        self.pressEnterSubmits = UserDefaults.standard.object(forKey: "pressEnterSubmits") as? Bool ?? true
         self.maxRecordingSeconds = UserDefaults.standard.object(forKey: "maxRecordingSeconds") as? Int ?? 600
         self.wordReplacements = UserDefaults.standard.dictionary(forKey: "wordReplacements") as? [String: String] ?? [:]
         self.vocabularyHints = UserDefaults.standard.stringArray(forKey: "vocabularyHints") ?? []
@@ -378,6 +389,7 @@ final class AppSettings {
         meetingIndicatorOriginY = nil
         showMeetingIndicator = true
         useShiftReturnAfterInsert = false
+        pressEnterSubmits = true
         maxRecordingSeconds = 600
         wordReplacements = [:]
         vocabularyHints = []
