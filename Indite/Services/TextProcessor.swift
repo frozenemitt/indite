@@ -82,9 +82,11 @@ enum TextProcessor {
     }
 
     /// "press enter" or "press return" at the end of the text, with the spaces, commas
-    /// or dashes before it and the sentence mark after it.
+    /// or dashes before it and the sentence mark after it. A pause between the two words
+    /// leaves the recognizer's full stop, comma, ellipsis, question or exclamation mark
+    /// there, with a capital after it: "See you then. Press. Enter."
     private static let pressEnter = try! NSRegularExpression(
-        pattern: "[\\s,;:–—-]*(?<![\\p{L}\\p{N}_])press\\s+(?:enter|return)([.!?…]*)\\s*$",
+        pattern: "[\\s,;:–—-]*(?<![\\p{L}\\p{N}_])press[.,?!…]*\\s+(?:enter|return)([.!?…]*)\\s*$",
         options: [.caseInsensitive]
     )
 
