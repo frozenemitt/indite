@@ -163,7 +163,13 @@ enum HelpLibrary {
             "Hold to talk", the default, listens while you hold the key down and stops \
             when you let go. To talk hands-free in this mode too, tap the key twice \
             quickly: Indite keeps listening after you let go, until you press the key \
-            once more.
+            once more. A short sound says it has locked, and a lock shows in the \
+            dictation panel for as long as it listens.
+
+            A mouse side button can start and stop a dictation too. In the same \
+            settings, pick the back or forward button under "Mouse button". Click it \
+            once to start and once more to stop. The button then no longer goes back \
+            or forward in other apps.
 
             In either mode, Escape throws the dictation away.
             """,

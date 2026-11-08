@@ -100,6 +100,7 @@ struct AboutSettingsView: View {
         // until the app is relaunched.
         hotkeyMonitor.dictationKey = settings.dictationKey
         hotkeyMonitor.activationMode = settings.hotkeyActivationMode
+        hotkeyMonitor.mouseButton = settings.dictationMouseButton
         hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
         hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
     }

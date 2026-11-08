@@ -86,8 +86,16 @@ final class DictationOverlayController {
         model.text = ""
         model.rewrite = ""
         model.isProcessing = false
+        model.isLocked = false
         model.spectrum = []
         present()
+    }
+
+    /// Show a lock at the ribbon's right end while a double tap keeps the recording
+    /// going. Whatever the panel does next takes it away: the rewrite, an outcome, or
+    /// closing.
+    func showLocked() {
+        model.isLocked = true
     }
 
     /// Say how a dictation ended, when it did not end with the words in the field.
@@ -105,6 +113,7 @@ final class DictationOverlayController {
         model.text = outcome.detail
         model.rewrite = ""
         model.isProcessing = false
+        model.isLocked = false
         model.spectrum = []
         present()
         // The headline needs room the one-line panel does not have. The text reports
@@ -196,6 +205,7 @@ final class DictationOverlayController {
 
     func showProcessing() {
         model.isProcessing = true
+        model.isLocked = false
         model.rewrite = ""
     }
 
@@ -215,6 +225,7 @@ final class DictationOverlayController {
         model.text = ""
         model.rewrite = ""
         model.isProcessing = false
+        model.isLocked = false
         model.spectrum = []
     }
 
@@ -510,6 +521,8 @@ final class OverlayModel {
     /// Set while the panel reports how a dictation ended, in place of live words.
     var outcome: OverlayOutcome?
     var isProcessing = false
+    /// Set while a double tap keeps the recording going after the key came up.
+    var isLocked = false
     /// The AI's rewrite as far as it has got, shown in place of the dictated words.
     var rewrite = ""
     /// Loudness per frequency band, 0 to 1, low to high — one per bar.
@@ -542,6 +555,17 @@ private struct DictationOverlayView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DictationOverlayController.contentSpacing) {
             ListeningBar(spectrum: model.spectrum, isProcessing: model.isProcessing)
+                // Over the ribbon's right end, where its taper has brought it to a
+                // point. The ribbon keeps its full width, so it moves with the voice
+                // and with nothing else.
+                .overlay(alignment: .trailing) {
+                    if model.isLocked {
+                        Image(systemName: "lock.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Recording locked")
+                    }
+                }
 
             if let outcome = model.outcome {
                 Label(outcome.headline, systemImage: outcome.symbol)
