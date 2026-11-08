@@ -48,6 +48,14 @@ struct DictationSettingsView: View {
                     }
                 }
                 .help("Escape discards a dictation in progress.")
+
+                Picker("Mouse button", selection: $settings.dictationMouseButtonRaw) {
+                    Text("Off").tag(String?.none)
+                    ForEach(MouseButton.allCases) { button in
+                        Text(button.displayName).tag(Optional(button.rawValue))
+                    }
+                }
+                .help("Click the side button to start a dictation, and click it again to end it. It then no longer goes back or forward in other apps.")
             }
 
             // How each key works is in its tooltip. A caption stays only where it
@@ -200,6 +208,7 @@ struct DictationSettingsView: View {
         }
         .onChange(of: settings.dictationKeyRaw) { _, _ in rearm() }
         .onChange(of: settings.hotkeyActivationModeRaw) { _, _ in rearm() }
+        .onChange(of: settings.dictationMouseButtonRaw) { _, _ in rearm() }
         .onChange(of: settings.undoHotkeyEnabled) { _, _ in
             if capturing == .undo { capturing = nil }
             rearm()
@@ -272,6 +281,7 @@ struct DictationSettingsView: View {
     private func rearm() {
         hotkeyMonitor.dictationKey = settings.dictationKey
         hotkeyMonitor.activationMode = settings.hotkeyActivationMode
+        hotkeyMonitor.mouseButton = settings.dictationMouseButton
         hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
         hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
         if !hotkeyMonitor.isRunning, AccessibilityPermission.isTrusted {

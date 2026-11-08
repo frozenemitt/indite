@@ -425,6 +425,7 @@ struct InditeApp: App {
         private func armHotkey() {
             hotkeyMonitor.dictationKey = settings.dictationKey
             hotkeyMonitor.activationMode = settings.hotkeyActivationMode
+            hotkeyMonitor.mouseButton = settings.dictationMouseButton
             hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
             hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
 

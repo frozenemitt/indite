@@ -184,6 +184,15 @@ final class AppSettings {
         didSet { save("dictationKeyRaw", dictationKeyRaw) }
     }
 
+    /// The mouse side button that starts and stops a dictation, stored as
+    /// `MouseButton`'s raw value, or nil for none.
+    ///
+    /// None by default: the button goes back and forward in browsers and Finder, and
+    /// once it dictates, those apps no longer see its clicks.
+    var dictationMouseButtonRaw: String? {
+        didSet { save("dictationMouseButtonRaw", dictationMouseButtonRaw) }
+    }
+
     /// Enable a second shortcut that takes back the last insertion.
     var undoHotkeyEnabled: Bool {
         didSet { save("undoHotkeyEnabled", undoHotkeyEnabled) }
@@ -285,6 +294,7 @@ final class AppSettings {
         UserDefaults.standard.removeObject(forKey: "useGlobeKey")
         UserDefaults.standard.removeObject(forKey: "hotkeyString")
         self.dictationKeyRaw = UserDefaults.standard.string(forKey: "dictationKeyRaw") ?? "right"
+        self.dictationMouseButtonRaw = UserDefaults.standard.string(forKey: "dictationMouseButtonRaw")
         self.undoHotkeyEnabled = UserDefaults.standard.object(forKey: "undoHotkeyEnabled") as? Bool ?? true
         self.undoHotkeyString = UserDefaults.standard.string(forKey: "undoHotkeyString") ?? "⌃⌥⌘Z"
         self.retypeHotkeyEnabled = UserDefaults.standard.object(forKey: "retypeHotkeyEnabled") as? Bool ?? true
@@ -379,6 +389,7 @@ final class AppSettings {
         processingSoundName = "Bottle"
         hotkeyActivationModeRaw = "pushToTalk"
         dictationKeyRaw = "right"
+        dictationMouseButtonRaw = nil
         undoHotkeyEnabled = true
         undoHotkeyString = "⌃⌥⌘Z"
         retypeHotkeyEnabled = true
@@ -463,6 +474,12 @@ extension AppSettings {
     var dictationKey: OptionKey {
         get { OptionKey(rawValue: dictationKeyRaw) ?? .right }
         set { dictationKeyRaw = newValue.rawValue }
+    }
+
+    /// The mouse side button that dictates, backed by `dictationMouseButtonRaw`. Nil
+    /// for none.
+    var dictationMouseButton: MouseButton? {
+        dictationMouseButtonRaw.flatMap(MouseButton.init(rawValue:))
     }
 
     /// The undo binding to hand `GlobalHotkeyMonitor`: nil when switched off or
