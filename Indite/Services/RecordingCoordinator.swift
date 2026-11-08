@@ -153,6 +153,10 @@ final class RecordingCoordinator {
     /// finds the words already in the history.
     @ObservationIgnored private var deliveringEntry: Dictation?
 
+    /// When the microphone opened for the dictation under way. The history keeps how
+    /// long it listened, for the speaking speed.
+    @ObservationIgnored private var microphoneOpenedAt: ContinuousClock.Instant?
+
     /// Longest the AI pass may take before the raw transcript is delivered instead.
     ///
     /// Until the text lands, every press is refused as "still delivering", so a model
@@ -339,6 +343,7 @@ final class RecordingCoordinator {
             return
         }
 
+        microphoneOpenedAt = ContinuousClock.now
         if announcesWhenLive { announce() }
         startMaxDurationWatchdog()
 
@@ -432,6 +437,9 @@ final class RecordingCoordinator {
         isDelivering = true
         defer { isDelivering = false }
 
+        // Measured at the stop, not once the engine has finished with the audio.
+        let spokenDuration = microphoneOpenedAt.map { (ContinuousClock.now - $0) / .seconds(1) }
+
         maxDurationTask?.cancel()
         maxDurationTask = nil
         prefixWarmer?.cancel()
@@ -466,7 +474,7 @@ final class RecordingCoordinator {
                 // the words survive a hung AI pass, a paste into the wrong window, or a
                 // quit mid-delivery, which waits on this task. The entry is brought up
                 // to date once the text has landed.
-                self.deliveringEntry = self.recordHistory(processed)
+                self.deliveringEntry = self.recordHistory(processed, spokenDuration: spokenDuration)
             }
             return processed
         }
@@ -623,13 +631,14 @@ final class RecordingCoordinator {
     }
 
     /// Keep the dictation the moment its words exist.
-    private func recordHistory(_ transcript: String) -> Dictation? {
+    private func recordHistory(_ transcript: String, spokenDuration: TimeInterval?) -> Dictation? {
         guard let modelContext else { return nil }
         return DictationHistory.record(
             text: transcript,
             rawText: nil,
             destination: nil,
             promptName: nil,
+            spokenDuration: spokenDuration,
             settings: settings,
             in: modelContext
         )
@@ -702,8 +711,9 @@ final class RecordingCoordinator {
         #endif
         aiProcessor.discardPrewarm()
 
+        let spokenDuration = microphoneOpenedAt.map { (ContinuousClock.now - $0) / .seconds(1) }
         let raw = await engine.stopRecording(owner: .dictation)
-        if recordHistory(TextProcessor.process(raw, replacements: settings.wordReplacements)) != nil {
+        if recordHistory(TextProcessor.process(raw, replacements: settings.wordReplacements), spokenDuration: spokenDuration) != nil {
             Log.dictation.notice("Kept the dictation in the history on quit")
         } else {
             Log.dictation.notice("Stopped the dictation on quit; it had nothing to keep")

@@ -34,6 +34,7 @@ struct DictationHistoryView: View {
         let rawText: String?
         let destination: String?
         let promptName: String?
+        let spokenDuration: TimeInterval?
         let createdAt: Date
     }
 
@@ -72,6 +73,11 @@ struct DictationHistoryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.orange.opacity(0.12))
             }
+
+            HistoryTotals(
+                limit: settings.dictationHistoryLimit,
+                today: Calendar.current.startOfDay(for: .now)
+            )
 
             if dictations.isEmpty {
                 if settings.keepDictationHistory {
@@ -300,6 +306,7 @@ struct DictationHistoryView: View {
             rawText: dictation.rawText,
             destination: dictation.destination,
             promptName: dictation.promptName,
+            spokenDuration: dictation.spokenDuration,
             createdAt: dictation.createdAt
         )
         modelContext.delete(dictation)
@@ -321,6 +328,7 @@ struct DictationHistoryView: View {
             rawText: deleted.rawText,
             destination: deleted.destination,
             promptName: deleted.promptName,
+            spokenDuration: deleted.spokenDuration,
             createdAt: deleted.createdAt
         ))
         modelContext.saveOrLog()
@@ -383,6 +391,69 @@ struct DictationHistoryView: View {
                 settings: settings
             )
         }
+    }
+}
+
+/// The line at the top of Recent Dictations: the words, the speaking speed and the days
+/// in a row.
+///
+/// A view of its own with its own query, so that a click in the list does not add the
+/// history up again. In an optimized build, adding up 100 dictations took 2 ms and 500
+/// took 12 ms, about half of it counting words.
+private struct HistoryTotals: View {
+    /// How many dictations the history keeps, for the tooltip.
+    let limit: Int
+    /// The start of today. The line is drawn again when the day changes, since the week
+    /// and the days in a row depend on it.
+    let today: Date
+
+    @Query private var dictations: [Dictation]
+
+    var body: some View {
+        if let totals = DictationHistory.totals(of: dictations, now: today) {
+            // Inset to the left edge of the rows' text below it.
+            Text(Self.line(for: totals))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help("Counted from the dictations kept here. Indite keeps the last \(limit), as set in Settings.")
+        }
+    }
+
+    /// The totals as one line: "620 words this week · 4,100 since Nov 4 · 151 words a
+    /// minute · 6 days in a row".
+    ///
+    /// The week is left out while every dictation kept is from this week. The history
+    /// may then have dropped the week's first days, and the words since the oldest
+    /// dictation kept are the week's as far back as it goes.
+    private static func line(for totals: DictationHistory.Totals) -> String {
+        var style = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        if !Calendar.current.isDate(totals.since, equalTo: .now, toGranularity: .year) {
+            style = style.year()
+        }
+        let since = "since \(totals.since.formatted(style))"
+
+        var parts: [String] = []
+        if totals.since < totals.weekBegan {
+            parts.append("\(words(totals.wordsThisWeek)) this week")
+            parts.append("\(totals.words.formatted()) \(since)")
+        } else {
+            parts.append("\(words(totals.words)) \(since)")
+        }
+        if let wordsPerMinute = totals.wordsPerMinute {
+            parts.append("\(words(wordsPerMinute)) a minute")
+        }
+        // A single day is not yet a run.
+        if totals.daysInARow > 1 {
+            parts.append("\(totals.daysInARow) days in a row")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func words(_ count: Int) -> String {
+        count == 1 ? "1 word" : "\(count.formatted()) words"
     }
 }
 #endif

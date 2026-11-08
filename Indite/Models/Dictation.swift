@@ -27,17 +27,28 @@ final class Dictation {
     /// Name of the prompt applied, if any.
     var promptName: String?
 
+    /// How long the microphone listened, in seconds, from the moment it opened until
+    /// the dictation stopped. Recent Dictations divides the words by it for the
+    /// speaking speed.
+    ///
+    /// Nil for dictations kept before it was recorded, and for those made by a
+    /// shortcut, which records for a set time whether or not anyone is still speaking.
+    /// Added in version 3 of the store.
+    var spokenDuration: TimeInterval?
+
     init(
         text: String,
         rawText: String? = nil,
         destination: String? = nil,
         promptName: String? = nil,
+        spokenDuration: TimeInterval? = nil,
         createdAt: Date = Date()
     ) {
         self.text = text
         self.rawText = rawText
         self.destination = destination
         self.promptName = promptName
+        self.spokenDuration = spokenDuration
         self.createdAt = createdAt
     }
 

@@ -228,6 +228,9 @@ private func recordHistory(
         rawText: raw == text ? nil : raw,
         destination: "Shortcuts",
         promptName: promptName,
+        // A shortcut records for the time it was given, so its length says nothing
+        // about how fast anyone spoke.
+        spokenDuration: nil,
         settings: settings,
         in: InditeApp.modelContainer.mainContext
     )
