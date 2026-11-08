@@ -1,5 +1,15 @@
 import Foundation
 
+/// Saved text and the spoken cue that stands for it, as one row of the Words settings.
+struct Snippet: Equatable {
+    var cue: String
+    var text: String
+
+    /// Whether it is typed: it has a cue to listen for and text to type. A row still
+    /// being filled in is kept, and passed over.
+    var isComplete: Bool { !Snippets.key(cue).isEmpty && !text.isEmpty }
+}
+
 /// Saved text that a spoken cue stands for: say "my calendar link", and the link is
 /// typed.
 ///
@@ -16,7 +26,7 @@ enum Snippets {
     /// punctuation stays where it is, except a full stop after a cue that ends the
     /// text. That full stop ended the spoken sentence: a dictation of "My address."
     /// types the address and nothing after it. A question mark stays.
-    static func expand(_ text: String, snippets: [String: String]) -> (text: String, expanded: Int) {
+    static func expand(_ text: String, snippets: [Snippet]) -> (text: String, expanded: Int) {
         guard let cues = Cues(snippets) else { return (text, 0) }
         // The dictation's own spaces at either end go, as a paste fitted to the cursor
         // takes them off. The saved text keeps its own.
@@ -40,7 +50,7 @@ enum Snippets {
     ///
     /// For the AI pass. A cue the model reworded cannot be found in its answer, so the
     /// saved text it stands for would be lost.
-    static func keepsCues(of said: String, in answer: String, snippets: [String: String]) -> Bool {
+    static func keepsCues(of said: String, in answer: String, snippets: [Snippet]) -> Bool {
         guard let cues = Cues(snippets) else { return true }
         let kept = cues.counts(in: answer)
         return cues.counts(in: said).allSatisfy { kept[$0.key, default: 0] >= $0.value }
@@ -48,7 +58,7 @@ enum Snippets {
 
     /// One form for the ways a cue can be written: lower case, single spaces and a
     /// straight apostrophe.
-    private static func key(_ cue: String) -> String {
+    static func key(_ cue: String) -> String {
         cue.lowercased()
             .replacingOccurrences(of: "\u{2019}", with: "'")
             .split(whereSeparator: \.isWhitespace)
@@ -61,13 +71,13 @@ enum Snippets {
         let savedText: [String: String]
 
         /// Nil when there is no cue to look for.
-        init?(_ snippets: [String: String]) {
+        init?(_ snippets: [Snippet]) {
             // Longest first, so a cue that holds another wins where both match. Equal
             // lengths go alphabetically: a dictionary's own order changes from one
             // launch to the next.
             let ordered = snippets
-                .map { (cue: Snippets.key($0.key), text: $0.value) }
-                .filter { !$0.cue.isEmpty }
+                .filter(\.isComplete)
+                .map { (cue: Snippets.key($0.cue), text: $0.text) }
                 .sorted { $0.cue.count != $1.cue.count ? $0.cue.count > $1.cue.count : $0.cue < $1.cue }
 
             // The cue's words may stand apart by any run of spaces. An apostrophe may be

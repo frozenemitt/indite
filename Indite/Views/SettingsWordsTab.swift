@@ -153,9 +153,8 @@ struct WordsSettingsView: View {
         replacements = settings.wordReplacements
             .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
             .map { ReplacementRow(spoken: $0.key, written: $0.value) }
-        snippets = settings.snippets
-            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
-            .map { SnippetRow(cue: $0.key, text: $0.value) }
+        // In the order they were added, as they were left.
+        snippets = settings.snippets.map { SnippetRow(cue: $0.cue, text: $0.text) }
     }
 
     /// Whether two rows share a heard word, ignoring case the way matching itself
@@ -193,16 +192,13 @@ struct WordsSettingsView: View {
         return Set(cues).count != cues.count
     }
 
-    /// Rebuild the stored snippets from the rows. A row is kept once it has a cue and
-    /// some text. The text is stored exactly as written, with its spaces and line
-    /// breaks, because that is how it is typed.
+    /// Store every row as it stands, in order. A row is typed once it has a cue and some
+    /// text, but one still being filled in is stored too, and so is one whose cue
+    /// another row has: the tab is drawn again from what is stored each time it is
+    /// shown, and a row left out was lost with whatever had been typed into it. The
+    /// text is stored exactly as written, with its spaces and line breaks, because that
+    /// is how it is typed.
     private func commitSnippets() {
-        var result: [String: String] = [:]
-        for row in snippets {
-            let cue = row.cue.trimmingCharacters(in: .whitespaces)
-            guard !cue.isEmpty, !row.text.isEmpty else { continue }
-            result[cue] = row.text
-        }
-        settings.snippets = result
+        settings.snippets = snippets.map { Snippet(cue: $0.cue, text: $0.text) }
     }
 }
