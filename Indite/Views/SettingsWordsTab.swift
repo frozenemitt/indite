@@ -103,7 +103,7 @@ struct WordsSettingsView: View {
 
                 if hasDuplicateCues {
                     Label {
-                        Text("Two snippets have the same cue. Only one of them will be typed.")
+                        Text("Two snippets have the same cue. Only the first of them is typed.")
                     } icon: {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
@@ -183,12 +183,14 @@ struct WordsSettingsView: View {
         settings.wordReplacements = result
     }
 
-    /// Whether two snippets share a cue, ignoring case as matching does. Only one of
-    /// them can be typed, and nothing else says which.
+    /// Whether two snippets that are typed share a cue, as matching sees it: in any
+    /// capitals, with any spaces between the words and either apostrophe. Only the
+    /// first of them is typed, and nothing else says so.
     private var hasDuplicateCues: Bool {
         let cues = snippets
-            .map { $0.cue.trimmingCharacters(in: .whitespaces).lowercased() }
-            .filter { !$0.isEmpty }
+            .map { Snippet(cue: $0.cue, text: $0.text) }
+            .filter(\.isComplete)
+            .map { Snippets.key($0.cue) }
         return Set(cues).count != cues.count
     }
 

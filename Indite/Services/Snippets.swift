@@ -57,7 +57,7 @@ enum Snippets {
     }
 
     /// One form for the ways a cue can be written: lower case, single spaces and a
-    /// straight apostrophe.
+    /// straight apostrophe. Two cues with the same form are the same cue to a dictation.
     static func key(_ cue: String) -> String {
         cue.lowercased()
             .replacingOccurrences(of: "\u{2019}", with: "'")
@@ -73,12 +73,17 @@ enum Snippets {
         /// Nil when there is no cue to look for.
         init?(_ snippets: [Snippet]) {
             // Longest first, so a cue that holds another wins where both match. Equal
-            // lengths go alphabetically: a dictionary's own order changes from one
-            // launch to the next.
-            let ordered = snippets
-                .filter(\.isComplete)
-                .map { (cue: Snippets.key($0.cue), text: $0.text) }
-                .sorted { $0.cue.count != $1.cue.count ? $0.cue.count > $1.cue.count : $0.cue < $1.cue }
+            // lengths go alphabetically. Of cues that differ only in capitals, spaces or
+            // apostrophes, the first in the list wins, as the Words settings say: the
+            // winner was left to a dictionary's order, which changes from one launch to
+            // the next.
+            let ordered = snippets.enumerated()
+                .filter { $0.element.isComplete }
+                .map { (place: $0.offset, cue: Snippets.key($0.element.cue), text: $0.element.text) }
+                .sorted {
+                    if $0.cue.count != $1.cue.count { return $0.cue.count > $1.cue.count }
+                    return $0.cue != $1.cue ? $0.cue < $1.cue : $0.place < $1.place
+                }
 
             // The cue's words may stand apart by any run of spaces. An apostrophe may be
             // straight or curly. The edges are those of word replacements: no letter or
