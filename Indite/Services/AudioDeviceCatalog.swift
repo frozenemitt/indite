@@ -310,8 +310,10 @@ enum AudioDeviceCatalog {
         }
         if isMuted(deviceID) { return .muted }
         if volumeIsOff(deviceID) { return .volumeOff }
-        if value(kAudioDevicePropertyTransportType, of: deviceID, startingFrom: UInt32(0)) == kAudioDeviceTransportTypeBuiltIn,
-           lidIsClosed() {
+        // The Mac's own microphone only. A headset in the headphone jack is built in
+        // too, and it hears with the lid closed; tested by transport, it would be
+        // warned about as "The lid is closed" through every dictation in clamshell mode.
+        if isBuiltInMicrophone(deviceID), lidIsClosed() {
             return .lidClosed
         }
         return nil
