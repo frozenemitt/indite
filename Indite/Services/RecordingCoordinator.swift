@@ -718,6 +718,10 @@ final class RecordingCoordinator {
     }
 
     /// Every phrase Indite typed in the last day, from the dictation history.
+    ///
+    /// Each dictation as it was before snippets were expanded. A snippet's saved text is
+    /// typed as the user wrote it, so the names in it are theirs, not Indite's earlier
+    /// guesses, and the screen may lend them to the vocabulary like any other names.
     private func recentlyTyped() -> Set<String> {
         guard let modelContext else { return [] }
         let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
@@ -726,7 +730,8 @@ final class RecordingCoordinator {
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         descriptor.fetchLimit = 300
-        let texts = (try? modelContext.fetch(descriptor))?.map(\.text) ?? []
+        let snippets = settings.snippets
+        let texts = (try? modelContext.fetch(descriptor))?.map { Snippets.unexpand($0.text, snippets: snippets) } ?? []
         return Vocabulary.phrases(in: texts.joined(separator: " "))
     }
 

@@ -91,6 +91,15 @@ enum Snippets {
         snippets.contains { $0.isComplete && text.contains($0.text) }
     }
 
+    /// `text` with each snippet's saved text put back as its cue: the text as it was
+    /// before snippets were expanded, near enough to tell its words apart. Longest saved
+    /// text first, so that one holding another is put back whole.
+    static func unexpand(_ text: String, snippets: [Snippet]) -> String {
+        snippets.filter(\.isComplete)
+            .sorted { $0.text.count > $1.text.count }
+            .reduce(text) { $0.replacingOccurrences(of: $1.text, with: " \($1.cue) ") }
+    }
+
     /// Whether saved text ends where a mark after it would be one too many: in a full
     /// stop, comma, semicolon, colon, question or exclamation mark, an ellipsis, a space
     /// or a line break. Not a closing bracket or quote, which a full stop can follow.
