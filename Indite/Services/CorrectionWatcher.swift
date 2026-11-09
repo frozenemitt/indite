@@ -59,6 +59,11 @@ final class CorrectionWatcher {
             return
         }
         let app = insertion.appName
+        let length = around.before.utf16.count + insertion.pasted.utf16.count + around.after.utf16.count
+        guard length <= FieldWatch.longestField else {
+            Self.log.notice("Not watching \(app, privacy: .public) for corrections: its field holds \(length, privacy: .public) characters, more than \(FieldWatch.longestField, privacy: .public)")
+            return
+        }
         let anchors = FieldWatch.Anchors(before: around.before, pasted: insertion.pasted, after: around.after)
         let watch = FieldWatch(field: insertion.field, anchors: anchors) { [weak self] watch, result in
             Task { @MainActor in self?.judge(watch, result, app: app) }
@@ -213,6 +218,7 @@ final class FieldWatch: @unchecked Sendable {
         case anchorsChanged = "the text around the words changed"
         case wordsDeleted = "the words were deleted"
         case closed = "the field closed"
+        case tooLong = "the field grew past 20,000 characters"
         case nextDictation = "the next dictation started"
         case timeUp = "the minute was up"
     }
@@ -231,6 +237,10 @@ final class FieldWatch: @unchecked Sendable {
 
     /// How long a watch lasts, in seconds, as Wispr Flow's does.
     static let duration: Double = 60
+
+    /// The longest field watched, in characters as accessibility counts them. Every
+    /// change in the field is a read and a comparison of all of its text.
+    static let longestField = 20_000
 
     /// How long a copy has to stay unchanged to be judged, in seconds: a second, less
     /// the slack of the timer that reads the field once a second. A copy that changed
@@ -424,6 +434,7 @@ final class FieldWatch: @unchecked Sendable {
         /// - Parameter changedAt: When the field posted the change this read answers,
         ///   if it posted one.
         mutating func read(_ text: String, at time: Double, changedAt: Double?) -> Ending? {
+            guard text.utf16.count <= FieldWatch.longestField else { return .tooLong }
             let reading = FieldWatch.reading(text, around: anchors, found: found)
             if reading.words == shown {
                 stayed(until: time)
@@ -499,14 +510,44 @@ final class FieldWatch: @unchecked Sendable {
         let limit = 0.4 / (1 + Double(b.count) / 30) + 0.2
         // Words typed on after the dictation pass the limit on length alone.
         guard Double(abs(a.count - b.count)) / Double(longer) < limit else { return false }
-        // The ends the two share cost no edits, so only the part between is counted. In
-        // a dictation of 1,500 words with one word fixed, that took 0.13 ms; counting
-        // the whole of both took 0.28 s.
-        var start = 0
-        while start < min(a.count, b.count), a[start] == b[start] { start += 1 }
-        var end = 0
-        while end < min(a.count, b.count) - start, a[a.count - 1 - end] == b[b.count - 1 - end] { end += 1 }
-        let edits = WordGuard.editDistance(String(a[start..<(a.count - end)]), String(b[start..<(b.count - end)]))
+        // Counted no further than the most edits the limit allows: past that, the answer
+        // is no.
+        guard let edits = edits(a, b, atMost: Int(limit * Double(longer)) + 1) else { return false }
         return Double(edits) / Double(longer) < limit
+    }
+
+    /// The insertions, deletions and substitutions that turn `a` into `b`, or nil when
+    /// there are more than `most`.
+    ///
+    /// The work grows with the edits found, not with the lengths multiplied: each count of
+    /// edits takes every diagonal of the edit table as far as that count reaches, and
+    /// runs along it while the two texts agree. In a dictation of 1,500 words with a name
+    /// fixed at each end, a read took 0.1 ms; the whole table, counted between the ends
+    /// the two texts share, took 0.27 s. The same words shuffled, far past the limit,
+    /// took 18 ms.
+    private static func edits(_ a: [Character], _ b: [Character], atMost most: Int) -> Int? {
+        let n = a.count, m = b.count
+        // The table ends on the diagonal of the difference in length.
+        let last = m - n
+        guard abs(last) <= most else { return nil }
+        // For each diagonal d, where b's position less a's is d, the furthest position in
+        // `a` reached with the edits counted so far, at index d + offset.
+        let offset = most + 1
+        let unreached = Int.min / 2
+        var furthest = [Int](repeating: unreached, count: 2 * most + 3)
+        var previous = furthest
+        for count in 0...most {
+            swap(&furthest, &previous)
+            for d in max(-count, -n)...min(count, m) {
+                // One more edit than `previous` counted: a substitution along the same
+                // diagonal, a deletion from the one above, an insertion from the one below.
+                var i = count == 0 ? 0 : max(previous[offset + d] + 1, previous[offset + d + 1] + 1, previous[offset + d - 1])
+                i = min(i, n, m - d)
+                while i < n, i + d < m, a[i] == b[i + d] { i += 1 }
+                furthest[offset + d] = i
+            }
+            if furthest[offset + last] >= n { return count }
+        }
+        return nil
     }
 }
