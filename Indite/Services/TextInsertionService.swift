@@ -49,6 +49,16 @@ enum TextInsertionService {
         /// The field it went into, read again afterwards for corrections the user
         /// makes by hand.
         let field: AXUIElement
+        /// The words as pasted, fitted to the cursor, and the line break Shift-Return
+        /// put after them.
+        let pasted: String
+        /// The field's text before and after the cursor when the words were pasted,
+        /// which marks where they are later. Nil when the field did not report its text
+        /// and cursor.
+        let around: (before: String, after: String)?
+        /// Whether ⌘Z takes the words back. Not after Shift-Return, where it would take
+        /// back the line break and leave the words.
+        let undoable: Bool
     }
 
     private(set) static var lastInsertion: LastInsertion?
@@ -58,7 +68,7 @@ enum TextInsertionService {
     /// Time-limited: an undo fired ten minutes later would send ⌘Z into whatever the
     /// user has been doing since, throwing away unrelated work.
     static var canUndo: Bool {
-        guard let lastInsertion else { return false }
+        guard let lastInsertion, lastInsertion.undoable else { return false }
         return Date().timeIntervalSince(lastInsertion.at) < 120
     }
 
@@ -159,6 +169,8 @@ enum TextInsertionService {
     ///   - autoSubmit: Press a Return key after inserting.
     ///   - submitUsesShift: Send Shift+Return instead of Return, so chat apps add a
     ///     line break rather than sending the message.
+    ///   - keepsText: Paste the text's own characters unchanged and fit only the spaces
+    ///     around it, for text that holds a snippet's saved text.
     ///   - names: Words the user has taught Indite, which keep their capitals when the
     ///     text is fitted into the middle of a sentence.
     @discardableResult
@@ -168,6 +180,7 @@ enum TextInsertionService {
         restoreClipboard: Bool = true,
         autoSubmit: Bool = false,
         submitUsesShift: Bool = false,
+        keepsText: Bool = false,
         names: [String] = []
     ) async -> TextInsertionOutcome {
 
@@ -208,7 +221,7 @@ enum TextInsertionService {
         log.debug("Inserting \(text.count) chars into \(appName, privacy: .public)")
 
         // Physical modifiers from the hotkey may still be down; a ⌘V posted now
-        // would arrive as ⌃⌥⌘V. Wait for the user's hand to leave the keys.
+        // would arrive as ⌃⌘V. Wait for the user's hand to leave the keys.
         await waitForModifiersToClear()
 
         // The field was found by asking the target app, but ⌘V goes to whatever app is
@@ -233,12 +246,15 @@ enum TextInsertionService {
         // every dictation as a whole sentence, wherever it lands. A field that does
         // not say what it holds gets the text as it is, with a space after it so the
         // next dictation does not run into it; none when Return is about to be
-        // pressed. The log line gives counts and what changed, never the text, so it
-        // shows which apps report their fields.
+        // pressed, and none after kept text that already ends in a space or a line
+        // break of its own. The log line gives counts and what changed, never the
+        // text, so it shows which apps report their fields.
         let around = textAroundCursor(in: field, value: fieldBeforePaste.text)
         let pasted = around.map {
-            CursorFit.fit(text, before: $0.before, after: $0.after, names: names, language: TranscriptionEngine.language)
-        } ?? (autoSubmit || text.last.map(CursorFit.writtenWithoutSpaces) == true ? text : text + " ")
+            CursorFit.fit(text, before: $0.before, after: $0.after, names: names,
+                          language: TranscriptionEngine.language, keepingText: keepsText)
+        } ?? (autoSubmit || text.last.map(CursorFit.writtenWithoutSpaces) == true
+              || (keepsText && text.last?.isWhitespace == true) ? text : text + " ")
         let inserted = pasted.trimmingCharacters(in: .whitespaces)
         if let around {
             log.notice("""
@@ -356,21 +372,55 @@ enum TextInsertionService {
             }
         }
 
-        // Not undoable once Return has been pressed. A chat app has already sent the
-        // message, so its ⌘Z would undo some earlier edit instead; after Shift+Return
-        // it would take back the line break and leave the text.
-        if !autoSubmit, let app = NSWorkspace.shared.frontmostApplication {
+        // Nothing is kept once Return has been pressed: a chat app has already sent the
+        // message, so its ⌘Z would undo some earlier edit instead, and there are no
+        // words left to correct. Shift+Return sends nothing, so the words stay in the
+        // field to be corrected, but they are not undoable: ⌘Z would take back the line
+        // break and leave the text.
+        if !autoSubmit || submitUsesShift, let app = NSWorkspace.shared.frontmostApplication {
             lastInsertion = LastInsertion(
                 text: text,
                 appName: appName,
                 processIdentifier: app.processIdentifier,
                 at: Date(),
-                field: field
+                field: field,
+                pasted: autoSubmit ? pasted + "\n" : pasted,
+                around: around,
+                undoable: !autoSubmit
             )
         }
 
         log.notice("Inserted into \(appName, privacy: .public)")
         return .inserted(appName: appName)
+    }
+
+    /// Press Return in the focused text field of `targetApp`, for a dictation that was
+    /// only "press enter": the words it sends are already in the field. Returns whether
+    /// Return was pressed.
+    ///
+    /// Only into a text field, as a paste goes only into one. Return anywhere else could
+    /// press a dialog's default button, or open whatever is selected.
+    static func pressReturn(in targetApp: NSRunningApplication?) async -> Bool {
+        guard AccessibilityPermission.isTrusted, let targetApp else { return false }
+        await restoreFocusIfNeeded(to: targetApp)
+        guard await awaitFocusedTextElement(in: targetApp) != nil else {
+            log.notice("No focused text field in \(targetApp.localizedName ?? "target", privacy: .public) — not pressing Return")
+            return false
+        }
+
+        await waitForModifiersToClear()
+        // Return goes to whatever app is in front, as ⌘V does, and macOS can refuse the
+        // activation above.
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApp.processIdentifier else {
+            log.error("\(targetApp.localizedName ?? "The target app", privacy: .public) is not in front — not pressing Return")
+            return false
+        }
+        guard postReturnKeystroke(withShift: false) else { return false }
+
+        // The message has gone, so ⌘Z there would undo some earlier edit, not a dictation.
+        lastInsertion = nil
+        log.notice("Pressed Return in \(targetApp.localizedName ?? "the target app", privacy: .public)")
+        return true
     }
 
     /// The two things about a text field that a paste always changes.

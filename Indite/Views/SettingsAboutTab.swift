@@ -100,6 +100,7 @@ struct AboutSettingsView: View {
         // until the app is relaunched.
         hotkeyMonitor.dictationKey = settings.dictationKey
         hotkeyMonitor.activationMode = settings.hotkeyActivationMode
+        hotkeyMonitor.mouseButton = settings.dictationMouseButton
         hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
         hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
     }
@@ -182,7 +183,7 @@ struct AboutSettingsView: View {
                     Button("Reset", role: .destructive) { resetToDefaults() }
                     Button("Cancel", role: .cancel) { }
                 } message: {
-                    Text("This also clears your word replacements, vocabulary, per-app settings and recorded key combinations. Your prompts and their settings are kept. It cannot be undone.")
+                    Text("This also clears your word replacements, vocabulary, per-app settings and recorded key combinations. Your prompts and their settings are kept, and so is how long recordings of your dictations are kept. It cannot be undone.")
                 }
             }
             .padding(40)

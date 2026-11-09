@@ -16,6 +16,9 @@ final class AudioFeedbackService {
 
     enum Sound {
         case recordingStarted
+        /// A double tap of the dictation key kept the recording going after the key
+        /// came up.
+        case recordingLocked
         case recordingStopped
         case processingComplete
         case error
@@ -25,6 +28,8 @@ final class AudioFeedbackService {
             switch self {
             case .recordingStarted:
                 return 1113  // begin_record.caf
+            case .recordingLocked:
+                return 1057  // Tink, as on the Mac
             case .recordingStopped:
                 return 1114  // end_record.caf
             case .processingComplete:
@@ -49,13 +54,31 @@ final class AudioFeedbackService {
     // MARK: - Public API
 
     /// Play a feedback sound if enabled, using the user's chosen sound
-    func playIfEnabled(_ sound: Sound, settings: AppSettings) {
-        guard settings.playFeedbackSounds else { return }
+    ///
+    /// - Returns: How long the sound lasts, or zero when none plays, for anything that
+    ///   has to wait until it has been heard.
+    @discardableResult
+    func playIfEnabled(_ sound: Sound, settings: AppSettings) -> TimeInterval {
+        guard settings.playFeedbackSounds else { return 0 }
         #if os(iOS)
         AudioServicesPlaySystemSound(sound.systemSoundID)
+        return 0
         #elseif os(macOS)
         let soundId = settings.soundId(for: sound)
-        SoundCatalog.shared.makeNSSound(for: soundId)?.play()
+        guard let nsSound = SoundCatalog.shared.makeNSSound(for: soundId) else { return 0 }
+        nsSound.play()
+        return nsSound.duration
+        #endif
+    }
+
+    /// Whether `playIfEnabled` would play anything for this sound: sounds are on, and the
+    /// one chosen for it is not None and can be found.
+    func willPlay(_ sound: Sound, settings: AppSettings) -> Bool {
+        guard settings.playFeedbackSounds else { return false }
+        #if os(macOS)
+        return SoundCatalog.shared.makeNSSound(for: settings.soundId(for: sound)) != nil
+        #else
+        return true
         #endif
     }
 
@@ -140,7 +163,9 @@ final class NotificationService {
     /// - Parameter withSound: The app plays its own completion and error sounds, so a
     ///   notification chime on top of them is one noise too many. Only sounds when the
     ///   app's own feedback is switched off.
-    private func post(title: String, body: String, withSound: Bool) {
+    /// - Parameter identifier: A name for a banner that may have to be withdrawn. Every
+    ///   other banner gets one of its own.
+    private func post(title: String, body: String, withSound: Bool, identifier: String = UUID().uuidString) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
@@ -149,13 +174,17 @@ final class NotificationService {
         }
 
         let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
+            identifier: identifier,
             content: content,
             trigger: nil
         )
 
         UNUserNotificationCenter.current().add(request)
     }
+
+    /// The banner a dictation shows, with its panel off, while its microphone sends no
+    /// sound.
+    private static let microphoneWarningID = "microphone-warning"
 
     // MARK: - Public API
 
@@ -184,9 +213,27 @@ final class NotificationService {
     }
 
     /// Report a failure, if error notifications are on.
-    func showErrorIfEnabled(_ message: String, settings: AppSettings) {
+    ///
+    /// - Parameter title: What failed, when it is more than the transcription: a
+    ///   microphone that sends no sound is named in the title.
+    func showErrorIfEnabled(_ message: String, title: String = "Transcription Error", settings: AppSettings) {
         guard settings.notifyOnError else { return }
-        post(title: "Transcription Error", body: message, withSound: !settings.playFeedbackSounds)
+        post(title: title, body: message, withSound: !settings.playFeedbackSounds)
+    }
+
+    /// Say that the microphone sends no sound, while the dictation goes on, if error
+    /// notifications are on. `withdrawMicrophoneWarning()` takes it back.
+    func showMicrophoneWarningIfEnabled(_ message: String, title: String, settings: AppSettings) {
+        guard settings.notifyOnError else { return }
+        post(title: title, body: message, withSound: !settings.playFeedbackSounds, identifier: Self.microphoneWarningID)
+    }
+
+    /// Take the microphone warning back: the microphone hears again, or the dictation
+    /// has ended. A banner left up said the microphone was dead after it had recovered.
+    func withdrawMicrophoneWarning() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.microphoneWarningID])
+        center.removeDeliveredNotifications(withIdentifiers: [Self.microphoneWarningID])
     }
 
     /// Report that the AI pass failed but the raw transcript survived.

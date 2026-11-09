@@ -5,6 +5,10 @@ import Observation
 import CoreMedia
 import os
 
+#if os(macOS)
+import CoreAudio
+#endif
+
 /// Unified transcription engine for background voice-to-text
 /// Uses Apple's modern SpeechAnalyzer API (iOS 26+/macOS 26+)
 @MainActor
@@ -60,6 +64,23 @@ final class TranscriptionEngine {
     /// switched on mid-meeting starts moving at once instead of at the next resume.
     /// Behind a lock because the audio loop reads it off the main actor.
     @ObservationIgnored private let spectrumWanted = OSAllocatedUnfairLock(initialState: false)
+
+    /// Whether the microphone has delivered any audio in this session, or in the last
+    /// one once it has stopped. The first buffer takes about 100 ms to arrive, so a key
+    /// let go before then recorded nothing at all.
+    var receivedAudio: Bool { audioArrived.withLock { $0 } }
+    @ObservationIgnored private let audioArrived = OSAllocatedUnfairLock(initialState: false)
+
+    #if os(macOS)
+    /// The microphone this session records from, resolved as its capture started.
+    private(set) var microphone: AudioDeviceID?
+    #endif
+
+    /// What the microphone's buffers have shown so far, kept by the audio loop. Nil
+    /// until a capture has started; kept after it stops, so the end of a dictation can
+    /// ask whether any sound came.
+    var microphoneSignal: MicrophoneSignal? { signal.withLock { $0 } }
+    @ObservationIgnored private let signal = OSAllocatedUnfairLock<MicrophoneSignal?>(initialState: nil)
 
     var publishesSpectrum: Bool {
         get { spectrumWanted.withLock { $0 } }
@@ -197,11 +218,15 @@ final class TranscriptionEngine {
     /// - Parameter publishesSpectrum: whether anything is going to draw the band. The
     ///   Fourier transform behind it runs on every buffer, and running it for a panel
     ///   nobody has switched on is work spent on a picture that is never drawn.
+    /// - Parameter recording: Where to keep the audio the recognizer is fed, for a
+    ///   dictation kept in Recent Dictations. The caller closes it once this session
+    ///   has stopped.
     func startRecording(
         owner: SessionOwner = .dictation,
         vocabulary: [String] = [],
         inputDeviceUID: String = "default",
-        publishesSpectrum: Bool = false
+        publishesSpectrum: Bool = false,
+        keepingAudioIn recording: DictationAudioWriter? = nil
     ) async throws {
         // Thrown rather than returned: a caller that silently "succeeds" here goes on to
         // set up its own UI for a session that does not exist, and only finds out when
@@ -238,6 +263,7 @@ final class TranscriptionEngine {
         vocabularySegments = []
         screenTerms = []
         spectrum = []
+        signal.withLock { $0 = nil }
 
         if let missing = await missingAuthorization() {
             release()
@@ -276,6 +302,24 @@ final class TranscriptionEngine {
         // AVAudioEngine.stop() on whichever thread does the releasing.
         self.audioCaptureHelper = helper
 
+        // The microphone's time to start is counted from here, where the capture is
+        // live and the start sound plays. The one-second rules were measured on the
+        // built-in microphone alone, so every other microphone gets the longer ones.
+        #if os(macOS)
+        // Resolved as the capture resolved it a moment ago: the chosen microphone, or
+        // the system default when that is not connected.
+        microphone = AudioDeviceCatalog.recordingDevice(forUID: inputDeviceUID)
+        let isMeasured = microphone.map(AudioDeviceCatalog.isBuiltInMicrophone) == true
+        let startAllowance = isMeasured ? MicrophoneSignal.quickStart : MicrophoneSignal.slowStart
+        let silenceLimit = isMeasured ? MicrophoneSignal.limit : MicrophoneSignal.slowLimit
+        #else
+        let startAllowance = MicrophoneSignal.quickStart
+        let silenceLimit = MicrophoneSignal.limit
+        #endif
+        signal.withLock {
+            $0 = MicrophoneSignal(startedAt: .now, startAllowance: startAllowance, silenceLimit: silenceLimit)
+        }
+
         // Start processing task to convert and feed audio to analyzer
         let analyzerContinuation = analyzerInputContinuation
         let targetFormat = analyzerFormat!
@@ -285,6 +329,9 @@ final class TranscriptionEngine {
         spectrumWanted.withLock { $0 = publishesSpectrum }
         let spectrumWanted = self.spectrumWanted
         let transcribedChannel = self.transcribedChannel
+        let audioArrived = self.audioArrived
+        audioArrived.withLock { $0 = false }
+        let signal = self.signal
 
         audioProcessingTask = Task.detached(priority: .userInitiated) { [weak self] in
             let converter = BufferConverter()
@@ -294,6 +341,14 @@ final class TranscriptionEngine {
 
             for await audioData in audioStream {
                 bufferCount += 1
+                if bufferCount == 1 { audioArrived.withLock { $0 = true } }
+
+                // Judged on the microphone's own channel: a meeting recording a call
+                // carries the call beside it, and the call is often silent.
+                let peak = audioData.buffer.peak(channel: transcribedChannel)
+                let frames = Int(audioData.buffer.frameLength)
+                let sampleRate = audioData.buffer.format.sampleRate
+                signal.withLock { $0?.take(peak: peak, frames: frames, sampleRate: sampleRate, at: .now) }
 
                 // Hand the untouched buffer to any second consumer before conversion,
                 // so diarization sees the same audio the transcriber does.
@@ -315,6 +370,10 @@ final class TranscriptionEngine {
                     spotter?.append(converted)
                     let input = AnalyzerInput(buffer: converted)
                     analyzerContinuation?.yield(input)
+                    // The very audio the recognizer hears, so Transcribe Again hears it
+                    // too. Written after the recognizer has it: the first write opens
+                    // the file, which took 7.8 ms.
+                    recording?.append(converted)
                 } catch {
                     Self.log.error("conversion failed on buffer #\(bufferCount, privacy: .public): \(error, privacy: .public)")
                 }
@@ -752,7 +811,8 @@ final class TranscriptionEngine {
 
     /// Every run of a finished result, with its time and the recognizer's confidence
     /// where it has them. Untimed runs are kept too, so the text can be rebuilt whole.
-    private nonisolated static func vocabularyRuns(from text: AttributedString) -> [Vocabulary.Run] {
+    /// Transcribe Again reads its runs with this too.
+    nonisolated static func vocabularyRuns(from text: AttributedString) -> [Vocabulary.Run] {
         text.runs.map { run in
             Vocabulary.Run(
                 text: String(text[run.range].characters),

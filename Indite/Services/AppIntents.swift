@@ -60,10 +60,15 @@ struct QuickTranscribeIntent: AppIntent {
             //
             // Recorded as a shortcut, not as a dictation, so the hotkey, Escape and the
             // menu bar leave it alone.
+            #if os(macOS)
+            let inputDeviceUID = AudioDeviceCatalog.microphoneForRecording(settings.microphoneOrder).uid
+            #else
+            let inputDeviceUID = AudioInputDevice.systemDefaultUID
+            #endif
             try await engine.startRecording(
                 owner: .shortcut,
                 vocabulary: settings.vocabularyHints,
-                inputDeviceUID: settings.inputDeviceUID
+                inputDeviceUID: inputDeviceUID
             )
             started = true
 
@@ -228,6 +233,9 @@ private func recordHistory(
         rawText: raw == text ? nil : raw,
         destination: "Shortcuts",
         promptName: promptName,
+        // A shortcut records for the time it was given, so its length says nothing
+        // about how fast anyone spoke.
+        spokenDuration: nil,
         settings: settings,
         in: InditeApp.modelContainer.mainContext
     )

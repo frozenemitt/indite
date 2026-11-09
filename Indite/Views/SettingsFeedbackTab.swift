@@ -22,6 +22,11 @@ struct FeedbackSettingsView: View {
             Section("Panels") {
                 Toggle("Show the words as you dictate", isOn: $settings.showDictationOverlay)
 
+                if settings.showDictationOverlay {
+                    Toggle("Hide the dictation panel from screen sharing", isOn: $settings.hideDictationPanelFromCaptures)
+                        .help("Screenshots and screen recordings leave it out too. The meeting pill stays visible, because whether the people on a call can see that they are being recorded is a question of their consent.")
+                }
+
                 if settings.showDictationOverlay || settings.showMeetingIndicator {
                     // Both panels. It used to put back the dictation panel alone, and
                     // a meeting pill dragged onto a display since unplugged had no way
@@ -42,6 +47,11 @@ struct FeedbackSettingsView: View {
                     SoundPickerRow(
                         label: "Recording started",
                         selection: $settings.startSoundName,
+                        sounds: soundCatalog.allSounds
+                    )
+                    SoundPickerRow(
+                        label: "Recording locked",
+                        selection: $settings.lockSoundName,
                         sounds: soundCatalog.allSounds
                     )
                     SoundPickerRow(
@@ -141,6 +151,7 @@ struct FeedbackSettingsView: View {
             // delete still stranded the user's sound choice on a file that was
             // never removed.
             if settings.startSoundName == id { settings.startSoundName = "Morse" }
+            if settings.lockSoundName == id { settings.lockSoundName = "Tink" }
             if settings.stopSoundName == id { settings.stopSoundName = "Pop" }
             if settings.completeSoundName == id { settings.completeSoundName = "Glass" }
             if settings.errorSoundName == id { settings.errorSoundName = "Basso" }

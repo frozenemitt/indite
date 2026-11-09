@@ -20,7 +20,7 @@ struct MCPServer {
     private static let protocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]
 
     init() throws {
-        let schema = Schema(versionedSchema: MeetingSchemaV2.self)
+        let schema = Schema(versionedSchema: MeetingSchemaV4.self)
         let config = ModelConfiguration(schema: schema, url: AppFolder.store, allowsSave: false)
         let container = try ModelContainer(
             for: schema,
@@ -156,8 +156,13 @@ struct MCPServer {
         return (try? context.fetch(descriptor)) ?? []
     }
 
+    /// The dictations with words, newest first. One kept with no words after its
+    /// recognition failed, for Transcribe Again, has nothing to read.
     private func dictations() -> [Dictation] {
-        let descriptor = FetchDescriptor<Dictation>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        let descriptor = FetchDescriptor<Dictation>(
+            predicate: #Predicate { $0.text != "" },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
         return (try? context.fetch(descriptor)) ?? []
     }
 

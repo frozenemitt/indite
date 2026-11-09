@@ -33,6 +33,20 @@ final class AppSettings {
         didSet { save("startSoundName", startSoundName) }
     }
 
+    /// Sound to play when a double tap locks the recording on.
+    ///
+    /// Tink by default, chosen to sit with Morse and Pop, the start and stop sounds.
+    /// Measured on macOS 27's files, the loudest frequency in all three is near 700 Hz
+    /// (Tink 703, Morse 668, Pop 680), so the lock sounds like one of the set. Tink is
+    /// also the shortest system sound: it falls 40 dB below its peak within 40 ms, where
+    /// Morse takes 120 ms and Pop 210 ms. The lock plays as the second tap comes up, a
+    /// moment after the start sound and with the microphone recording, so a click that
+    /// short barely runs into the start sound and leaves little of itself in the
+    /// dictation.
+    var lockSoundName: String {
+        didSet { save("lockSoundName", lockSoundName) }
+    }
+
     /// Sound to play when recording stops
     var stopSoundName: String {
         didSet { save("stopSoundName", stopSoundName) }
@@ -69,11 +83,35 @@ final class AppSettings {
         didSet { save("vocabularyHints", vocabularyHints) }
     }
 
+    /// Saved text that a spoken cue stands for: say "my calendar link", and the link is
+    /// typed.
+    ///
+    /// Every row of the Words settings, in their order, rows still being filled in
+    /// included. A dictionary keyed by the cue held only finished rows, and only one of
+    /// two with the same cue, so the others were lost with what had been typed into
+    /// them.
+    ///
+    /// Apart from `wordReplacements` on purpose. A replacement runs before the AI pass,
+    /// so the model reads the corrected word. A snippet is expanded after it, so the
+    /// model never sees the saved text and cannot edit it; see `Snippets`.
+    var snippets: [Snippet] {
+        didSet { save("snippets", snippets.map { ["cue": $0.cue, "text": $0.text] }) }
+    }
+
     // MARK: - Audio Input
 
-    /// CoreAudio UID of the microphone, or "default" to follow the system setting.
-    var inputDeviceUID: String {
-        didSet { save("inputDeviceUID", inputDeviceUID) }
+    /// Every microphone Indite has seen, in the order the user ranks them. A recording
+    /// takes the first one that can hear; see `MicrophoneOrder`.
+    var microphoneOrder: [AudioInputDevice] {
+        didSet { MicrophoneOrder.save(microphoneOrder, in: .standard) }
+    }
+
+    /// Mute the Mac's sound while a dictation records.
+    ///
+    /// Off by default: it silences whatever else is playing, a call included, and only
+    /// the user knows whether that is in the way.
+    var muteWhileDictating: Bool {
+        didSet { save("muteWhileDictating", muteWhileDictating) }
     }
 
     /// Record what the Mac is playing alongside the microphone, during meetings.
@@ -114,6 +152,18 @@ final class AppSettings {
     /// How many dictations to keep before the oldest are dropped.
     var dictationHistoryLimit: Int {
         didSet { save("dictationHistoryLimit", dictationHistoryLimit) }
+    }
+
+    /// How many days a kept dictation keeps its recording. The text stays after that.
+    ///
+    /// 14 by default, as long as Wispr Flow keeps its users' audio.
+    var dictationRecordingDays: Int {
+        didSet { save("dictationRecordingDays", dictationRecordingDays) }
+    }
+
+    /// Keep each recording as long as its dictation, whatever its age.
+    var keepDictationRecordingsForever: Bool {
+        didSet { save("keepDictationRecordingsForever", keepDictationRecordingsForever) }
     }
 
     // MARK: - Notifications
@@ -170,6 +220,15 @@ final class AppSettings {
         didSet { save("dictationKeyRaw", dictationKeyRaw) }
     }
 
+    /// The mouse side button that starts and stops a dictation, stored as
+    /// `MouseButton`'s raw value, or nil for none.
+    ///
+    /// None by default: the button goes back and forward in browsers and Finder, and
+    /// once it dictates, those apps no longer see its clicks.
+    var dictationMouseButtonRaw: String? {
+        didSet { save("dictationMouseButtonRaw", dictationMouseButtonRaw) }
+    }
+
     /// Enable a second shortcut that takes back the last insertion.
     var undoHotkeyEnabled: Bool {
         didSet { save("undoHotkeyEnabled", undoHotkeyEnabled) }
@@ -211,6 +270,15 @@ final class AppSettings {
         didSet { save("showDictationOverlay", showDictationOverlay) }
     }
 
+    /// Keep the dictation panel out of screen sharing, screenshots and screen recordings.
+    ///
+    /// Off by default, so a picture of the screen shows what was on it, as a bug report
+    /// or a demonstration needs. The meeting pill has no such setting: whether the people
+    /// on a call can see that they are being recorded is a question of their consent.
+    var hideDictationPanelFromCaptures: Bool {
+        didSet { save("hideDictationPanelFromCaptures", hideDictationPanelFromCaptures) }
+    }
+
     /// Show the AI what is already in the field being dictated into.
     ///
     /// Reads the focused field's existing text, so a dictated reply can match the
@@ -231,6 +299,16 @@ final class AppSettings {
     /// is one paragraph of several.
     var useShiftReturnAfterInsert: Bool {
         didSet { save("useShiftReturnAfterInsert", useShiftReturnAfterInsert) }
+    }
+
+    /// Press Return after the paste when a dictation ends with "press enter" or "press
+    /// return", for that dictation only. The words themselves are left out.
+    ///
+    /// On by default, so the command works without a visit to Settings. A dictation
+    /// meant to end with those words is sent without them; the setting's help warns of
+    /// that.
+    var pressEnterSubmits: Bool {
+        didSet { save("pressEnterSubmits", pressEnterSubmits) }
     }
 
     /// Safety cap on a single recording, in seconds.
@@ -254,6 +332,7 @@ final class AppSettings {
         self.playFeedbackSounds = UserDefaults.standard.object(forKey: "playFeedbackSounds") as? Bool ?? true
         self.showNotifications = UserDefaults.standard.object(forKey: "showNotifications") as? Bool ?? true
         self.startSoundName = UserDefaults.standard.string(forKey: "startSoundName") ?? "Morse"
+        self.lockSoundName = UserDefaults.standard.string(forKey: "lockSoundName") ?? "Tink"
         self.stopSoundName = UserDefaults.standard.string(forKey: "stopSoundName") ?? "Pop"
         self.completeSoundName = UserDefaults.standard.string(forKey: "completeSoundName") ?? "Glass"
         self.errorSoundName = UserDefaults.standard.string(forKey: "errorSoundName") ?? "Basso"
@@ -270,30 +349,48 @@ final class AppSettings {
         UserDefaults.standard.removeObject(forKey: "useGlobeKey")
         UserDefaults.standard.removeObject(forKey: "hotkeyString")
         self.dictationKeyRaw = UserDefaults.standard.string(forKey: "dictationKeyRaw") ?? "right"
+        self.dictationMouseButtonRaw = UserDefaults.standard.string(forKey: "dictationMouseButtonRaw")
+        // The undo and type-again keys moved from ⌃⌥⌘Z and ⌃⌥⌘V to the shorter ⌃⌘Z and
+        // ⌃⌘V on 2026-11-08, the chords Wispr Flow uses. A stored copy of an old default,
+        // left by Reset or recorded by hand, moves with them; any other chord stays.
+        if UserDefaults.standard.string(forKey: "undoHotkeyString") == "⌃⌥⌘Z" {
+            UserDefaults.standard.removeObject(forKey: "undoHotkeyString")
+        }
+        if UserDefaults.standard.string(forKey: "retypeHotkeyString") == "⌃⌥⌘V" {
+            UserDefaults.standard.removeObject(forKey: "retypeHotkeyString")
+        }
         self.undoHotkeyEnabled = UserDefaults.standard.object(forKey: "undoHotkeyEnabled") as? Bool ?? true
-        self.undoHotkeyString = UserDefaults.standard.string(forKey: "undoHotkeyString") ?? "⌃⌥⌘Z"
+        self.undoHotkeyString = UserDefaults.standard.string(forKey: "undoHotkeyString") ?? "⌃⌘Z"
         self.retypeHotkeyEnabled = UserDefaults.standard.object(forKey: "retypeHotkeyEnabled") as? Bool ?? true
-        self.retypeHotkeyString = UserDefaults.standard.string(forKey: "retypeHotkeyString") ?? "⌃⌥⌘V"
+        self.retypeHotkeyString = UserDefaults.standard.string(forKey: "retypeHotkeyString") ?? "⌃⌘V"
         self.outputModeRaw = UserDefaults.standard.string(forKey: "outputModeRaw") ?? "smartInsert"
         self.restoreClipboardAfterPaste = UserDefaults.standard.object(forKey: "restoreClipboardAfterPaste") as? Bool ?? true
         self.autoSubmitAfterInsert = UserDefaults.standard.object(forKey: "autoSubmitAfterInsert") as? Bool ?? false
         self.useSurroundingContext = UserDefaults.standard.object(forKey: "useSurroundingContext") as? Bool ?? false
         self.showDictationOverlay = UserDefaults.standard.object(forKey: "showDictationOverlay") as? Bool ?? true
+        self.hideDictationPanelFromCaptures = UserDefaults.standard.object(forKey: "hideDictationPanelFromCaptures") as? Bool ?? false
         self.overlayOriginX = UserDefaults.standard.object(forKey: "overlayOriginX") as? Double
         self.overlayOriginY = UserDefaults.standard.object(forKey: "overlayOriginY") as? Double
         self.meetingIndicatorOriginX = UserDefaults.standard.object(forKey: "meetingIndicatorOriginX") as? Double
         self.meetingIndicatorOriginY = UserDefaults.standard.object(forKey: "meetingIndicatorOriginY") as? Double
         self.showMeetingIndicator = UserDefaults.standard.object(forKey: "showMeetingIndicator") as? Bool ?? true
         self.useShiftReturnAfterInsert = UserDefaults.standard.object(forKey: "useShiftReturnAfterInsert") as? Bool ?? false
+        self.pressEnterSubmits = UserDefaults.standard.object(forKey: "pressEnterSubmits") as? Bool ?? true
         self.maxRecordingSeconds = UserDefaults.standard.object(forKey: "maxRecordingSeconds") as? Int ?? 600
         self.wordReplacements = UserDefaults.standard.dictionary(forKey: "wordReplacements") as? [String: String] ?? [:]
         self.vocabularyHints = UserDefaults.standard.stringArray(forKey: "vocabularyHints") ?? []
-        self.inputDeviceUID = UserDefaults.standard.string(forKey: "inputDeviceUID") ?? "default"
+        self.snippets = (UserDefaults.standard.array(forKey: "snippets") as? [[String: String]] ?? [])
+            .map { Snippet(cue: $0["cue"] ?? "", text: $0["text"] ?? "") }
+        // The single microphone choice becomes the ranked list the first time.
+        self.microphoneOrder = MicrophoneOrder.stored(in: .standard, connected: Self.connectedMicrophones())
+        self.muteWhileDictating = UserDefaults.standard.object(forKey: "muteWhileDictating") as? Bool ?? false
         self.captureSystemAudioInMeetings = UserDefaults.standard.object(forKey: "captureSystemAudioInMeetings") as? Bool ?? false
         self.keepMeetingAudio = UserDefaults.standard.object(forKey: "keepMeetingAudio") as? Bool ?? true
         self.summarizeMeetingsAtEnd = UserDefaults.standard.object(forKey: "summarizeMeetingsAtEnd") as? Bool ?? true
         self.keepDictationHistory = UserDefaults.standard.object(forKey: "keepDictationHistory") as? Bool ?? true
         self.dictationHistoryLimit = UserDefaults.standard.object(forKey: "dictationHistoryLimit") as? Int ?? 100
+        self.dictationRecordingDays = UserDefaults.standard.object(forKey: "dictationRecordingDays") as? Int ?? 14
+        self.keepDictationRecordingsForever = UserDefaults.standard.object(forKey: "keepDictationRecordingsForever") as? Bool ?? false
         self.notifyOnError = UserDefaults.standard.object(forKey: "notifyOnError") as? Bool ?? true
         self.appProfilesData = UserDefaults.standard.data(forKey: "appProfilesData")
 
@@ -338,6 +435,29 @@ final class AppSettings {
         return profile
     }
 
+    // MARK: - Microphones
+
+    /// The microphones connected now. None on iOS, which records from its own.
+    private static func connectedMicrophones() -> [AudioInputDevice] {
+        #if os(macOS)
+        AudioDeviceCatalog.inputDevices()
+        #else
+        []
+        #endif
+    }
+
+    /// Add every connected microphone the list lacks at the bottom, and bring the names
+    /// of the ones it has up to date.
+    func rememberMicrophones(_ connected: [AudioInputDevice]) {
+        let updated = MicrophoneOrder.remembering(connected, in: microphoneOrder)
+        if updated != microphoneOrder { microphoneOrder = updated }
+    }
+
+    /// Rank a microphone first, as choosing it from the menu does.
+    func rankFirst(_ microphone: AudioInputDevice) {
+        microphoneOrder = [microphone] + microphoneOrder.filter { $0.uid != microphone.uid }
+    }
+
     // MARK: - Persistence
 
     private func save(_ key: String, _ value: Any?) {
@@ -357,36 +477,46 @@ final class AppSettings {
         playFeedbackSounds = true
         showNotifications = true
         startSoundName = "Morse"
+        lockSoundName = "Tink"
         stopSoundName = "Pop"
         completeSoundName = "Glass"
         errorSoundName = "Basso"
         processingSoundName = "Bottle"
         hotkeyActivationModeRaw = "pushToTalk"
         dictationKeyRaw = "right"
+        dictationMouseButtonRaw = nil
         undoHotkeyEnabled = true
-        undoHotkeyString = "⌃⌥⌘Z"
+        undoHotkeyString = "⌃⌘Z"
         retypeHotkeyEnabled = true
-        retypeHotkeyString = "⌃⌥⌘V"
+        retypeHotkeyString = "⌃⌘V"
         outputModeRaw = "smartInsert"
         restoreClipboardAfterPaste = true
         autoSubmitAfterInsert = false
         useSurroundingContext = false
         showDictationOverlay = true
+        hideDictationPanelFromCaptures = false
         overlayOriginX = nil
         overlayOriginY = nil
         meetingIndicatorOriginX = nil
         meetingIndicatorOriginY = nil
         showMeetingIndicator = true
         useShiftReturnAfterInsert = false
+        pressEnterSubmits = true
         maxRecordingSeconds = 600
         wordReplacements = [:]
         vocabularyHints = []
-        inputDeviceUID = "default"
+        CorrectionWatcher.forgetNames()
+        snippets = []
+        microphoneOrder = MicrophoneOrder.movedOver(from: nil, connected: Self.connectedMicrophones())
+        muteWhileDictating = false
         captureSystemAudioInMeetings = false
         keepMeetingAudio = true
         summarizeMeetingsAtEnd = true
         keepDictationHistory = true
         dictationHistoryLimit = 100
+        // The days recordings are kept, and "Keep forever", stay as the user set them. Set
+        // back to 14 days, the next dictation would delete every recording older than
+        // that.
         notifyOnError = true
         appProfilesData = nil
 
@@ -397,6 +527,7 @@ final class AppSettings {
     func soundId(for sound: AudioFeedbackService.Sound) -> String {
         switch sound {
         case .recordingStarted: return startSoundName
+        case .recordingLocked: return lockSoundName
         case .recordingStopped: return stopSoundName
         case .processingComplete: return completeSoundName
         case .error: return errorSoundName
@@ -446,6 +577,12 @@ extension AppSettings {
     var dictationKey: OptionKey {
         get { OptionKey(rawValue: dictationKeyRaw) ?? .right }
         set { dictationKeyRaw = newValue.rawValue }
+    }
+
+    /// The mouse side button that dictates, backed by `dictationMouseButtonRaw`. Nil
+    /// for none.
+    var dictationMouseButton: MouseButton? {
+        dictationMouseButtonRaw.flatMap(MouseButton.init(rawValue:))
     }
 
     /// The undo binding to hand `GlobalHotkeyMonitor`: nil when switched off or
@@ -499,7 +636,7 @@ extension AppSettings {
         return keyCodes[lowered]
     }
 
-    /// Write a captured keystroke the way a shortcut is stored, e.g. "⌃⌥⌘Z".
+    /// Write a captured keystroke the way a shortcut is stored, e.g. "⌃⌘Z".
     ///
     /// Nil when the keystroke cannot be a trigger: a key outside the table above, or
     /// one pressed without ⌃, ⌥ or ⌘, which would swallow that plain keystroke in

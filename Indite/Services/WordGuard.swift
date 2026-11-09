@@ -133,6 +133,11 @@ enum WordGuard {
             return a == b
         }
 
+        // A word and its negation are opposites, not mishearings. On 2026-11-08 the
+        // model turned Jonathan's "an inelegant solution" into "an elegant solution",
+        // and both rules below let it through.
+        if flipsNegation(said, into: rewritten) { return false }
+
         // "pending" heard for "impending", "crack" for "cracking". Not "in" for
         // "within": the shorter word must be most of the longer one.
         let (shorter, longer) = said.count <= rewritten.count ? (said, rewritten) : (rewritten, said)
@@ -147,6 +152,23 @@ enum WordGuard {
         // One sound apart, starting on the same sound: "there" and "they", "fought"
         // and "font". Not "Monday" and "Sunday".
         return !isName && a.first == b.first && editDistance(a, b) == 1
+    }
+
+    /// Whether `rewritten` is `said` with a negation added or taken away.
+    ///
+    /// Taking away a negating prefix is never a fix: the recognizer does not invent
+    /// the syllable "in" that turned "elegant" into "inelegant". Adding "in", "im", "il"
+    /// or "ir" can be one, because the recognizer drops an unstressed opening syllable,
+    /// as it did when "impending" came out as "pending". "un", "non" and "dis" are
+    /// stressed, so adding one is a change of meaning. "n't" flips a word either way:
+    /// "could" and "couldn't".
+    static func flipsNegation(_ said: String, into rewritten: String) -> Bool {
+        let dropped = ["un", "in", "im", "il", "ir", "non", "dis"]
+        if dropped.contains(where: { said == $0 + rewritten }) { return true }
+        if ["un", "non", "dis"].contains(where: { rewritten == $0 + said }) { return true }
+        let negations: Set<[String]> = [["can", "can't"], ["can", "cannot"], ["will", "won't"], ["shall", "shan't"]]
+        if negations.contains([said, rewritten]) || negations.contains([rewritten, said]) { return true }
+        return said == rewritten + "n't" || rewritten == said + "n't"
     }
 
     /// Written with a capital and not a word that takes one only to start a sentence.
@@ -284,7 +306,7 @@ enum WordGuard {
     }
 
     /// Insertions, deletions and substitutions that turn `a` into `b`.
-    private static func editDistance(_ a: String, _ b: String) -> Int {
+    static func editDistance(_ a: String, _ b: String) -> Int {
         let a = Array(a), b = Array(b)
         guard !a.isEmpty else { return b.count }
         guard !b.isEmpty else { return a.count }
@@ -447,5 +469,69 @@ enum WordGuard {
         rewritten += Array(j..<m)
         closeGap()
         return steps
+    }
+}
+
+// MARK: - Sentence Breaks
+
+extension WordGuard {
+
+    /// Words that can carry a sentence on after a comma.
+    static let continuingWords: Set<String> = [
+        "and", "but", "so", "or", "nor", "yet", "because", "whereas", "which",
+        "although", "though", "unless", "while",
+    ]
+
+    /// Put back a full stop that the model turned into a comma between two sentences.
+    ///
+    /// The recognizer ends a sentence at every pause and capitalizes the next word, so
+    /// some of its full stops cut one sentence in two, and a prompt that keeps the
+    /// speaker's words is told to join those pieces. Apple's model joins too eagerly.
+    /// On Jonathan's last 100 dictations, which two labelers agreed held 40 such cuts
+    /// among 207 breaks, told to join them it mended 33 of 80 over two runs but also
+    /// ran 28 of 330 real sentence ends together, 21 of them with a bare comma: "I
+    /// tweaked it myself, can you please take a look?"
+    ///
+    /// A comma join stays only before a word that carries the sentence on, such as
+    /// "and", "but" or "because". A join with no punctuation stays, since that is how a
+    /// fragment rejoins its sentence: "articulate the width of that uncertainty". With
+    /// this check the same runs mended 24 of 80 and joined 7 real ends, each with a
+    /// comma before "and", "but", "so" or "or".
+    ///
+    /// - Returns: The rewrite with those full stops back, and how many were put back.
+    static func keepingSentenceBreaks(said: String, rewrite: String) -> (text: String, putBack: Int) {
+        let saidWords = words(in: said)
+        var output = words(in: rewrite)
+        guard saidWords.count > 1, output.count > 1,
+              saidWords.count <= maximumWords, output.count <= maximumWords else { return (rewrite, 0) }
+
+        // Where each said word landed in the rewrite, for the words it kept.
+        var landed: [Int: Int] = [:]
+        var next = 0
+        for step in alignment(saidWords.map(\.key), output.map(\.key)) {
+            switch step {
+            case .same(let j):
+                landed[next] = j
+                next += 1
+            case .changed(let said, _):
+                if let last = said.last { next = last + 1 }
+            }
+        }
+
+        var putBack = 0
+        for i in 0..<(saidWords.count - 1) {
+            guard let mark = saidWords[i].text.last, ".?!".contains(mark),
+                  let first = saidWords[i + 1].text.first, first.isUppercase,
+                  let j = landed[i], landed[i + 1] == j + 1,
+                  output[j].text.hasSuffix(","),
+                  !continuingWords.contains(saidWords[i + 1].key) else { continue }
+            output[j].text.removeLast()
+            output[j].text.append(mark)
+            if let start = output[j + 1].text.first, start.isLowercase {
+                output[j + 1].text = start.uppercased() + output[j + 1].text.dropFirst()
+            }
+            putBack += 1
+        }
+        return putBack == 0 ? (rewrite, 0) : (joined(output), putBack)
     }
 }

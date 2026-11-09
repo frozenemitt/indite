@@ -90,7 +90,7 @@ struct InditeApp: App {
     /// because App Intents are built by the system and cannot be handed the app's
     /// dependencies — without this a shortcut could not write to history at all.
     static let modelContainer: ModelContainer = {
-        let schema = Schema(versionedSchema: MeetingSchemaV2.self)
+        let schema = Schema(versionedSchema: MeetingSchemaV4.self)
         do {
             // A file of our own, never the default. The Mac app is not sandboxed, so the
             // default is the shared ~/Library/Application Support/default.store — a file
@@ -341,6 +341,24 @@ struct InditeApp: App {
             // The coordinator keeps finished dictations, which needs the open store.
             coordinator.modelContext = InditeApp.modelContainer.mainContext
 
+            // Before the key is armed, so no dictation is recording while its folder is
+            // put in order.
+            DictationHistory.tidyRecordings(settings: settings, in: InditeApp.modelContainer.mainContext)
+
+            // A dictation that muted the Mac and never ended, because Indite crashed or
+            // was force quit, left the sound off. Only a recent one is undone: after an
+            // hour, the sound may since have been muted on purpose.
+            OutputMute.restore(madeWithin: 3600)
+
+            // Every microphone that appears joins the ranked list at the bottom, so one
+            // that is unplugged keeps its place. Watched for as long as the app runs.
+            Task {
+                settings.rememberMicrophones(AudioDeviceCatalog.inputDevices())
+                for await _ in AudioDeviceCatalog.changes() {
+                    settings.rememberMicrophones(AudioDeviceCatalog.inputDevices())
+                }
+            }
+
             // Ask for notification permission at launch. Otherwise the first banner is
             // what creates the service, and it is posted before the request is answered,
             // so the system drops it.
@@ -369,6 +387,12 @@ struct InditeApp: App {
             }
             hotkeyMonitor.onConfirm = {
                 Task { @MainActor in coordinator.confirm() }
+            }
+            hotkeyMonitor.onLock = {
+                Task { @MainActor in coordinator.lock() }
+            }
+            coordinator.onNoRecording = { [hotkeyMonitor] in
+                hotkeyMonitor.forgetGesture()
             }
             hotkeyMonitor.onDeactivate = {
                 Task { @MainActor in await coordinator.stopAndProcess() }
@@ -422,6 +446,7 @@ struct InditeApp: App {
         private func armHotkey() {
             hotkeyMonitor.dictationKey = settings.dictationKey
             hotkeyMonitor.activationMode = settings.hotkeyActivationMode
+            hotkeyMonitor.mouseButton = settings.dictationMouseButton
             hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
             hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
 

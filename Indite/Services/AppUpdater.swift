@@ -162,9 +162,9 @@ extension AppUpdater: UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let content = response.notification.request.content
         if content.categoryIdentifier == CorrectionWatcher.category {
-            let name = content.userInfo["name"] as? String
+            let names = content.userInfo["names"] as? [String] ?? []
             let action = response.actionIdentifier
-            await MainActor.run { CorrectionWatcher.shared.respond(name: name, action: action) }
+            await MainActor.run { CorrectionWatcher.shared.respond(names: names, action: action) }
             return
         }
         guard content.categoryIdentifier == Self.notificationCategory else { return }

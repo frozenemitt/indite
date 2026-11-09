@@ -278,6 +278,8 @@ final class AIProcessor {
     /// request's own opening, character for character. Any difference and the warming
     /// buys nothing.
     private static func userPrompt(for prompt: Prompt, text: String, surroundingText: String?) -> String {
+        var prompt = prompt
+        if prompt.keepsWords { prompt.userTemplate += "\n" + sentenceBreakNote }
         let request = prompt.apply(to: text, note: languageNote)
 
         guard let surroundingText, !surroundingText.isEmpty else { return request }
@@ -317,6 +319,30 @@ final class AIProcessor {
             """
     }
 
+    /// Added to a prompt that keeps the speaker's words: the recognizer ends a sentence
+    /// at every pause and capitalizes the next word, and Indite's pause rule removes
+    /// such a break only before a lowercase word.
+    ///
+    /// Measured on Jonathan's last 100 dictations, where two labelers agreed that 40 of
+    /// the recognizer's 207 breaks before a capital cut a sentence in two. Over two runs,
+    /// his prompt alone mended 16 of the 80 and joined no real break. With this note it
+    /// mended 27 and joined 3 real breaks with a comma, which the word check's
+    /// `keepingSentenceBreaks` then put back, so none were joined.
+    ///
+    /// The worked examples matter. One plain sentence saying the same thing mended 33 but
+    /// joined 28 real breaks, 21 of them as comma splices. Marking the breaks as pauses
+    /// for the model to decide joined 45 and left the marks in the text.
+    ///
+    /// It costs about 0.1 s: over 40 dictations, each warmed as the app warms them, the
+    /// median wait went from 753 to 848 ms.
+    static let sentenceBreakNote = """
+        - A full stop at a pause can cut one sentence in two. Join the pieces when the words after the full stop continue the same sentence and cannot stand on their own:
+          "We still need to finish. The report by Friday." becomes "We still need to finish the report by Friday."
+          "She called this morning. But nobody picked up." becomes "She called this morning, but nobody picked up."
+          "Send it to me. Because I need it before the call." becomes "Send it to me, because I need it before the call."
+          Keep a full stop between two complete sentences: "Thanks for the update. The new numbers look good." stays as it is.
+        """
+
     /// The dictation's language, told to the model when it is not English. The
     /// prompts are written in English, and Clean Up turned German and French
     /// dictations into English; told the language, it kept German, French and
@@ -350,7 +376,11 @@ final class AIProcessor {
         if outcome.restored > 0 || outcome.removed > 0 {
             Log.ai.notice("Word check put back \(outcome.restored, privacy: .public) words and took out \(outcome.removed, privacy: .public) added ones")
         }
-        return outcome.text
+        let breaks = WordGuard.keepingSentenceBreaks(said: said, rewrite: outcome.text)
+        if breaks.putBack > 0 {
+            Log.ai.notice("Put back \(breaks.putBack, privacy: .public) full stops the model had turned into commas between sentences")
+        }
+        return breaks.text
     }
 
     /// Strip tags the model sometimes echoes back, and fail loudly on an empty

@@ -67,7 +67,31 @@ enum OptionKey: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// A key plus modifiers, e.g. ⌃⌥⌘Z: the undo and type-again shortcuts.
+/// A mouse side button that dictates. A click starts a dictation, and the next click
+/// ends it and delivers the words, as the next press ends a locked recording.
+enum MouseButton: String, CaseIterable, Identifiable, Sendable {
+    case back, forward
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .back: "Back (button 4)"
+        case .forward: "Forward (button 5)"
+        }
+    }
+
+    /// The button's number in a mouse event, which counts the left button as 0, the
+    /// right as 1 and the middle as 2.
+    var eventNumber: Int64 {
+        switch self {
+        case .back: 3
+        case .forward: 4
+        }
+    }
+}
+
+/// A key plus modifiers, e.g. ⌃⌘Z: the undo and type-again shortcuts.
 struct HotkeyTrigger: Equatable, Sendable {
     let keyCode: CGKeyCode
     let modifiers: CGEventFlags
@@ -117,6 +141,11 @@ private enum HotkeyAction: Sendable {
 /// Everything the tap callback reads, kept where the tap's own thread can reach it.
 private struct TapState: Sendable {
     var dictationKey: OptionKey = .right
+    /// The mouse side button that dictates, if one does.
+    var mouseButton: MouseButton?
+    /// The number of the mouse button whose press was swallowed, so that its release
+    /// is swallowed too and no app sees half a click.
+    var swallowedButton: Int64?
     var undoTrigger: HotkeyTrigger?
     var retypeTrigger: HotkeyTrigger?
     var activationMode: HotkeyActivationMode = .pushToTalk
@@ -146,6 +175,9 @@ private struct TapState: Sendable {
     var isLocked = false
     /// This press ended a locked recording, so its release does nothing.
     var pressEndsLock = false
+    /// This press came during a recording the key did not start, from the menu or a
+    /// mouse side button, so its release ends that recording.
+    var pressEndsOtherRecording = false
 
     /// Shorter than this, a hold is a tap: too short to have said anything after the
     /// start sound. Also how long a tap waits for the second press of a double tap.
@@ -175,6 +207,17 @@ private struct TapState: Sendable {
             isSecondTap = true
             return .confirm
         }
+        // A recording the key did not start, from the menu or a mouse side button,
+        // ends on the release, as toggle mode ends one, once the press is known not
+        // to be ⌥E or Option-drag. The press used to start a second recording, which
+        // the coordinator refused with the error sound; a quick release then counted
+        // as a tap, and when no second tap followed, the running recording was
+        // cancelled without a sound and its words were lost.
+        if isRecording {
+            pressStartedRecording = false
+            pressEndsOtherRecording = true
+            return nil
+        }
         return .activate
     }
 
@@ -184,6 +227,10 @@ private struct TapState: Sendable {
         if pressEndsLock {
             pressEndsLock = false
             return nil
+        }
+        if pressEndsOtherRecording {
+            pressEndsOtherRecording = false
+            return .deactivate
         }
         let wasTap = pressedAt.map { now - $0 < Self.tapLength } ?? false
         if isSecondTap {
@@ -216,6 +263,7 @@ private struct TapState: Sendable {
         optionUsedAsModifier = false
         isSecondTap = false
         pressEndsLock = false
+        pressEndsOtherRecording = false
     }
 }
 
@@ -262,6 +310,29 @@ final class GlobalHotkeyMonitor {
         }
     }
 
+    /// The mouse side button that starts and stops a dictation, or nil for none.
+    var mouseButton: MouseButton? {
+        didSet {
+            let value = mouseButton
+            tapState.withLock { $0.mouseButton = value }
+        }
+    }
+
+    /// Forget a lock or a waiting tap that has no recording behind it, because the
+    /// recording its press asked for was refused.
+    ///
+    /// The tap learns that a recording ended from the coordinator's state, which a
+    /// refused start never changes. A double tap during a rewrite or a meeting left
+    /// the lock set, and the next press read as the end of it and did nothing.
+    func forgetGesture() {
+        tapState.withLock { state in
+            state.isLocked = false
+            state.tapPending = false
+            state.isSecondTap = false
+            state.pressEndsLock = false
+        }
+    }
+
     /// Optional second binding that takes back the last insertion.
     var undoTrigger: HotkeyTrigger? {
         didSet {
@@ -305,9 +376,13 @@ final class GlobalHotkeyMonitor {
     /// The recording that began is a dictation, not a tap, and can show itself.
     /// Push-to-talk only.
     var onConfirm: (() -> Void)?
+    /// Two quick taps locked the recording on, and the next press ends it.
+    /// Push-to-talk only.
+    var onLock: (() -> Void)?
     /// Recording should end and transcribe. Push-to-talk only.
     var onDeactivate: (() -> Void)?
-    /// Recording should flip state. Toggle mode only.
+    /// Recording should flip state. In toggle mode from the dictation key, and in
+    /// either mode from the mouse button.
     var onToggle: (() -> Void)?
     /// The user cancelled with Escape while recording.
     var onCancel: (() -> Void)?
@@ -403,13 +478,16 @@ final class GlobalHotkeyMonitor {
             return false
         }
 
-        // Clicks only to notice Option-click and Option-drag. None is ever swallowed.
+        // Clicks to notice Option-click and Option-drag, which are never swallowed, and
+        // the side button that dictates, when one is chosen. That button's presses and
+        // releases are swallowed.
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.flagsChanged.rawValue) |
             (1 << CGEventType.leftMouseDown.rawValue) |
             (1 << CGEventType.rightMouseDown.rawValue) |
-            (1 << CGEventType.otherMouseDown.rawValue)
+            (1 << CGEventType.otherMouseDown.rawValue) |
+            (1 << CGEventType.otherMouseUp.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -444,7 +522,7 @@ final class GlobalHotkeyMonitor {
 
         isRunning = true
         lastError = nil
-        Log.hotkey.notice("tap installed, key=\(self.dictationKey.rawValue, privacy: .public), mode=\(self.activationMode.rawValue, privacy: .public)")
+        Log.hotkey.notice("tap installed, key=\(self.dictationKey.rawValue, privacy: .public), mode=\(self.activationMode.rawValue, privacy: .public), mouse=\(self.mouseButton?.rawValue ?? "off", privacy: .public)")
         return true
     }
 
@@ -487,7 +565,8 @@ final class GlobalHotkeyMonitor {
         type: CGEventType,
         keyCode: CGKeyCode,
         flags: CGEventFlags,
-        isRepeat: Bool
+        isRepeat: Bool,
+        button: Int64
     ) -> Bool {
         let (swallow, action) = tapState.withLock { state -> (Bool, HotkeyAction?) in
             // Recording a new binding takes the keyboard whole, so the combination the
@@ -554,6 +633,27 @@ final class GlobalHotkeyMonitor {
                     return (true, isRepeat ? nil : .retype)
                 }
                 return (false, nil)
+
+            case .otherMouseDown where button == state.swallowedButton && button != state.mouseButton?.eventNumber:
+                // A press of a button whose last release never reached the tap: the tap
+                // was off or rebuilt, or a shortcut was being recorded. That release is
+                // owed nothing now, and this click goes through whole.
+                state.swallowedButton = nil
+                guard state.isKeyDown else { return (false, nil) }
+                return (false, state.useAsModifier())
+
+            case .otherMouseDown where button == state.mouseButton?.eventNumber:
+                // The side button that dictates: a click starts a dictation and the
+                // next one ends it. Swallowed, so the app in front does not also go
+                // back or forward.
+                state.swallowedButton = button
+                return (true, .toggle)
+
+            case .otherMouseUp:
+                // The release of a swallowed press goes the same way as its press.
+                guard button == state.swallowedButton else { return (false, nil) }
+                state.swallowedButton = nil
+                return (true, nil)
 
             case .leftMouseDown, .rightMouseDown, .otherMouseDown:
                 // Option-click and Option-drag: Option is a modifier for the mouse.
@@ -681,6 +781,7 @@ final class GlobalHotkeyMonitor {
 
         case .lock:
             Log.hotkey.notice("double tap — recording locked until the next press")
+            onLock?()
 
         case .cancel: onCancel?()
         case .abandon: onAbandon?()
@@ -793,8 +894,9 @@ private func hotkeyEventTapCallback(
     let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
     let flags = event.flags
     let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+    let button = event.getIntegerValueField(.mouseEventButtonNumber)
 
-    let swallow = monitor.decide(type: type, keyCode: keyCode, flags: flags, isRepeat: isRepeat)
+    let swallow = monitor.decide(type: type, keyCode: keyCode, flags: flags, isRepeat: isRepeat, button: button)
     return swallow ? nil : Unmanaged.passUnretained(event)
 }
 #endif

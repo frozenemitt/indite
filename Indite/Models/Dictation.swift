@@ -10,10 +10,12 @@ import SwiftData
 @Model
 final class Dictation {
 
-    /// The text as delivered, after replacements and any AI pass.
+    /// The text as delivered, after replacements and any AI pass. Empty for a dictation
+    /// whose recognition failed; see `recognitionFailed`.
     var text: String
 
-    /// The raw transcript before AI processing, when the two differ.
+    /// The words as heard, when they differ from the text: the transcript before AI
+    /// processing and before any snippet was expanded, without a closing "press enter".
     ///
     /// Kept because the AI occasionally rewrites something better left alone, and the
     /// original is unrecoverable otherwise.
@@ -27,17 +29,38 @@ final class Dictation {
     /// Name of the prompt applied, if any.
     var promptName: String?
 
+    /// How long the microphone listened, in seconds, from the moment it opened until
+    /// the dictation stopped, leaving out any time the Mac slept. Recent Dictations
+    /// divides the words by it for the speaking speed.
+    ///
+    /// Nil for dictations kept before it was recorded, and for those made by a
+    /// shortcut, which records for a set time whether or not anyone is still speaking.
+    /// Added in version 3 of the store.
+    var spokenDuration: TimeInterval?
+
+    /// The file in `DictationAudioStore` that holds what the recognizer heard, so the
+    /// dictation can be transcribed again.
+    ///
+    /// Nil for dictations kept before recordings were, for those made by a shortcut,
+    /// and once the recording has passed the days chosen in Settings. Added in version
+    /// 4 of the store.
+    var recordingFileName: String?
+
     init(
         text: String,
         rawText: String? = nil,
         destination: String? = nil,
         promptName: String? = nil,
+        spokenDuration: TimeInterval? = nil,
+        recordingFileName: String? = nil,
         createdAt: Date = Date()
     ) {
         self.text = text
         self.rawText = rawText
         self.destination = destination
         self.promptName = promptName
+        self.spokenDuration = spokenDuration
+        self.recordingFileName = recordingFileName
         self.createdAt = createdAt
     }
 
@@ -45,5 +68,17 @@ final class Dictation {
     var wasEditedByAI: Bool {
         guard let rawText else { return false }
         return rawText != text
+    }
+
+    /// Whether the recording is still on disk, so the dictation can be transcribed again.
+    var hasRecording: Bool {
+        DictationAudioStore.fileExists(named: recordingFileName)
+    }
+
+    /// Whether recognition failed before any words were heard. Such a dictation is kept
+    /// with no text, only for its recording, the one copy Transcribe Again can recover
+    /// the words from. No other dictation is kept without words.
+    var recognitionFailed: Bool {
+        text.isEmpty
     }
 }

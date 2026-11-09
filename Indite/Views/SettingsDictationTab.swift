@@ -23,10 +23,19 @@ struct DictationSettingsView: View {
 
     @Binding var tab: SettingsTab
 
-    @State private var devices: [AudioInputDevice] = []
-    @State private var systemDefaultName = ""
+    /// Which microphones are connected, kept current while the app runs.
+    private let inputs = AudioInputList.shared
     @State private var capturing: CaptureTarget?
     @State private var captureError: String?
+
+    /// A dictation that still has its recording, if any does, for the recording settings.
+    @Query(DictationSettingsView.oneRecorded) private var recorded: [Dictation]
+
+    private static var oneRecorded: FetchDescriptor<Dictation> {
+        var descriptor = FetchDescriptor<Dictation>(predicate: #Predicate { $0.recordingFileName != nil })
+        descriptor.fetchLimit = 1
+        return descriptor
+    }
 
     var body: some View {
         @Bindable var settings = settings
@@ -48,6 +57,14 @@ struct DictationSettingsView: View {
                     }
                 }
                 .help("Escape discards a dictation in progress.")
+
+                Picker("Mouse button", selection: $settings.dictationMouseButtonRaw) {
+                    Text("Off").tag(String?.none)
+                    ForEach(MouseButton.allCases) { button in
+                        Text(button.displayName).tag(Optional(button.rawValue))
+                    }
+                }
+                .help("Click the side button to start a dictation, and click it again to end it. It then no longer goes back or forward in other apps.")
             }
 
             // How each key works is in its tooltip. A caption stays only where it
@@ -89,24 +106,7 @@ struct DictationSettingsView: View {
             }
 
             Section("Microphone") {
-                Picker("Record from", selection: $settings.inputDeviceUID) {
-                    Text("System Default (\(systemDefaultName))")
-                        .tag(AudioInputDevice.systemDefaultUID)
-                    ForEach(devices) { device in
-                        Text(device.name).tag(device.uid)
-                    }
-                }
-
-                if settings.inputDeviceUID != AudioInputDevice.systemDefaultUID,
-                   !devices.contains(where: { $0.uid == settings.inputDeviceUID }) {
-                    Label {
-                        Text("That device is not connected, so recording uses the system default.")
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
-                    }
-                    .font(.caption)
-                }
+                MicrophoneOrderRows(order: $settings.microphoneOrder, connected: inputs.devices)
 
                 // A menu of lengths: the 30-second stepper this replaced took up to
                 // 119 clicks to cross its range. A length it saved that is not listed
@@ -119,6 +119,9 @@ struct DictationSettingsView: View {
                     }
                 }
                 .help("So a key that sticks cannot record for ever.")
+
+                Toggle("Mute the Mac while you dictate", isOn: $settings.muteWhileDictating)
+                    .help("Music, videos and calls go quiet until the dictation ends. Indite's start and stop sounds still play.")
             }
 
             Section("Where the Text Goes") {
@@ -151,6 +154,9 @@ struct DictationSettingsView: View {
                         Text("Press Shift-Return").tag(AfterTyping.pressShiftReturn)
                     }
                     .help("Return sends the message in a chat app. Shift-Return starts a new line and leaves it unsent.")
+
+                    Toggle("Press Return when a dictation ends with \u{201C}press enter\u{201D}", isOn: $settings.pressEnterSubmits)
+                        .help("A dictation that ends with \u{201C}press enter\u{201D} or \u{201C}press return\u{201D} is typed without those words and sent, even when you meant to write them.")
                 }
             }
 
@@ -177,29 +183,47 @@ struct DictationSettingsView: View {
                     }
                 }
 
-                Text("Everything you dictate is stored in plain text on this Mac. Nothing is sent anywhere.")
+                // With the history off, recordings kept before still go after their days,
+                // so their settings show for as long as any is left.
+                if settings.keepDictationHistory || !recorded.isEmpty {
+                    // Any number of days, typed, as Jonathan asked on 2026-11-08, rather
+                    // than a menu of lengths. Recordings past it go at the next launch or
+                    // dictation, not as the field changes; see
+                    // `DictationHistory.expireRecordings`.
+                    LabeledContent("Keep recordings for") {
+                        HStack(spacing: 6) {
+                            TextField("Days", value: Binding(
+                                get: { settings.dictationRecordingDays },
+                                set: { settings.dictationRecordingDays = max(1, $0) }
+                            ), format: .number)
+                            .labelsHidden()
+                            // Bordered so it reads as a field to type in. A grouped
+                            // form draws a plain one as a bare "14", like a value.
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 56)
+                            Text(settings.dictationRecordingDays == 1 ? "day" : "days")
+                        }
+                    }
+                    .disabled(settings.keepDictationRecordingsForever)
+                    .help("A dictation's recording lets Recent Dictations transcribe it again. After this many days the recording is deleted and the text stays.")
+
+                    Toggle("Keep forever", isOn: $settings.keepDictationRecordingsForever)
+                        .help("Keep each recording as long as its dictation is kept.")
+                }
+
+                Text("Everything you dictate is stored in plain text on this Mac. Recordings of your dictations stay on this Mac too. Nothing is sent anywhere.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .onAppear {
-            devices = AudioDeviceCatalog.inputDevices()
-            systemDefaultName = AudioDeviceCatalog.systemDefaultName()
-        }
-        .task {
-            // Picks up a microphone plugged in, or a default switched, while this tab
-            // is open.
-            for await _ in AudioDeviceCatalog.changes() {
-                devices = AudioDeviceCatalog.inputDevices()
-                systemDefaultName = AudioDeviceCatalog.systemDefaultName()
-            }
-        }
         .onChange(of: capturing) { _, target in
             if let target { startCapturing(target) } else { hotkeyMonitor.endCapture() }
         }
         .onChange(of: settings.dictationKeyRaw) { _, _ in rearm() }
         .onChange(of: settings.hotkeyActivationModeRaw) { _, _ in rearm() }
+        .onChange(of: settings.dictationMouseButtonRaw) { _, _ in rearm() }
         .onChange(of: settings.undoHotkeyEnabled) { _, _ in
             if capturing == .undo { capturing = nil }
             rearm()
@@ -272,6 +296,7 @@ struct DictationSettingsView: View {
     private func rearm() {
         hotkeyMonitor.dictationKey = settings.dictationKey
         hotkeyMonitor.activationMode = settings.hotkeyActivationMode
+        hotkeyMonitor.mouseButton = settings.dictationMouseButton
         hotkeyMonitor.undoTrigger = settings.undoHotkeyTrigger
         hotkeyMonitor.retypeTrigger = settings.retypeHotkeyTrigger
         if !hotkeyMonitor.isRunning, AccessibilityPermission.isTrusted {

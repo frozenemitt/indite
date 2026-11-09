@@ -163,7 +163,13 @@ enum HelpLibrary {
             "Hold to talk", the default, listens while you hold the key down and stops \
             when you let go. To talk hands-free in this mode too, tap the key twice \
             quickly: Indite keeps listening after you let go, until you press the key \
-            once more.
+            once more. A short sound says it has locked, and a lock shows in the \
+            dictation panel for as long as it listens.
+
+            A mouse side button can start and stop a dictation too. In the same \
+            settings, pick the back or forward button under "Mouse button". Click it \
+            once to start and once more to stop. The button then no longer goes back \
+            or forward in other apps.
 
             In either mode, Escape throws the dictation away.
             """,
@@ -182,7 +188,7 @@ enum HelpLibrary {
             it again if you chose "Press to start, press to stop". You can also click \
             Indite's I in the menu bar and choose "Stop Dictation".
 
-            If the words have already been typed, press Control-Option-Command-Z (⌃⌥⌘Z) \
+            If the words have already been typed, press Control-Command-Z (⌃⌘Z) \
             within two minutes to take them back.
             """,
         topic: .dictation
@@ -219,6 +225,17 @@ enum HelpLibrary {
             Messages. "Press Shift-Return" starts a new line and leaves the message \
             unsent. "Nothing" is the default. If your messages are being sent \
             automatically, choose "Nothing" or "Press Shift-Return" to stop it.
+
+            To send a single dictation, end it with "press enter" or "press return". \
+            Indite types the words before them and then presses Return. A message you \
+            meant to end with those words is sent without them; to stop that, turn off \
+            the switch below "After typing".
+
+            To send a message you have read over, say only "press enter". Indite \
+            presses Return and types nothing. Return is pressed only in the app you were \
+            in when you started the dictation. If another app has come to the front by \
+            then, Indite types any words into it without pressing Return, and the \
+            dictation panel says so.
 
             To press Return in one app only, add a profile for that app in the Apps tab \
             and set "Press Return after typing" to Yes. Once Return has been pressed, the \
@@ -287,7 +304,7 @@ enum HelpLibrary {
         id: "undo-dictation",
         title: "Take back the last dictation",
         body: """
-            Press Control-Option-Command-Z (⌃⌥⌘Z) within two minutes of a dictation being \
+            Press Control-Command-Z (⌃⌘Z) within two minutes of a dictation being \
             typed. Indite sends Undo to the app that received the words, so they come out \
             again. It also puts them on the clipboard, in case you still want them.
 
@@ -305,7 +322,7 @@ enum HelpLibrary {
         title: "Put a dictation where it belongs",
         body: """
             If Indite typed a dictation into the wrong window, or nowhere, click the \
-            right place for the text and press Control-Option-Command-V (⌃⌥⌘V). Indite \
+            right place for the text and press Control-Command-V (⌃⌘V). Indite \
             types the last dictation again at the cursor, with no rewrite and no Return \
             after it.
 
@@ -333,8 +350,19 @@ enum HelpLibrary {
             the words were rewritten, "Copy Original" in the More menu copies them as they \
             were heard. "Clear All…" deletes every dictation.
 
+            Indite also keeps the recording of each dictation for 14 days. Right-click a \
+            dictation and choose "Transcribe Again", or choose it in the More menu, and \
+            Indite hears the recording again with your Words and the rewriting you have \
+            chosen now. The new words take the place of the old ones, and nothing is typed \
+            until you insert or copy them. For a few seconds afterwards, Undo at the bottom \
+            of the window puts the old words back. When recognition fails before any \
+            words are heard, the dictation is still listed with its recording, so \
+            Transcribe Again can recover them.
+
             To keep more or fewer, open Indite's Settings, choose Dictation, and change \
-            "Keep the last" under "Recent Dictations".
+            "Keep the last" under "Recent Dictations". "Keep recordings for" sets how many \
+            days the recordings are kept, and "Keep forever" keeps them as long as their \
+            dictations.
             """,
         topic: .dictation
     )
@@ -916,9 +944,13 @@ enum HelpLibrary {
         body: """
             Indite saves everything you dictate in plain text on this Mac, as recent \
             dictations, so that a dictation which landed in the wrong window can be \
-            recovered. It keeps the last 100. To save no dictations at all, open Indite's \
-            Settings, choose Dictation, and turn off "Keep recent dictations". "Clear \
-            All…" in the Recent Dictations window deletes the ones already kept.
+            recovered. It keeps the last 100. With each one it keeps a recording of your \
+            voice for 14 days, so the dictation can be transcribed again. "Keep \
+            recordings for" in Settings, under Dictation, changes the number of days.
+
+            To save no dictations and no recordings at all, open Indite's Settings, \
+            choose Dictation, and turn off "Keep recent dictations". "Clear All…" in the \
+            Recent Dictations window deletes the ones already kept, with their recordings.
 
             Meetings keep their transcript, summary and recording. To keep no recordings, \
             turn off "Keep the recording after a meeting ends" in Settings, under \
