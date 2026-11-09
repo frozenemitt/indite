@@ -362,6 +362,10 @@ struct DictationHistoryView: View {
         )
         modelContext.delete(dictation)
         modelContext.saveOrLog()
+        // No dictation names the recording until Undo puts it back. Marked as just
+        // written, it is not taken for a leftover by another copy of Indite launching
+        // meanwhile.
+        DictationAudioStore.markHeldForUndo(fileNamed: lastDeleted?.recordingFileName)
 
         undoTimeout?.cancel()
         undoTimeout = Task {

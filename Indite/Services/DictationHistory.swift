@@ -122,12 +122,15 @@ enum DictationHistory {
     }
 
     /// Put the recordings in order at launch: delete those past their days, and those no
-    /// dictation names.
+    /// dictation names that have not been written for ten minutes.
     ///
     /// A recording no dictation names belongs to one that ended in a crash before it
     /// reached the history, whose file never closed and cannot be read, or to a
     /// dictation deleted while Indite was quitting. Run before the dictation key is
-    /// armed, so no recording can be under way.
+    /// armed, so no recording of this copy's can be under way. Another copy of Indite
+    /// may be running, though, and a recording it is writing, or holds for Undo with a
+    /// deleted dictation, is named by no dictation yet. Such a recording was written in
+    /// the last ten minutes, so it is left alone.
     static func tidyRecordings(settings: AppSettings, in context: ModelContext) {
         expireRecordings(settings: settings, in: context)
         context.saveOrLog()
@@ -138,7 +141,7 @@ enum DictationHistory {
         let named = FetchDescriptor<Dictation>(predicate: #Predicate { $0.recordingFileName != nil })
         do {
             let kept = Set(try context.fetch(named).compactMap(\.recordingFileName))
-            let deleted = DictationAudioStore.deleteRecordings(notNamedIn: kept)
+            let deleted = DictationAudioStore.deleteRecordings(notNamedIn: kept, writtenBefore: Date.now.addingTimeInterval(-10 * 60))
             if deleted > 0 {
                 log.notice("Deleted \(deleted, privacy: .public) recordings no dictation names")
             }
