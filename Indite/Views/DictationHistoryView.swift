@@ -341,17 +341,19 @@ struct DictationHistoryView: View {
     }
 
     /// Transcribe the dictation again from its recording, and offer Undo once its words
-    /// have changed, or say why they were left as they were.
+    /// have changed, with a note on anything that fell short, or say why they were left
+    /// as they were.
     ///
     /// The words it held are kept for Undo before it is read: a second reading can be
     /// worse than the first, and the first is otherwise lost.
     private func transcribeAgain(_ dictation: Dictation) {
         let earlier = DictationUndo.EarlierWords(of: dictation)
         Task {
-            if let failure = await coordinator.transcribeAgain(dictation) {
-                transcribeAgainFailure = failure
-            } else {
-                undo.transcribedAgain(earlier)
+            switch await coordinator.transcribeAgain(dictation) {
+            case .replaced(let note):
+                undo.transcribedAgain(earlier, note: note)
+            case .failed(let reason):
+                transcribeAgainFailure = reason
             }
         }
     }
@@ -485,9 +487,10 @@ final class DictationUndo {
         offer(.deleted(deleted), saying: "Dictation deleted.")
     }
 
-    /// Offer to put back the words a dictation held before it was transcribed again.
-    func transcribedAgain(_ earlier: EarlierWords) {
-        offer(.transcribedAgain(earlier), saying: "Dictation transcribed again.")
+    /// Offer to put back the words a dictation held before it was transcribed again,
+    /// with what fell short on the way, such as a rewrite that failed.
+    func transcribedAgain(_ earlier: EarlierWords, note: String?) {
+        offer(.transcribedAgain(earlier), saying: ["Dictation transcribed again.", note].compactMap { $0 }.joined(separator: " "))
     }
 
     /// Take the change back: the deleted dictation goes back where it was, by its own
