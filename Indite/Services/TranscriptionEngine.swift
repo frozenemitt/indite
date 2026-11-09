@@ -309,13 +309,16 @@ final class TranscriptionEngine {
         // Resolved as the capture resolved it a moment ago: the chosen microphone, or
         // the system default when that is not connected.
         microphone = AudioDeviceCatalog.recordingDevice(forUID: inputDeviceUID)
-        let startAllowance = microphone.map(AudioDeviceCatalog.isSlowToStart) == true
-            ? MicrophoneSignal.slowStart
-            : MicrophoneSignal.quickStart
+        let isSlow = microphone.map(AudioDeviceCatalog.isSlowToStart) == true
+        let startAllowance = isSlow ? MicrophoneSignal.slowStart : MicrophoneSignal.quickStart
+        let silenceLimit = isSlow ? MicrophoneSignal.slowLimit : MicrophoneSignal.limit
         #else
         let startAllowance = MicrophoneSignal.quickStart
+        let silenceLimit = MicrophoneSignal.limit
         #endif
-        signal.withLock { $0 = MicrophoneSignal(startedAt: .now, startAllowance: startAllowance) }
+        signal.withLock {
+            $0 = MicrophoneSignal(startedAt: .now, startAllowance: startAllowance, silenceLimit: silenceLimit)
+        }
 
         // Start processing task to convert and feed audio to analyzer
         let analyzerContinuation = analyzerInputContinuation
