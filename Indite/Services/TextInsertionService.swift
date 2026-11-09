@@ -236,13 +236,15 @@ enum TextInsertionService {
         // every dictation as a whole sentence, wherever it lands. A field that does
         // not say what it holds gets the text as it is, with a space after it so the
         // next dictation does not run into it; none when Return is about to be
-        // pressed. The log line gives counts and what changed, never the text, so it
-        // shows which apps report their fields.
+        // pressed, and none after kept text that already ends in a space or a line
+        // break of its own. The log line gives counts and what changed, never the
+        // text, so it shows which apps report their fields.
         let around = textAroundCursor(in: field, value: fieldBeforePaste.text)
         let pasted = around.map {
             CursorFit.fit(text, before: $0.before, after: $0.after, names: names,
                           language: TranscriptionEngine.language, keepingText: keepsText)
-        } ?? (autoSubmit || text.last.map(CursorFit.writtenWithoutSpaces) == true ? text : text + " ")
+        } ?? (autoSubmit || text.last.map(CursorFit.writtenWithoutSpaces) == true
+              || (keepsText && text.last?.isWhitespace == true) ? text : text + " ")
         let inserted = pasted.trimmingCharacters(in: .whitespaces)
         if let around {
             log.notice("""
