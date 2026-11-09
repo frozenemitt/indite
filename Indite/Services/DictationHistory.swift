@@ -98,9 +98,8 @@ enum DictationHistory {
 
     /// Add up the dictations, or nil when there are none.
     ///
-    /// Words are counted as they were heard, before any AI pass and before snippets are
-    /// expanded, because the speed is the speaker's, and neither the rewrite nor a
-    /// snippet's saved text is.
+    /// Words are counted as they were heard, before any AI pass, because the speed is
+    /// the speaker's and the rewrite is not.
     static func totals(of dictations: [Dictation], now: Date = .now, calendar: Calendar = .current) -> Totals? {
         guard let since = dictations.map(\.createdAt).min() else { return nil }
         let today = calendar.startOfDay(for: now)
