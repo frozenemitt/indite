@@ -582,7 +582,7 @@ final class RecordingCoordinator {
 
         // A closing "press enter" is a command, not words. It comes off before the AI
         // pass, so the model never sees it and cannot reword it. It comes off only where
-        // the words will be typed, since Return can follow only a paste, and never in
+        // the words would be typed, since Indite presses keys nowhere else, and never in
         // the welcome window's practice box, which has nothing to send: there the words
         // are practice like any others.
         var spokenReturn: String?
@@ -594,8 +594,21 @@ final class RecordingCoordinator {
         let transcript = spokenReturn ?? heard
         let pressesReturn = spokenReturn != nil
         if pressesReturn {
-            Log.dictation.notice("The dictation ended with press enter; Return follows the paste")
+            Log.dictation.notice("The dictation ended with press enter; Return follows the words")
         }
+
+        #if os(macOS)
+        // A dictation of only "press enter" sends what is already in the field, a
+        // message read over before the command was said: Return, with nothing to type
+        // and nothing to rewrite.
+        if pressesReturn, transcript.isEmpty {
+            aiProcessor.discardPrewarm()
+            let pressed = await pressReturnAlone(problem: problem)
+            finishHistory(entry, text: "", rawText: nil, promptName: nil)
+            AudioFeedbackService.shared.playIfEnabled(pressed ? .processingComplete : .error, settings: settings)
+            return
+        }
+        #endif
 
         // Snippets are expanded only after the AI pass, so the model never sees their
         // saved text. This is the dictation as heard, for when no rewrite is used.
@@ -743,6 +756,13 @@ final class RecordingCoordinator {
     ///   saved text used to count as words spoken.
     private func finishHistory(_ entry: Dictation?, text: String, rawText: String?, promptName: String?) {
         guard let entry, let modelContext, !entry.isDeleted else { return }
+        // A dictation of only "press enter" typed nothing, so there is nothing to keep,
+        // and Type Again types the dictation before it rather than the command.
+        guard !text.isEmpty else {
+            modelContext.delete(entry)
+            modelContext.saveOrLog()
+            return
+        }
         entry.text = text
         entry.rawText = rawText == text ? nil : rawText
         entry.destination = lastDestination
@@ -821,6 +841,26 @@ final class RecordingCoordinator {
     /// for "press enter" may go to it. The welcome window's practice box never is.
     private var frontIsWhereAimed: Bool {
         !practiceIsInFront && appInFront?.processIdentifier == targetApp?.processIdentifier
+    }
+
+    /// Press Return for a dictation that was only "press enter", where Return after
+    /// words would be pressed: in the app the dictation was aimed at, into a text field.
+    /// The stop has already kept the command to apps Indite types into, and nothing
+    /// has been awaited since. Returns whether Return was pressed.
+    private func pressReturnAlone(problem: String?) async -> Bool {
+        overlay.hide()
+        let reason: String
+        if !frontIsWhereAimed {
+            reason = "Another app is in front."
+        } else if await TextInsertionService.pressReturn(in: appInFront) {
+            if let problem { report(.problem(problem)) }
+            return true
+        } else {
+            reason = "No text field has focus."
+        }
+        Log.dictation.notice("The dictation was only press enter, and Return was not pressed: \(reason, privacy: .public)")
+        report(.problem([problem, "Return was not pressed. \(reason)"].compactMap { $0 }.joined(separator: " ")))
+        return false
     }
     #endif
 

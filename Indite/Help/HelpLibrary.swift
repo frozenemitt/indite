@@ -231,6 +231,12 @@ enum HelpLibrary {
             meant to end with those words is sent without them; to stop that, turn off \
             the switch below "After typing".
 
+            To send a message you have read over, say only "press enter". Indite \
+            presses Return and types nothing. Return is pressed only in the app you were \
+            in when you started the dictation. If another app has come to the front by \
+            then, Indite types any words into it without pressing Return, and the \
+            dictation panel says so.
+
             To press Return in one app only, add a profile for that app in the Apps tab \
             and set "Press Return after typing" to Yes. Once Return has been pressed, the \
             undo key cannot take the dictation back.
