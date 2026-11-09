@@ -23,7 +23,7 @@ struct MicrophoneSignal: Sendable {
         case notStarted(sentAudio: Bool)
         /// Dead buffers for the silence limit since the last live one.
         case silent
-        /// No buffer at all for the silence limit, after sound had been arriving.
+        /// No buffer at all for the stall limit, after sound had been arriving.
         case stalled
     }
 
@@ -45,6 +45,15 @@ struct MicrophoneSignal: Sendable {
     /// uses for every microphone. Jonathan chose it for Bluetooth on 2026-11-08, until
     /// AirPods are measured, and every microphone not measured gets the same.
     static let slowLimit: Duration = .seconds(5)
+
+    /// How long no buffer at all may come, once sound has arrived, before the microphone
+    /// counts as stopped: three seconds, or the silence limit when that is longer.
+    ///
+    /// Buffers are stamped as the audio loop takes them, not as the microphone sends
+    /// them. A loop held up for a second, or a Mac asleep for one, stopped the buffers
+    /// without the microphone stopping, and the one-second limit took that for a
+    /// microphone that had stopped.
+    static let stallLimit: Duration = .seconds(3)
 
     /// How long the built-in microphone has to send its first live buffer, counted from
     /// when capture started.
@@ -80,10 +89,13 @@ struct MicrophoneSignal: Sendable {
     private var deadFrames = 0
     private var deadRate = 0.0
 
-    /// Whether a second passed with no buffer at all since the last live one. Only a
-    /// live buffer clears it, so a stalled microphone that comes back sending dead
-    /// buffers is still reported.
+    /// Whether the stall limit passed with no buffer at all since the last live one.
+    /// Only a live buffer clears it, so a stalled microphone that comes back sending
+    /// dead buffers is still reported.
     private var stalledSinceSound = false
+
+    /// The stall limit for this microphone.
+    private var stallAfter: Duration { max(silenceLimit, Self.stallLimit) }
 
     init(startedAt: ContinuousClock.Instant, startAllowance: Duration, silenceLimit: Duration = Self.limit) {
         self.startedAt = startedAt
@@ -99,7 +111,7 @@ struct MicrophoneSignal: Sendable {
     ///   - sampleRate: Its sample rate.
     ///   - now: When it arrived.
     mutating func take(peak: Float, frames: Int, sampleRate: Double, at now: ContinuousClock.Instant) {
-        if heardSound, let lastBufferAt, now - lastBufferAt >= silenceLimit {
+        if heardSound, let lastBufferAt, now - lastBufferAt >= stallAfter {
             stalledSinceSound = true
         }
         lastBufferAt = now
@@ -137,7 +149,7 @@ struct MicrophoneSignal: Sendable {
         guard heardSound else {
             return now - startedAt >= startAllowance ? .notStarted(sentAudio: sentAudio) : .fine
         }
-        if let lastBufferAt, now - lastBufferAt >= silenceLimit { return .stalled }
+        if let lastBufferAt, now - lastBufferAt >= stallAfter { return .stalled }
         let deadForLimit = deadFrames > 0 && Double(deadFrames) >= deadRate * (silenceLimit / .seconds(1))
         return stalledSinceSound || deadForLimit ? .silent : .fine
     }
