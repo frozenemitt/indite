@@ -189,6 +189,9 @@ struct DictationHistoryView: View {
                     titleVisibility: .visible
                 ) {
                     Button("Delete All", role: .destructive) {
+                        // The dialog says this cannot be undone, so the Undo of a
+                        // dictation deleted just before ends too, and its recording goes.
+                        undo.end()
                         DictationHistory.clear(in: modelContext)
                     }
                     Button("Cancel", role: .cancel) { }
@@ -417,9 +420,9 @@ struct DictationHistoryView: View {
 /// What Undo in Recent Dictations takes back: the dictation deleted last, or the words a
 /// dictation held before Transcribe Again replaced them.
 ///
-/// One change at a time, offered for eight seconds; the next change ends the one before.
-/// A deleted dictation's recording stays on disk while Undo can bring it back, and goes
-/// when the offer ends.
+/// One change at a time, offered for eight seconds; the next change ends the one before,
+/// and so does Clear All. A deleted dictation's recording stays on disk while Undo can
+/// bring it back, and goes when the offer ends.
 @MainActor
 @Observable
 final class DictationUndo {
