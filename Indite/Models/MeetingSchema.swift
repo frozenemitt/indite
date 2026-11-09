@@ -208,9 +208,97 @@ enum MeetingSchemaV2: VersionedSchema {
 
 // MARK: - Version 3
 
-/// Adds `Dictation.spokenDuration`, how long the microphone listened for a dictation.
+/// The store as it was from 2026-11-08 until recordings were kept: version 2 and
+/// `Dictation.spokenDuration`, how long the microphone listened for a dictation.
+///
+/// The classes below are the models as they stood then, stored properties only.
+/// Nothing uses them but the migration, which reads the old shape through them.
 enum MeetingSchemaV3: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+
+    static var models: [any PersistentModel.Type] {
+        [Meeting.self, Utterance.self, MeetingSpeaker.self, Dictation.self]
+    }
+
+    @Model
+    final class Meeting {
+        var title: String
+        var startedAt: Date
+        var endedAt: Date?
+        var rawTranscript: String
+        var summary: String?
+        var recordedDuration: TimeInterval = 0
+        var audioFileName: String?
+        var deletedAt: Date?
+
+        @Relationship(deleteRule: .cascade, inverse: \Utterance.meeting)
+        var utterances: [Utterance]
+
+        @Relationship(deleteRule: .cascade, inverse: \MeetingSpeaker.meeting)
+        var speakers: [MeetingSpeaker]
+
+        init(title: String, startedAt: Date) {
+            self.title = title
+            self.startedAt = startedAt
+            self.endedAt = nil
+            self.rawTranscript = ""
+            self.summary = nil
+            self.utterances = []
+            self.speakers = []
+        }
+    }
+
+    @Model
+    final class Utterance {
+        var speakerId: String
+        var text: String
+        var start: TimeInterval
+        var end: TimeInterval
+        var meeting: Meeting?
+
+        init(speakerId: String, text: String, start: TimeInterval, end: TimeInterval) {
+            self.speakerId = speakerId
+            self.text = text
+            self.start = start
+            self.end = end
+        }
+    }
+
+    @Model
+    final class MeetingSpeaker {
+        var speakerId: String
+        var name: String
+        var generatedLabel: String
+        var meeting: Meeting?
+
+        init(speakerId: String, generatedLabel: String, name: String) {
+            self.speakerId = speakerId
+            self.generatedLabel = generatedLabel
+            self.name = name
+        }
+    }
+
+    @Model
+    final class Dictation {
+        var text: String
+        var rawText: String?
+        var createdAt: Date
+        var destination: String?
+        var promptName: String?
+        var spokenDuration: TimeInterval?
+
+        init(text: String, createdAt: Date) {
+            self.text = text
+            self.createdAt = createdAt
+        }
+    }
+}
+
+// MARK: - Version 4
+
+/// Adds `Dictation.recordingFileName`, the file a dictation's recording is kept in.
+enum MeetingSchemaV4: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
 
     static var models: [any PersistentModel.Type] {
         [Meeting.self, Utterance.self, MeetingSpeaker.self, Dictation.self]
@@ -222,7 +310,7 @@ enum MeetingSchemaV3: VersionedSchema {
 /// How the meeting store moves between schema versions.
 enum MeetingMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [MeetingSchemaV1.self, MeetingSchemaV2.self, MeetingSchemaV3.self]
+        [MeetingSchemaV1.self, MeetingSchemaV2.self, MeetingSchemaV3.self, MeetingSchemaV4.self]
     }
 
     static var stages: [MigrationStage] {
@@ -230,7 +318,9 @@ enum MeetingMigrationPlan: SchemaMigrationPlan {
             // One optional property added, nil for every meeting already there.
             .lightweight(fromVersion: MeetingSchemaV1.self, toVersion: MeetingSchemaV2.self),
             // One optional property added, nil for every dictation already there.
-            .lightweight(fromVersion: MeetingSchemaV2.self, toVersion: MeetingSchemaV3.self)
+            .lightweight(fromVersion: MeetingSchemaV2.self, toVersion: MeetingSchemaV3.self),
+            // One optional property added, nil for every dictation already there.
+            .lightweight(fromVersion: MeetingSchemaV3.self, toVersion: MeetingSchemaV4.self)
         ]
     }
 }

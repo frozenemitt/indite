@@ -37,12 +37,21 @@ final class Dictation {
     /// Added in version 3 of the store.
     var spokenDuration: TimeInterval?
 
+    /// The file in `DictationAudioStore` that holds what the recognizer heard, so the
+    /// dictation can be transcribed again.
+    ///
+    /// Nil for dictations kept before recordings were, for those made by a shortcut,
+    /// and once the recording has passed the days chosen in Settings. Added in version
+    /// 4 of the store.
+    var recordingFileName: String?
+
     init(
         text: String,
         rawText: String? = nil,
         destination: String? = nil,
         promptName: String? = nil,
         spokenDuration: TimeInterval? = nil,
+        recordingFileName: String? = nil,
         createdAt: Date = Date()
     ) {
         self.text = text
@@ -50,6 +59,7 @@ final class Dictation {
         self.destination = destination
         self.promptName = promptName
         self.spokenDuration = spokenDuration
+        self.recordingFileName = recordingFileName
         self.createdAt = createdAt
     }
 
