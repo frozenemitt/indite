@@ -189,9 +189,34 @@ struct DictationSettingsView: View {
                         DictationHistory.prune(to: newLimit, in: modelContext)
                         modelContext.saveOrLog()
                     }
+
+                    // Any number of days, typed, as Jonathan asked on 2026-11-08, rather
+                    // than a menu of lengths. Recordings past it go at the next launch or
+                    // dictation, not as the field changes; see
+                    // `DictationHistory.expireRecordings`.
+                    LabeledContent("Keep recordings for") {
+                        HStack(spacing: 6) {
+                            TextField("Days", value: Binding(
+                                get: { settings.dictationRecordingDays },
+                                set: { settings.dictationRecordingDays = max(1, $0) }
+                            ), format: .number)
+                            .labelsHidden()
+                            // Bordered so it reads as a field to type in. A grouped
+                            // form draws a plain one as a bare "14", like a value.
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 56)
+                            Text(settings.dictationRecordingDays == 1 ? "day" : "days")
+                        }
+                    }
+                    .disabled(settings.keepDictationRecordingsForever)
+                    .help("A dictation's recording lets Recent Dictations transcribe it again. After this many days the recording is deleted and the text stays.")
+
+                    Toggle("Keep forever", isOn: $settings.keepDictationRecordingsForever)
+                        .help("Keep each recording as long as its dictation is kept.")
                 }
 
-                Text("Everything you dictate is stored in plain text on this Mac. Nothing is sent anywhere.")
+                Text("Everything you dictate is stored in plain text on this Mac. Recordings of your dictations stay on this Mac too. Nothing is sent anywhere.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

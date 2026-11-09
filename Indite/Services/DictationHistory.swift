@@ -16,6 +16,10 @@ enum DictationHistory {
     ///
     /// Returns the stored entry, so a caller that keeps the words before delivering
     /// them can fill in where they went afterwards.
+    ///
+    /// - Parameter recordingFileName: The dictation's recording in
+    ///   `DictationAudioStore`. It is deleted when the dictation is not kept, since a
+    ///   recording is kept only with its entry.
     @discardableResult
     static func record(
         text: String,
@@ -23,30 +27,34 @@ enum DictationHistory {
         destination: String?,
         promptName: String?,
         spokenDuration: TimeInterval?,
+        recordingFileName: String? = nil,
         settings: AppSettings,
         in context: ModelContext
     ) -> Dictation? {
-        guard settings.keepDictationHistory else { return nil }
-
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard settings.keepDictationHistory, !trimmed.isEmpty else {
+            DictationAudioStore.delete(fileNamed: recordingFileName)
+            return nil
+        }
 
         let entry = Dictation(
             text: text,
             rawText: rawText == text ? nil : rawText,
             destination: destination,
             promptName: promptName,
-            spokenDuration: spokenDuration
+            spokenDuration: spokenDuration,
+            recordingFileName: recordingFileName
         )
         context.insert(entry)
         noteDay(of: entry.createdAt, in: context)
 
         prune(to: settings.dictationHistoryLimit, in: context)
+        expireRecordings(settings: settings, in: context)
         context.saveOrLog()
         return entry
     }
 
-    /// Drop the oldest entries beyond `limit`.
+    /// Drop the oldest entries beyond `limit`, with their recordings.
     static func prune(to limit: Int, in context: ModelContext) {
         guard limit > 0 else { return }
 
@@ -63,22 +71,81 @@ enum DictationHistory {
         _ = days(seedingFrom: entries)
 
         for entry in entries.dropFirst(limit) {
+            // The recording is not owned by SwiftData, so deleting the entry does not
+            // reach it.
+            DictationAudioStore.delete(fileNamed: entry.recordingFileName)
             context.delete(entry)
         }
         log.debug("Pruned history to \(limit)")
     }
 
-    /// Remove everything, and the days with a dictation too: whoever clears the history
-    /// means to leave nothing of it behind.
+    /// Remove everything, recordings included, and the days with a dictation too:
+    /// whoever clears the history means to leave nothing of it behind.
     static func clear(in context: ModelContext) {
         guard let entries = try? context.fetch(FetchDescriptor<Dictation>()) else { return }
         for entry in entries {
+            DictationAudioStore.delete(fileNamed: entry.recordingFileName)
             context.delete(entry)
         }
         context.saveOrLog()
         // Emptied, not removed. A removed list is filled again from the dictations
         // kept, and a list on screen may not have let go of them yet.
         save(days: [])
+    }
+
+    // MARK: - Recordings
+
+    /// Delete the recordings older than the days chosen in Settings. Their dictations
+    /// keep their text. Nothing is deleted while "Keep forever" is on.
+    ///
+    /// Run at launch and after each dictation. Not when the number of days changes:
+    /// typing 30 over 14 passes through 3 on the way, and the recordings deleted at 3
+    /// would be gone for good.
+    static func expireRecordings(settings: AppSettings, in context: ModelContext, now: Date = .now) {
+        guard !settings.keepDictationRecordingsForever else { return }
+        let recordingDays = max(1, settings.dictationRecordingDays)
+        let cutoff = Calendar.current.date(byAdding: .day, value: -recordingDays, to: now) ?? now
+        let expired = FetchDescriptor<Dictation>(predicate: #Predicate { dictation in
+            dictation.recordingFileName != nil && dictation.createdAt < cutoff
+        })
+        do {
+            let entries = try context.fetch(expired)
+            guard !entries.isEmpty else { return }
+            for entry in entries {
+                DictationAudioStore.delete(fileNamed: entry.recordingFileName)
+                entry.recordingFileName = nil
+            }
+            log.notice("Deleted \(entries.count, privacy: .public) recordings older than \(recordingDays, privacy: .public) days")
+        } catch {
+            log.error("Could not look for recordings to delete: \(error, privacy: .public)")
+        }
+    }
+
+    /// Put the recordings in order at launch: delete those past their days, and those no
+    /// dictation names.
+    ///
+    /// A recording no dictation names belongs to one that ended in a crash before it
+    /// reached the history, whose file never closed and cannot be read, or to a
+    /// dictation deleted while Indite was quitting. Run before the dictation key is
+    /// armed, so no recording can be under way.
+    static func tidyRecordings(settings: AppSettings, in context: ModelContext) {
+        expireRecordings(settings: settings, in: context)
+        context.saveOrLog()
+
+        // A store that fell back to memory holds no dictations, and every recording
+        // would look like one nobody names.
+        guard MeetingStoreStatus.shared.isPersistent else { return }
+        let named = FetchDescriptor<Dictation>(predicate: #Predicate { $0.recordingFileName != nil })
+        do {
+            let kept = Set(try context.fetch(named).compactMap(\.recordingFileName))
+            let deleted = DictationAudioStore.deleteRecordings(notNamedIn: kept)
+            if deleted > 0 {
+                log.notice("Deleted \(deleted, privacy: .public) recordings no dictation names")
+            }
+        } catch {
+            // Without the names, every recording would look unnamed. Leave them all.
+            log.error("Could not list the recordings dictations name: \(error, privacy: .public)")
+        }
     }
 
     // MARK: - Totals

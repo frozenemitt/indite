@@ -153,6 +153,18 @@ final class AppSettings {
         didSet { save("dictationHistoryLimit", dictationHistoryLimit) }
     }
 
+    /// How many days a kept dictation keeps its recording. The text stays after that.
+    ///
+    /// 14 by default, as long as Wispr Flow keeps its users' audio.
+    var dictationRecordingDays: Int {
+        didSet { save("dictationRecordingDays", dictationRecordingDays) }
+    }
+
+    /// Keep each recording as long as its dictation, whatever its age.
+    var keepDictationRecordingsForever: Bool {
+        didSet { save("keepDictationRecordingsForever", keepDictationRecordingsForever) }
+    }
+
     // MARK: - Notifications
 
     /// Notify when a transcript is ready.
@@ -375,6 +387,8 @@ final class AppSettings {
         self.summarizeMeetingsAtEnd = UserDefaults.standard.object(forKey: "summarizeMeetingsAtEnd") as? Bool ?? true
         self.keepDictationHistory = UserDefaults.standard.object(forKey: "keepDictationHistory") as? Bool ?? true
         self.dictationHistoryLimit = UserDefaults.standard.object(forKey: "dictationHistoryLimit") as? Int ?? 100
+        self.dictationRecordingDays = UserDefaults.standard.object(forKey: "dictationRecordingDays") as? Int ?? 14
+        self.keepDictationRecordingsForever = UserDefaults.standard.object(forKey: "keepDictationRecordingsForever") as? Bool ?? false
         self.notifyOnError = UserDefaults.standard.object(forKey: "notifyOnError") as? Bool ?? true
         self.appProfilesData = UserDefaults.standard.data(forKey: "appProfilesData")
 
@@ -474,6 +488,8 @@ final class AppSettings {
         summarizeMeetingsAtEnd = true
         keepDictationHistory = true
         dictationHistoryLimit = 100
+        dictationRecordingDays = 14
+        keepDictationRecordingsForever = false
         notifyOnError = true
         appProfilesData = nil
 
