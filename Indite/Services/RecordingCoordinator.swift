@@ -394,13 +394,20 @@ final class RecordingCoordinator {
         }
         #endif
 
+        #if os(macOS)
+        let microphone = AudioDeviceCatalog.microphoneForRecording(settings.microphoneOrder)
+        let inputDeviceUID = microphone.uid
+        #else
+        let inputDeviceUID = AudioInputDevice.systemDefaultUID
+        #endif
+
         // A recording is kept only with its entry, so only while entries are kept.
         let recording = settings.keepDictationHistory ? DictationAudioWriter() : nil
         do {
             try await engine.startRecording(
                 owner: .dictation,
                 vocabulary: settings.vocabularyHints,
-                inputDeviceUID: settings.inputDeviceUID,
+                inputDeviceUID: inputDeviceUID,
                 publishesSpectrum: settings.showDictationOverlay,
                 keepingAudioIn: recording
             )
@@ -416,7 +423,7 @@ final class RecordingCoordinator {
 
         microphoneOpenedAt = SuspendingClock.now
         #if os(macOS)
-        watchMicrophone()
+        watchMicrophone(chosen: microphone.microphone)
         #endif
         if announcesWhenLive { announce() }
         startMaxDurationWatchdog()
@@ -666,7 +673,7 @@ final class RecordingCoordinator {
                     settings: settings
                 )
                 #if os(macOS)
-                report(.nothingHeard(microphone: AudioInputList.shared.name(forUID: settings.inputDeviceUID)))
+                report(.nothingHeard(microphone: microphoneName))
                 #endif
                 Log.dictation.notice("Empty transcript, nothing to deliver")
             }
@@ -1347,13 +1354,19 @@ final class RecordingCoordinator {
     /// is read twenty times a second, so a warning shows within 50 ms of the buffer that
     /// decides it. Nothing is said until the dictation has shown itself, so a tap that
     /// turns out not to be a dictation says nothing.
-    private func watchMicrophone() {
+    ///
+    /// - Parameter chosen: The microphone the ranked list chose, or nil for the system
+    ///   default. Its name stands in when the device opened has none to give.
+    private func watchMicrophone(chosen: AudioInputDevice?) {
         stopWatchingMicrophone()
         lastMicrophoneTrouble = nil
         microphoneProblem = nil
         microphoneFixedAt = nil
-        guard let device = engine.microphone else { return }
-        microphoneName = AudioDeviceCatalog.name(of: device) ?? AudioInputList.shared.name(forUID: settings.inputDeviceUID)
+        let device = engine.microphone
+        microphoneName = device.flatMap(AudioDeviceCatalog.name(of:))
+            ?? chosen?.name
+            ?? AudioDeviceCatalog.systemDefaultName()
+        guard let device else { return }
         checkMicrophoneProblem()
 
         microphoneWatch = Task { [weak self] in

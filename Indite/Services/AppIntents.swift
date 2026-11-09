@@ -60,10 +60,15 @@ struct QuickTranscribeIntent: AppIntent {
             //
             // Recorded as a shortcut, not as a dictation, so the hotkey, Escape and the
             // menu bar leave it alone.
+            #if os(macOS)
+            let inputDeviceUID = AudioDeviceCatalog.microphoneForRecording(settings.microphoneOrder).uid
+            #else
+            let inputDeviceUID = AudioInputDevice.systemDefaultUID
+            #endif
             try await engine.startRecording(
                 owner: .shortcut,
                 vocabulary: settings.vocabularyHints,
-                inputDeviceUID: settings.inputDeviceUID
+                inputDeviceUID: inputDeviceUID
             )
             started = true
 

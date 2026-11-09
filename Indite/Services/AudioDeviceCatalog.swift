@@ -1,22 +1,32 @@
 import Foundation
 import Observation
 
-#if os(macOS)
-import CoreAudio
-import AVFoundation
-import IOKit
-
-/// An audio input the user can record from.
+/// A microphone Indite has seen: one connected now, or one kept in the ranked list
+/// after it was unplugged.
 struct AudioInputDevice: Identifiable, Hashable, Sendable {
     /// CoreAudio's persistent identifier, stored in settings. Survives reboots and
     /// device renames, unlike the numeric AudioDeviceID.
     let uid: String
+    /// Its name as macOS last showed it.
     let name: String
+    let kind: Kind
 
     var id: String { uid }
 
     /// The sentinel meaning "whatever macOS is currently set to".
     static let systemDefaultUID = "default"
+
+    /// The Mac's own microphone, one slow to start, or any other. Kept with an unplugged
+    /// microphone, so Settings can still tell what it was.
+    enum Kind: String, Sendable {
+        /// The Mac's own microphone.
+        case builtIn
+        /// Bluetooth, or an iPhone's through Continuity: seconds to start, and
+        /// Bluetooth sends phone-call-quality sound.
+        case slowToStart
+        /// Anything else: USB, a headset in the headphone jack, a virtual device.
+        case other
+    }
 }
 
 /// Why a microphone cannot hear right now.
@@ -39,7 +49,23 @@ enum MicrophoneProblem: Equatable, Sendable {
         case .lidClosed: "The lid is closed."
         }
     }
+
+    /// The cause in a few words, for the log.
+    var reason: String {
+        switch self {
+        case .missing: "not connected"
+        case .muted: "muted"
+        case .volumeOff: "volume at zero"
+        case .lidClosed: "lid closed"
+        }
+    }
 }
+
+#if os(macOS)
+import CoreAudio
+import AVFoundation
+import IOKit
+import os
 
 /// The microphones available right now, kept current for as long as the app runs.
 ///
@@ -54,13 +80,6 @@ final class AudioInputList {
     private(set) var devices: [AudioInputDevice] = AudioDeviceCatalog.inputDevices()
     private(set) var systemDefaultName = AudioDeviceCatalog.systemDefaultName()
 
-    /// The name of the microphone a recording with this setting uses: the device
-    /// itself, or the system default when it is the default or is not connected.
-    func name(forUID uid: String) -> String {
-        guard uid != AudioInputDevice.systemDefaultUID else { return systemDefaultName }
-        return devices.first { $0.uid == uid }?.name ?? systemDefaultName
-    }
-
     private init() {
         Task { [weak self] in
             for await _ in AudioDeviceCatalog.changes() {
@@ -74,7 +93,8 @@ final class AudioInputList {
 /// Lists the microphones available to record from.
 enum AudioDeviceCatalog {
 
-    /// Every device that has at least one input channel, except private ones.
+    /// Every device that has at least one input channel, except private ones, in the
+    /// order the system lists them.
     static func inputDevices() -> [AudioInputDevice] {
         allDeviceIDs()
             .filter { hasInputChannels($0) && !isPrivateAggregate($0) }
@@ -83,9 +103,8 @@ enum AudioDeviceCatalog {
                       let name = stringProperty(kAudioObjectPropertyName, for: id) else {
                     return nil
                 }
-                return AudioInputDevice(uid: uid, name: name)
+                return AudioInputDevice(uid: uid, name: name, kind: kind(of: id))
             }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     /// Resolve a stored UID back to a live device, or nil for the system default.
@@ -94,7 +113,48 @@ enum AudioDeviceCatalog {
         return inputDevices().first { $0.uid == uid }
     }
 
-    /// The name macOS would use right now, for the "System Default" menu entry.
+    /// The microphone a recording starting now uses: the first in the user's order that
+    /// can hear, or the system default when none can.
+    ///
+    /// The one place the ranked list becomes a device. Dictations, meetings and the
+    /// shortcut record from what it chooses, and the menu names it. The microphone
+    /// warning watches the device the capture opens for that choice.
+    static func microphone(for order: [AudioInputDevice]) -> MicrophoneOrder.Choice {
+        MicrophoneOrder.choose(from: order, connected: inputDevices()) { uid in
+            guard let device = resolveDeviceID(uid: uid) else { return .missing }
+            return hearingProblem(of: device)
+        }
+    }
+
+    /// `microphone(for:)` for a recording about to start, with the choice in the log.
+    static func microphoneForRecording(_ order: [AudioInputDevice]) -> MicrophoneOrder.Choice {
+        let choice = microphone(for: order)
+        Log.audio.notice("\(choice.summary, privacy: .public)")
+        return choice
+    }
+
+    /// The kind of microphone a device is.
+    private static func kind(of deviceID: AudioDeviceID) -> AudioInputDevice.Kind {
+        if isBuiltInMicrophone(deviceID) { return .builtIn }
+        return isSlowToStart(deviceID) ? .slowToStart : .other
+    }
+
+    /// Whether a device is the Mac's own microphone.
+    ///
+    /// Built-in transport alone does not say so: a headset in the headphone jack is
+    /// built in too, as "External Microphone". The Mac's own microphone is the one whose
+    /// input source is the internal microphone, 'imic' in IOAudioTypes.h, as "MacBook
+    /// Pro Microphone" reported on 2026-11-08. A headset's source could not be read
+    /// then, with nothing in the jack.
+    static func isBuiltInMicrophone(_ deviceID: AudioDeviceID) -> Bool {
+        let internalMicrophone: UInt32 = 0x696D_6963  // 'imic'
+        return value(kAudioDevicePropertyTransportType, of: deviceID, startingFrom: UInt32(0)) == kAudioDeviceTransportTypeBuiltIn
+            && value(kAudioDevicePropertyDataSource, of: deviceID, scope: kAudioDevicePropertyScopeInput,
+                     startingFrom: UInt32(0)) == internalMicrophone
+    }
+
+    /// The name of the system's default input, which records when no microphone on the
+    /// list can hear.
     static func systemDefaultName() -> String {
         guard let deviceID = defaultInputDevice() else { return "System Default" }
         return stringProperty(kAudioObjectPropertyName, for: deviceID) ?? "System Default"
