@@ -1229,8 +1229,12 @@ final class RecordingCoordinator {
             }
         }
 
-        // Deleted while it was being read, by the user or by the history's limit.
-        guard let modelContext, !dictation.isDeleted, dictation.modelContext != nil else { return nil }
+        // Deleted while it was being read, by the user or by the history's limit. Its new
+        // words have nowhere to go, and Recent Dictations says so.
+        guard let modelContext, !dictation.isDeleted, dictation.modelContext != nil else {
+            Log.dictation.notice("A dictation was deleted while it was transcribed again; its new words were not kept")
+            return "The dictation was deleted before its new words were ready, so they were not kept."
+        }
         dictation.text = text
         // The words heard, as `finishHistory` keeps them.
         dictation.rawText = transcript == text ? nil : transcript
