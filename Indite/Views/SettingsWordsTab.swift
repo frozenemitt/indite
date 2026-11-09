@@ -103,7 +103,7 @@ struct WordsSettingsView: View {
 
                 if hasDuplicateCues {
                     Label {
-                        Text("Two snippets have the same cue. Only one of them will be typed.")
+                        Text("Two snippets have the same cue. Only the first of them is typed.")
                     } icon: {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
@@ -153,9 +153,8 @@ struct WordsSettingsView: View {
         replacements = settings.wordReplacements
             .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
             .map { ReplacementRow(spoken: $0.key, written: $0.value) }
-        snippets = settings.snippets
-            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
-            .map { SnippetRow(cue: $0.key, text: $0.value) }
+        // In the order they were added, as they were left.
+        snippets = settings.snippets.map { SnippetRow(cue: $0.cue, text: $0.text) }
     }
 
     /// Whether two rows share a heard word, ignoring case the way matching itself
@@ -184,25 +183,24 @@ struct WordsSettingsView: View {
         settings.wordReplacements = result
     }
 
-    /// Whether two snippets share a cue, ignoring case as matching does. Only one of
-    /// them can be typed, and nothing else says which.
+    /// Whether two snippets that are typed share a cue, as matching sees it: in any
+    /// capitals, with any spaces between the words and either apostrophe. Only the
+    /// first of them is typed, and nothing else says so.
     private var hasDuplicateCues: Bool {
         let cues = snippets
-            .map { $0.cue.trimmingCharacters(in: .whitespaces).lowercased() }
-            .filter { !$0.isEmpty }
+            .map { Snippet(cue: $0.cue, text: $0.text) }
+            .filter(\.isComplete)
+            .map { Snippets.key($0.cue) }
         return Set(cues).count != cues.count
     }
 
-    /// Rebuild the stored snippets from the rows. A row is kept once it has a cue and
-    /// some text. The text is stored exactly as written, with its spaces and line
-    /// breaks, because that is how it is typed.
+    /// Store every row as it stands, in order. A row is typed once it has a cue and some
+    /// text, but one still being filled in is stored too, and so is one whose cue
+    /// another row has: the tab is drawn again from what is stored each time it is
+    /// shown, and a row left out was lost with whatever had been typed into it. The
+    /// text is stored exactly as written, with its spaces and line breaks, because that
+    /// is how it is typed.
     private func commitSnippets() {
-        var result: [String: String] = [:]
-        for row in snippets {
-            let cue = row.cue.trimmingCharacters(in: .whitespaces)
-            guard !cue.isEmpty, !row.text.isEmpty else { continue }
-            result[cue] = row.text
-        }
-        settings.snippets = result
+        settings.snippets = snippets.map { Snippet(cue: $0.cue, text: $0.text) }
     }
 }

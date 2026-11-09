@@ -638,18 +638,33 @@ final class RecordingCoordinator {
 
         // A closing "press enter" is a command, not words. It comes off before the AI
         // pass, so the model never sees it and cannot reword it. It comes off only where
-        // the words will be typed, since Return can follow only a paste.
+        // the words would be typed, since Indite presses keys nowhere else, and never in
+        // the welcome window's practice box, which has nothing to send: there the words
+        // are practice like any others.
         var spokenReturn: String?
         #if os(macOS)
-        if settings.pressEnterSubmits, typesText(into: appInFront) {
+        if settings.pressEnterSubmits, !practiceIsInFront, typesText(into: appInFront) {
             spokenReturn = TextProcessor.removingPressEnter(from: heard)
         }
         #endif
         let transcript = spokenReturn ?? heard
         let pressesReturn = spokenReturn != nil
         if pressesReturn {
-            Log.dictation.notice("The dictation ended with press enter; Return follows the paste")
+            Log.dictation.notice("The dictation ended with press enter; Return follows the words")
         }
+
+        #if os(macOS)
+        // A dictation of only "press enter" sends what is already in the field, a
+        // message read over before the command was said: Return, with nothing to type
+        // and nothing to rewrite.
+        if pressesReturn, transcript.isEmpty {
+            aiProcessor.discardPrewarm()
+            let pressed = await pressReturnAlone(problem: problem)
+            finishHistory(entry, text: "", rawText: nil, promptName: nil)
+            AudioFeedbackService.shared.playIfEnabled(pressed ? .processingComplete : .error, settings: settings)
+            return
+        }
+        #endif
 
         // Snippets are expanded only after the AI pass, so the model never sees their
         // saved text. This is the dictation as heard, for when no rewrite is used.
@@ -661,7 +676,7 @@ final class RecordingCoordinator {
             // leaves it unused.
             aiProcessor.discardPrewarm()
             await deliver(asHeard.text, problem: problem, pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0)
-            finishHistory(entry, text: asHeard.text, rawText: nil, promptName: nil)
+            finishHistory(entry, text: asHeard.text, rawText: transcript, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showTranscriptionCompleteIfEnabled(
                 characterCount: asHeard.text.count,
@@ -725,7 +740,7 @@ final class RecordingCoordinator {
 
             await deliver(asHeard.text, problem: "Delivered as heard. The rewrite failed.",
                           pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0)
-            finishHistory(entry, text: asHeard.text, rawText: nil, promptName: nil)
+            finishHistory(entry, text: asHeard.text, rawText: transcript, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showAIProcessingFailedIfEnabled(
                 characterCount: asHeard.text.count,
@@ -735,17 +750,21 @@ final class RecordingCoordinator {
             return
         }
 
-        // A cue the model reworded can no longer be found, so the saved text it stands
-        // for would be lost. That dictation goes out as heard instead, with its cues
-        // expanded.
-        let keepsCues = Snippets.keepsCues(of: transcript, in: finalText, snippets: snippets)
-        if !keepsCues {
+        // Only the cues the transcript held are expanded, each no more times than it
+        // held it, so whether a snippet is typed never depends on the rewrite. A cue
+        // the model reworded can no longer be found, so the saved text it stands for
+        // would be lost. That dictation goes out as heard instead, with its cues
+        // expanded, and the panel says so: it has just shown the rewrite being written.
+        let rewritten = Snippets.expand(finalText, cuesOf: transcript, snippets: snippets)
+        if rewritten == nil {
             Log.dictation.notice("The rewrite reworded a snippet's cue, so the dictation goes out as heard")
+            problem = [problem, "Delivered as heard. The rewrite changed a snippet's cue."]
+                .compactMap { $0 }.joined(separator: " ")
         }
-        let delivered = keepsCues ? Snippets.expand(finalText, snippets: snippets) : asHeard
+        let delivered = rewritten ?? asHeard
         await deliver(delivered.text, problem: problem, pressesReturn: pressesReturn, keepsText: delivered.expanded > 0)
-        let promptName = keepsCues ? aiProcessor.promptConfiguration.prompt(withId: promptId)?.name : nil
-        finishHistory(entry, text: delivered.text, rawText: keepsCues ? asHeard.text : nil, promptName: promptName)
+        let promptName = rewritten != nil ? aiProcessor.promptConfiguration.prompt(withId: promptId)?.name : nil
+        finishHistory(entry, text: delivered.text, rawText: transcript, promptName: promptName)
         AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
         NotificationService.shared.showTranscriptionCompleteIfEnabled(
             characterCount: delivered.text.count,
@@ -755,6 +774,10 @@ final class RecordingCoordinator {
     }
 
     /// Every phrase Indite typed in the last day, from the dictation history.
+    ///
+    /// Each dictation as it was before snippets were expanded. A snippet's saved text is
+    /// typed as the user wrote it, so the names in it are theirs, not Indite's earlier
+    /// guesses, and the screen may lend them to the vocabulary like any other names.
     private func recentlyTyped() -> Set<String> {
         guard let modelContext else { return [] }
         let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
@@ -763,7 +786,8 @@ final class RecordingCoordinator {
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         descriptor.fetchLimit = 300
-        let texts = (try? modelContext.fetch(descriptor))?.map(\.text) ?? []
+        let snippets = settings.snippets
+        let texts = (try? modelContext.fetch(descriptor))?.map { Snippets.unexpand($0.text, snippets: snippets) } ?? []
         return Vocabulary.phrases(in: texts.joined(separator: " "))
     }
 
@@ -786,8 +810,20 @@ final class RecordingCoordinator {
     /// The prompt is named only when its output is what landed. A raw transcript
     /// delivered after the AI pass failed used to carry the prompt's name, and the
     /// default prompt's output carried none.
+    ///
+    /// - Parameter rawText: The words heard: the transcript before the AI pass and
+    ///   before snippets are expanded, without a closing "press enter". Kept only where
+    ///   it differs from the text. The speaking speed counts these words, so a snippet's
+    ///   saved text used to count as words spoken.
     private func finishHistory(_ entry: Dictation?, text: String, rawText: String?, promptName: String?) {
         guard let entry, let modelContext, !entry.isDeleted else { return }
+        // A dictation of only "press enter" typed nothing, so there is nothing to keep,
+        // and Type Again types the dictation before it rather than the command.
+        guard !text.isEmpty else {
+            modelContext.delete(entry)
+            modelContext.saveOrLog()
+            return
+        }
         entry.text = text
         entry.rawText = rawText == text ? nil : rawText
         entry.destination = lastDestination
@@ -865,13 +901,42 @@ final class RecordingCoordinator {
 
     // MARK: - Output
 
+    #if os(macOS)
+    /// Whether the app in front is the one the dictation was aimed at, so that Return
+    /// for "press enter" may go to it. The welcome window's practice box never is.
+    private var frontIsWhereAimed: Bool {
+        !practiceIsInFront && appInFront?.processIdentifier == targetApp?.processIdentifier
+    }
+
+    /// Press Return for a dictation that was only "press enter", where Return after
+    /// words would be pressed: in the app the dictation was aimed at, into a text field.
+    /// The stop has already kept the command to apps Indite types into, and nothing
+    /// has been awaited since. Returns whether Return was pressed.
+    private func pressReturnAlone(problem: String?) async -> Bool {
+        overlay.hide()
+        let reason: String
+        if !frontIsWhereAimed {
+            reason = "Another app is in front."
+        } else if await TextInsertionService.pressReturn(in: appInFront) {
+            if let problem { report(.problem(problem)) }
+            return true
+        } else {
+            reason = "No text field has focus."
+        }
+        Log.dictation.notice("The dictation was only press enter, and Return was not pressed: \(reason, privacy: .public)")
+        report(.problem([problem, "Return was not pressed. \(reason)"].compactMap { $0 }.joined(separator: " ")))
+        return false
+    }
+    #endif
+
     /// Send finished text wherever the user's output setting says it goes.
     ///
     /// - Parameters:
     ///   - problem: Something that went wrong on the way, for the panel to say once the
     ///     text has landed.
     ///   - pressesReturn: Press Return after the paste, whatever the settings say,
-    ///     because the dictation ended with "press enter".
+    ///     because the dictation ended with "press enter". Only in the app the
+    ///     dictation was aimed at.
     ///   - keepsText: Paste the text's own characters unchanged, because it holds a
     ///     snippet's saved text.
     private func deliver(_ text: String, problem: String? = nil, pressesReturn: Bool = false, keepsText: Bool = false) async {
@@ -879,6 +944,18 @@ final class RecordingCoordinator {
         // Dismissed before insertion: the panel is borderless and non-activating, but
         // leaving it up while text lands is visual noise at the wrong moment.
         overlay.hide()
+
+        // Return for "press enter" goes only to the app the dictation was aimed at. The
+        // words can be ready seconds after the key came up, and Return in whatever app
+        // is in front by then could send something there that nobody has read, or press
+        // a dialog's default button. The words still go to the app in front, as any
+        // dictation's do, with no Return after them, and the panel says so.
+        var problem = problem
+        let sends = pressesReturn && frontIsWhereAimed
+        if pressesReturn, !sends {
+            problem = [problem, "Return was not pressed. Another app is in front."].compactMap { $0 }.joined(separator: " ")
+            Log.dictation.notice("Another app is in front of the one the dictation began in, so Return is not pressed")
+        }
 
         if practiceIsInFront, let practiceReceiver {
             practiceReceiver(text)
@@ -893,7 +970,9 @@ final class RecordingCoordinator {
         let destination = appInFront
         let profile = settings.profile(forBundleIdentifier: destination?.bundleIdentifier)
         let outputMode = profile?.outputModeRaw.flatMap(OutputMode.init(rawValue:)) ?? settings.outputMode
-        let autoSubmit = pressesReturn || (profile?.autoSubmit ?? settings.autoSubmitAfterInsert)
+        // A dictation that said "press enter" presses Return where it was aimed and
+        // nowhere else; the setting decides for every other dictation.
+        let autoSubmit = pressesReturn ? sends : (profile?.autoSubmit ?? settings.autoSubmitAfterInsert)
 
         switch outputMode {
         case .clipboardOnly:
@@ -970,6 +1049,8 @@ final class RecordingCoordinator {
             targetApp: appInFront,
             restoreClipboard: settings.restoreClipboardAfterPaste,
             autoSubmit: false,
+            // A snippet's saved text goes in as it was written, as it did the first time.
+            keepsText: Snippets.holdsSavedText(text, snippets: settings.snippets),
             names: settings.vocabularyHints
         )
         switch outcome {

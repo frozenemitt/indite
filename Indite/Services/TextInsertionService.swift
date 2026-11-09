@@ -236,13 +236,15 @@ enum TextInsertionService {
         // every dictation as a whole sentence, wherever it lands. A field that does
         // not say what it holds gets the text as it is, with a space after it so the
         // next dictation does not run into it; none when Return is about to be
-        // pressed. The log line gives counts and what changed, never the text, so it
-        // shows which apps report their fields.
+        // pressed, and none after kept text that already ends in a space or a line
+        // break of its own. The log line gives counts and what changed, never the
+        // text, so it shows which apps report their fields.
         let around = textAroundCursor(in: field, value: fieldBeforePaste.text)
         let pasted = around.map {
             CursorFit.fit(text, before: $0.before, after: $0.after, names: names,
                           language: TranscriptionEngine.language, keepingText: keepsText)
-        } ?? (autoSubmit || text.last.map(CursorFit.writtenWithoutSpaces) == true ? text : text + " ")
+        } ?? (autoSubmit || text.last.map(CursorFit.writtenWithoutSpaces) == true
+              || (keepsText && text.last?.isWhitespace == true) ? text : text + " ")
         let inserted = pasted.trimmingCharacters(in: .whitespaces)
         if let around {
             log.notice("""
@@ -375,6 +377,35 @@ enum TextInsertionService {
 
         log.notice("Inserted into \(appName, privacy: .public)")
         return .inserted(appName: appName)
+    }
+
+    /// Press Return in the focused text field of `targetApp`, for a dictation that was
+    /// only "press enter": the words it sends are already in the field. Returns whether
+    /// Return was pressed.
+    ///
+    /// Only into a text field, as a paste goes only into one. Return anywhere else could
+    /// press a dialog's default button, or open whatever is selected.
+    static func pressReturn(in targetApp: NSRunningApplication?) async -> Bool {
+        guard AccessibilityPermission.isTrusted, let targetApp else { return false }
+        await restoreFocusIfNeeded(to: targetApp)
+        guard await awaitFocusedTextElement(in: targetApp) != nil else {
+            log.notice("No focused text field in \(targetApp.localizedName ?? "target", privacy: .public) — not pressing Return")
+            return false
+        }
+
+        await waitForModifiersToClear()
+        // Return goes to whatever app is in front, as ⌘V does, and macOS can refuse the
+        // activation above.
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApp.processIdentifier else {
+            log.error("\(targetApp.localizedName ?? "The target app", privacy: .public) is not in front — not pressing Return")
+            return false
+        }
+        guard postReturnKeystroke(withShift: false) else { return false }
+
+        // The message has gone, so ⌘Z there would undo some earlier edit, not a dictation.
+        lastInsertion = nil
+        log.notice("Pressed Return in \(targetApp.localizedName ?? "the target app", privacy: .public)")
+        return true
     }
 
     /// The two things about a text field that a paste always changes.

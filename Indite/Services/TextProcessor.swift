@@ -67,24 +67,27 @@ enum TextProcessor {
     ///
     /// Capitals and the punctuation around the words do not matter. A mark that ended
     /// the sentence after them goes back onto the words before, so "See you then press
-    /// enter." leaves "See you then." The words have to follow others: a dictation of
-    /// "press enter" alone leaves nothing to type before the Return.
+    /// enter." leaves "See you then." A dictation of only "press enter" leaves nothing
+    /// to type: it sends what is already in the field, a message read over before the
+    /// command was said.
     static func removingPressEnter(from text: String) -> String? {
         let whole = text as NSString
         guard let match = pressEnter.firstMatch(in: text, range: NSRange(location: 0, length: whole.length)) else {
             return nil
         }
         let rest = whole.substring(to: match.range.location)
-        guard rest.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        guard rest.contains(where: { $0.isLetter || $0.isNumber }) else { return "" }
         let mark = whole.substring(with: match.range(at: 1))
         guard let last = rest.last, !".!?…".contains(last) else { return rest }
         return rest + mark
     }
 
     /// "press enter" or "press return" at the end of the text, with the spaces, commas
-    /// or dashes before it and the sentence mark after it.
+    /// or dashes before it and the sentence mark after it. A pause between the two words
+    /// leaves the recognizer's full stop, comma, ellipsis, question or exclamation mark
+    /// there, with a capital after it: "See you then. Press. Enter."
     private static let pressEnter = try! NSRegularExpression(
-        pattern: "[\\s,;:–—-]*(?<![\\p{L}\\p{N}_])press\\s+(?:enter|return)([.!?…]*)\\s*$",
+        pattern: "[\\s,;:–—-]*(?<![\\p{L}\\p{N}_])press[.,?!…]*\\s+(?:enter|return)([.!?…]*)\\s*$",
         options: [.caseInsensitive]
     )
 
