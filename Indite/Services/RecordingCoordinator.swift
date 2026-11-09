@@ -70,6 +70,10 @@ final class RecordingCoordinator {
     /// The alarm for a warning, waiting for the start sound to finish.
     @ObservationIgnored private var alarmTask: Task<Void, Never>?
 
+    /// Whether this dictation posted its microphone warning as a notification, with
+    /// the panel off, so the warning's end can withdraw it.
+    @ObservationIgnored private var postedMicrophoneWarning = false
+
     /// When this dictation's start sound will have played out.
     @ObservationIgnored private var startSoundEnds: ContinuousClock.Instant?
     #endif
@@ -1436,6 +1440,7 @@ final class RecordingCoordinator {
         alarmTask?.cancel()
         alarmTask = nil
         microphoneTrouble = nil
+        withdrawMicrophoneWarning()
     }
 
     /// Show a change in the microphone's trouble: a warning in the panel, or a
@@ -1452,6 +1457,7 @@ final class RecordingCoordinator {
             alarmTask?.cancel()
             alarmTask = nil
             overlay.clearWarning()
+            withdrawMicrophoneWarning()
             Log.dictation.notice("The microphone warning cleared")
             // The microphone hears again, so the Mac goes quiet again, once an alarm
             // still playing has played out. A warning used to keep the Mac's sound on
@@ -1466,9 +1472,18 @@ final class RecordingCoordinator {
         if settings.showDictationOverlay {
             overlay.showWarning(warning)
         } else if appears {
-            NotificationService.shared.showErrorIfEnabled(warning.detail, title: warning.headline, settings: settings)
+            NotificationService.shared.showMicrophoneWarningIfEnabled(warning.detail, title: warning.headline, settings: settings)
+            postedMicrophoneWarning = true
         }
         if appears { soundAlarm() }
+    }
+
+    /// Withdraw the notification a warning posted with the panel off, when the warning
+    /// clears and when the dictation ends.
+    private func withdrawMicrophoneWarning() {
+        guard postedMicrophoneWarning else { return }
+        postedMicrophoneWarning = false
+        NotificationService.shared.withdrawMicrophoneWarning()
     }
 
     /// The error sound, once, as a warning appears.
