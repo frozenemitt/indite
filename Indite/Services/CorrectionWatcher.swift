@@ -15,8 +15,8 @@ import UserNotifications
 /// A word of the dictation changed into a name, "Pria" into "Priya", is a mishearing the
 /// user fixed; on the Words list the recognizer listens for it next time. Only one word
 /// swapped for one counts, and the name has to be spelled like the word it replaced and
-/// be no ordinary English word. Indite adds it without asking and says so in a
-/// notification, whose Undo takes it back for good.
+/// be no ordinary English word. Indite adds it without asking, and only when it can say
+/// so in a notification, whose Undo takes it back for good.
 @MainActor
 final class CorrectionWatcher {
 
@@ -97,8 +97,8 @@ final class CorrectionWatcher {
         let word: String
     }
 
-    /// Judge a dictation's last copy once its watch has ended, add the names the user
-    /// corrected, and log how the watch went: counts and seconds, never the text.
+    /// Judge the copy a dictation's watch kept, once the watch has ended, add the names
+    /// the user corrected, and log how the watch went: counts and seconds, never the text.
     private func judge(_ watch: FieldWatch, _ result: FieldWatch.Result, app: String) async {
         if current === watch { current = nil }
         // Asked before the Words list is read, so the wait cannot leave the list stale.
