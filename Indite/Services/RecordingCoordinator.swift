@@ -175,8 +175,9 @@ final class RecordingCoordinator {
     @ObservationIgnored private var deliveringEntry: Dictation?
 
     /// When the microphone opened for the dictation under way. The history keeps how
-    /// long it listened, for the speaking speed.
-    @ObservationIgnored private var microphoneOpenedAt: ContinuousClock.Instant?
+    /// long it listened, for the speaking speed. The clock stops while the Mac sleeps,
+    /// since a Mac asleep in the middle of a dictation is not listening.
+    @ObservationIgnored private var microphoneOpenedAt: SuspendingClock.Instant?
 
     /// Longest the AI pass may take before the raw transcript is delivered instead.
     ///
@@ -379,7 +380,7 @@ final class RecordingCoordinator {
             return
         }
 
-        microphoneOpenedAt = ContinuousClock.now
+        microphoneOpenedAt = SuspendingClock.now
         if announcesWhenLive { announce() }
         startMaxDurationWatchdog()
 
@@ -531,7 +532,7 @@ final class RecordingCoordinator {
         defer { isDelivering = false }
 
         // Measured at the stop, not once the engine has finished with the audio.
-        let spokenDuration = microphoneOpenedAt.map { (ContinuousClock.now - $0) / .seconds(1) }
+        let spokenDuration = microphoneOpenedAt.map { (SuspendingClock.now - $0) / .seconds(1) }
 
         maxDurationTask?.cancel()
         maxDurationTask = nil
@@ -853,7 +854,7 @@ final class RecordingCoordinator {
         #endif
         aiProcessor.discardPrewarm()
 
-        let spokenDuration = microphoneOpenedAt.map { (ContinuousClock.now - $0) / .seconds(1) }
+        let spokenDuration = microphoneOpenedAt.map { (SuspendingClock.now - $0) / .seconds(1) }
         let raw = await engine.stopRecording(owner: .dictation)
         if recordHistory(TextProcessor.process(raw, replacements: settings.wordReplacements), spokenDuration: spokenDuration) != nil {
             Log.dictation.notice("Kept the dictation in the history on quit")

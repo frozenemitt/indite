@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import SwiftData
 
@@ -27,6 +28,9 @@ struct DictationHistoryView: View {
     /// The dictation deleted last, held for a few seconds so it can be put back.
     @State private var lastDeleted: DeletedDictation?
     @State private var undoTimeout: Task<Void, Never>?
+    /// The start of today, for the line above the list. Set again whenever the day
+    /// changes, since the week and the days in a row depend on it.
+    @State private var today = Calendar.current.startOfDay(for: .now)
 
     /// What it takes to put a deleted dictation back as it was.
     private struct DeletedDictation {
@@ -75,8 +79,8 @@ struct DictationHistoryView: View {
             }
 
             HistoryTotals(
-                limit: settings.dictationHistoryLimit,
-                today: Calendar.current.startOfDay(for: .now)
+                limit: settings.keepDictationHistory ? settings.dictationHistoryLimit : nil,
+                today: today
             )
 
             if dictations.isEmpty {
@@ -119,6 +123,16 @@ struct DictationHistoryView: View {
             }
         }
         .frame(minWidth: 600, minHeight: 320)
+        // The day changes at midnight, which the system reports on waking when the Mac
+        // slept through it, and when the Mac moves to another time zone. Either may be
+        // posted from another thread.
+        .onReceive(
+            NotificationCenter.default.publisher(for: .NSCalendarDayChanged)
+                .merge(with: NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange))
+                .receive(on: DispatchQueue.main)
+        ) { _ in
+            today = Calendar.current.startOfDay(for: .now)
+        }
         .navigationTitle("Recent Dictations")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search dictations")
         .toolbar {
@@ -401,8 +415,9 @@ struct DictationHistoryView: View {
 /// history up again. In an optimized build, adding up 100 dictations took 2 ms and 500
 /// took 12 ms, about half of it counting words.
 private struct HistoryTotals: View {
-    /// How many dictations the history keeps, for the tooltip.
-    let limit: Int
+    /// How many dictations the history keeps, for the tooltip, or nil while keeping
+    /// them is switched off.
+    let limit: Int?
     /// The start of today. The line is drawn again when the day changes, since the week
     /// and the days in a row depend on it.
     let today: Date
@@ -410,7 +425,8 @@ private struct HistoryTotals: View {
     @Query private var dictations: [Dictation]
 
     var body: some View {
-        if let totals = DictationHistory.totals(of: dictations, now: today) {
+        let days = DictationHistory.days(seedingFrom: dictations)
+        if let totals = DictationHistory.totals(of: dictations, days: days, now: today) {
             // Inset to the left edge of the rows' text below it.
             Text(Self.line(for: totals))
                 .font(.callout)
@@ -418,8 +434,16 @@ private struct HistoryTotals: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .help("Counted from the dictations kept here. Indite keeps the last \(limit), as set in Settings.")
+                .help(tooltip)
         }
+    }
+
+    /// What the line is counted from, whether or not new dictations are kept.
+    private var tooltip: String {
+        guard let limit else {
+            return "The words and the speed are counted from the dictations kept here. Keeping recent dictations is switched off in Settings, so nothing new is counted."
+        }
+        return "The words and the speed are counted from the dictations kept here. Indite keeps the last \(limit), as set in Settings. The days in a row also count days whose dictations are no longer kept."
     }
 
     /// The totals as one line: "620 words this week · 4,100 since Nov 4 · 151 words a
