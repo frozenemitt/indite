@@ -34,7 +34,7 @@ struct MicrophoneOrderRows: View {
         }
 
         if MicrophoneOrder.slowMicrophoneLeads(order) {
-            Text("AirPods and other Bluetooth microphones take a few seconds to start and send phone-call-quality sound, so dictation through them is slower and less accurate. The Mac\u{2019}s microphone usually hears you better.")
+            Text("Wireless microphones, such as AirPods or an iPhone, take a few seconds to start, and Bluetooth ones send phone-call-quality sound, so dictation through them is slower and less accurate. The Mac\u{2019}s microphone usually hears you better.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
