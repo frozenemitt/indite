@@ -480,6 +480,7 @@ final class AppSettings {
         maxRecordingSeconds = 600
         wordReplacements = [:]
         vocabularyHints = []
+        CorrectionWatcher.forgetNames()
         snippets = []
         inputDeviceUID = "default"
         muteWhileDictating = false

@@ -28,12 +28,20 @@ final class CorrectionWatcher {
 
     /// Names the user turned down, lower-cased, from when Indite asked before adding
     /// one. They are never added.
-    private static let declinedKey = "declinedWordSuggestions"
+    nonisolated private static let declinedKey = "declinedWordSuggestions"
 
     /// Names Indite added on its own, lower-cased. One that is no longer on the Words
     /// list was taken off by the user, with Undo or by deleting it, and is never added
     /// again.
-    private static let addedKey = "addedWordSuggestions"
+    nonisolated private static let addedKey = "addedWordSuggestions"
+
+    /// Forget the names added and declined, when the Words list is reset. Kept, they
+    /// would make every name added before count as one the user took off, never to be
+    /// added again.
+    nonisolated static func forgetNames() {
+        UserDefaults.standard.removeObject(forKey: addedKey)
+        UserDefaults.standard.removeObject(forKey: declinedKey)
+    }
 
     private static let log = Logger(subsystem: "com.indite.app", category: "Corrections")
 
