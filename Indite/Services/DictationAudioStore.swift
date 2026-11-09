@@ -41,8 +41,17 @@ enum DictationAudioStore {
         return FileManager.default.fileExists(atPath: url(forFileNamed: name).path)
     }
 
+    /// Delete a recording by the name its dictation holds.
+    ///
+    /// The name is read from the store, so it is taken only when it can be a
+    /// recording's: a plain file name ending in .caf, with no slash and no "..". Any
+    /// other name could reach a file outside this folder.
     static func delete(fileNamed name: String?) {
         guard let name else { return }
+        guard name.hasSuffix(".\(fileExtension)"), !name.contains("/"), !name.contains("..") else {
+            log.error("Did not delete a recording whose name is not a plain .\(fileExtension, privacy: .public) file name")
+            return
+        }
         try? FileManager.default.removeItem(at: url(forFileNamed: name))
     }
 
