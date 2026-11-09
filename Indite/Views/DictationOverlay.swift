@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// How a dictation ended, for the panel to say.
+/// What the panel says in place of the words: how a dictation ended, or why its
+/// microphone sends no sound.
 struct OverlayOutcome: Equatable {
     let symbol: String
     let headline: String
-    /// Shown dimmed under the headline: the words that were copied, or the microphone
-    /// that heard nothing.
+    /// Shown dimmed under the headline: the words that were copied, the microphone
+    /// that heard nothing, or why a microphone sends no sound.
     var detail = ""
 
     /// No text field had focus, so the words are on the clipboard.
@@ -23,6 +24,18 @@ struct OverlayOutcome: Equatable {
     static func nothingHeard(microphone: String) -> OverlayOutcome {
         OverlayOutcome(symbol: "exclamationmark.triangle", headline: "Nothing was heard.",
                        detail: "Microphone: \(microphone)")
+    }
+
+    /// The microphone sends no sound while the dictation goes on. `yet` while it has
+    /// never sent any.
+    static func noSound(from microphone: String, yet: Bool, cause: String) -> OverlayOutcome {
+        OverlayOutcome(symbol: "mic.slash", headline: "No sound \(yet ? "yet " : "")from \(microphone)",
+                       detail: cause)
+    }
+
+    /// The dictation ended, and its microphone never sent any sound.
+    static func noSoundCame(from microphone: String, cause: String) -> OverlayOutcome {
+        OverlayOutcome(symbol: "mic.slash", headline: "No sound came from \(microphone)", detail: cause)
     }
 
     /// Something went wrong. `copied` adds where the words went, when they went to the
@@ -83,6 +96,7 @@ final class DictationOverlayController {
     func show() {
         outcomeTask?.cancel()
         model.outcome = nil
+        model.warning = nil
         model.text = ""
         model.rewrite = ""
         model.isProcessing = false
@@ -98,6 +112,23 @@ final class DictationOverlayController {
         model.isLocked = true
     }
 
+    /// Say that the microphone sends no sound, and why, while the recording goes on.
+    ///
+    /// The headline and the cause take the place of the words, which come back once
+    /// sound does; the ribbon keeps moving with whatever arrives. The recording carries
+    /// on, so the user can put the microphone right and keep talking.
+    func showWarning(_ warning: OverlayOutcome) {
+        model.warning = warning
+        // The headline needs room the one-line panel does not have, as an outcome's
+        // does, and the cause is often as tall as the words it replaces.
+        fitToText()
+    }
+
+    /// Take the warning away once the microphone sends sound again.
+    func clearWarning() {
+        model.warning = nil
+    }
+
     /// Say how a dictation ended, when it did not end with the words in the field.
     ///
     /// A dictation copied to the clipboard used to look the same as one that was
@@ -110,6 +141,7 @@ final class DictationOverlayController {
     func showOutcome(_ outcome: OverlayOutcome) {
         outcomeTask?.cancel()
         model.outcome = outcome
+        model.warning = nil
         model.text = outcome.detail
         model.rewrite = ""
         model.isProcessing = false
@@ -206,6 +238,7 @@ final class DictationOverlayController {
     func showProcessing() {
         model.isProcessing = true
         model.isLocked = false
+        model.warning = nil
         model.rewrite = ""
     }
 
@@ -222,6 +255,7 @@ final class DictationOverlayController {
         outcomeTask?.cancel()
         panel?.orderOut(nil)
         model.outcome = nil
+        model.warning = nil
         model.text = ""
         model.rewrite = ""
         model.isProcessing = false
@@ -306,9 +340,10 @@ final class DictationOverlayController {
     /// Kept clear between the panel and the edges of the screen.
     private static let screenMargin: CGFloat = 12
 
-    /// The room an outcome's headline takes above the text, or none while dictating.
+    /// The room a headline takes above the text, an outcome's or a warning's, or none
+    /// while dictating.
     private var headlineHeight: CGFloat {
-        model.outcome == nil ? 0 : DictationOverlayView.lineHeight + Self.contentSpacing
+        model.headline == nil ? 0 : DictationOverlayView.lineHeight + Self.contentSpacing
     }
 
     /// The text room in the tallest panel the screen can hold.
@@ -520,6 +555,11 @@ final class OverlayModel {
 
     /// Set while the panel reports how a dictation ended, in place of live words.
     var outcome: OverlayOutcome?
+    /// Set while the microphone sends no sound during a recording. The live words keep
+    /// arriving in `text` underneath, for when it clears.
+    var warning: OverlayOutcome?
+    /// What the headline says, when there is one.
+    var headline: OverlayOutcome? { outcome ?? warning }
     var isProcessing = false
     /// Set while a double tap keeps the recording going after the key came up.
     var isLocked = false
@@ -567,8 +607,8 @@ private struct DictationOverlayView: View {
                     }
                 }
 
-            if let outcome = model.outcome {
-                Label(outcome.headline, systemImage: outcome.symbol)
+            if let headline = model.headline {
+                Label(headline.headline, systemImage: headline.symbol)
                     .font(.title3.weight(.semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -624,14 +664,16 @@ private struct DictationOverlayView: View {
     /// wants to check them, to say what the band's amber already says.
     private var displayText: String {
         if model.outcome != nil { return model.text }
+        if let warning = model.warning { return warning.detail }
         if model.isProcessing, !model.rewrite.isEmpty { return model.rewrite }
         if !model.text.isEmpty { return model.text }
         return model.isProcessing ? "Processing…" : "Listening…"
     }
 
-    /// A placeholder, or a dictation waiting for its rewrite, is drawn dimmed.
+    /// A placeholder, a cause under a headline, or a dictation waiting for its rewrite,
+    /// is drawn dimmed.
     private var isDimmed: Bool {
-        if model.outcome != nil { return true }
+        if model.headline != nil { return true }
         return model.isProcessing ? model.rewrite.isEmpty : model.text.isEmpty
     }
 }

@@ -5,6 +5,10 @@ import Observation
 import CoreMedia
 import os
 
+#if os(macOS)
+import CoreAudio
+#endif
+
 /// Unified transcription engine for background voice-to-text
 /// Uses Apple's modern SpeechAnalyzer API (iOS 26+/macOS 26+)
 @MainActor
@@ -66,6 +70,17 @@ final class TranscriptionEngine {
     /// let go before then recorded nothing at all.
     var receivedAudio: Bool { audioArrived.withLock { $0 } }
     @ObservationIgnored private let audioArrived = OSAllocatedUnfairLock(initialState: false)
+
+    #if os(macOS)
+    /// The microphone this session records from, resolved as its capture started.
+    private(set) var microphone: AudioDeviceID?
+    #endif
+
+    /// What the microphone's buffers have shown so far, kept by the audio loop. Nil
+    /// until a capture has started; kept after it stops, so the end of a dictation can
+    /// ask whether any sound came.
+    var microphoneSignal: MicrophoneSignal? { signal.withLock { $0 } }
+    @ObservationIgnored private let signal = OSAllocatedUnfairLock<MicrophoneSignal?>(initialState: nil)
 
     var publishesSpectrum: Bool {
         get { spectrumWanted.withLock { $0 } }
@@ -248,6 +263,7 @@ final class TranscriptionEngine {
         vocabularySegments = []
         screenTerms = []
         spectrum = []
+        signal.withLock { $0 = nil }
 
         if let missing = await missingAuthorization() {
             release()
@@ -286,6 +302,21 @@ final class TranscriptionEngine {
         // AVAudioEngine.stop() on whichever thread does the releasing.
         self.audioCaptureHelper = helper
 
+        // The microphone's time to start is counted from here, where the capture is
+        // live and the start sound plays. A Bluetooth or Continuity microphone gets
+        // longer than the others.
+        #if os(macOS)
+        // Resolved as the capture resolved it a moment ago: the chosen microphone, or
+        // the system default when that is not connected.
+        microphone = AudioDeviceCatalog.recordingDevice(forUID: inputDeviceUID)
+        let startAllowance = microphone.map(AudioDeviceCatalog.isSlowToStart) == true
+            ? MicrophoneSignal.slowStart
+            : MicrophoneSignal.quickStart
+        #else
+        let startAllowance = MicrophoneSignal.quickStart
+        #endif
+        signal.withLock { $0 = MicrophoneSignal(startedAt: .now, startAllowance: startAllowance) }
+
         // Start processing task to convert and feed audio to analyzer
         let analyzerContinuation = analyzerInputContinuation
         let targetFormat = analyzerFormat!
@@ -297,6 +328,7 @@ final class TranscriptionEngine {
         let transcribedChannel = self.transcribedChannel
         let audioArrived = self.audioArrived
         audioArrived.withLock { $0 = false }
+        let signal = self.signal
 
         audioProcessingTask = Task.detached(priority: .userInitiated) { [weak self] in
             let converter = BufferConverter()
@@ -307,6 +339,13 @@ final class TranscriptionEngine {
             for await audioData in audioStream {
                 bufferCount += 1
                 if bufferCount == 1 { audioArrived.withLock { $0 = true } }
+
+                // Judged on the microphone's own channel: a meeting recording a call
+                // carries the call beside it, and the call is often silent.
+                let peak = audioData.buffer.peak(channel: transcribedChannel)
+                let frames = Int(audioData.buffer.frameLength)
+                let sampleRate = audioData.buffer.format.sampleRate
+                signal.withLock { $0?.take(peak: peak, frames: frames, sampleRate: sampleRate, at: .now) }
 
                 // Hand the untouched buffer to any second consumer before conversion,
                 // so diarization sees the same audio the transcriber does.

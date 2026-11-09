@@ -4,6 +4,7 @@ import Observation
 #if os(macOS)
 import CoreAudio
 import AVFoundation
+import IOKit
 
 /// An audio input the user can record from.
 struct AudioInputDevice: Identifiable, Hashable, Sendable {
@@ -16,6 +17,28 @@ struct AudioInputDevice: Identifiable, Hashable, Sendable {
 
     /// The sentinel meaning "whatever macOS is currently set to".
     static let systemDefaultUID = "default"
+}
+
+/// Why a microphone cannot hear right now.
+enum MicrophoneProblem: Equatable, Sendable {
+    /// It is not connected.
+    case missing
+    case muted
+    /// Its input volume is at zero, on a device where zero is silence.
+    case volumeOff
+    /// It is the built-in microphone, and the lid is closed. A Mac laptop disconnects
+    /// that microphone in hardware while the lid is shut.
+    case lidClosed
+
+    /// The cause, as the dictation panel says it under the headline.
+    var sentence: String {
+        switch self {
+        case .missing: "It is not connected."
+        case .muted: "It is muted."
+        case .volumeOff: "Its input volume is at zero."
+        case .lidClosed: "The lid is closed."
+        }
+    }
 }
 
 /// The microphones available right now, kept current for as long as the app runs.
@@ -73,7 +96,27 @@ enum AudioDeviceCatalog {
 
     /// The name macOS would use right now, for the "System Default" menu entry.
     static func systemDefaultName() -> String {
-        var deviceID = AudioDeviceID(0)
+        guard let deviceID = defaultInputDevice() else { return "System Default" }
+        return stringProperty(kAudioObjectPropertyName, for: deviceID) ?? "System Default"
+    }
+
+    /// The microphone a recording with this setting uses: the chosen one while it is
+    /// connected, and otherwise the system default, which is where the capture falls
+    /// back to.
+    static func recordingDevice(forUID uid: String) -> AudioDeviceID? {
+        if uid != AudioInputDevice.systemDefaultUID, let device = resolveDeviceID(uid: uid) {
+            return device
+        }
+        return defaultInputDevice()
+    }
+
+    /// A device's name, as macOS shows it.
+    static func name(of deviceID: AudioDeviceID) -> String? {
+        stringProperty(kAudioObjectPropertyName, for: deviceID)
+    }
+
+    private static func defaultInputDevice() -> AudioDeviceID? {
+        var deviceID = AudioDeviceID(kAudioObjectUnknown)
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice,
@@ -84,8 +127,7 @@ enum AudioDeviceCatalog {
         let status = AudioObjectGetPropertyData(
             AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID
         )
-        guard status == noErr else { return "System Default" }
-        return stringProperty(kAudioObjectPropertyName, for: deviceID) ?? "System Default"
+        return status == noErr && deviceID != kAudioObjectUnknown ? deviceID : nil
     }
 
     /// Yields whenever a device is added or removed, or the default input changes.
@@ -173,6 +215,127 @@ enum AudioDeviceCatalog {
         return deviceID
     }
 
+    // MARK: - Whether a Microphone Can Hear
+
+    /// Why this microphone cannot hear, or nil when it can: it is present, not muted,
+    /// its volume is above zero, and it is not the built-in one behind a closed lid.
+    ///
+    /// The one test of whether a microphone can hear. A dictation asks it at the start,
+    /// so that a microphone that cannot hear is named at once; choosing among several
+    /// microphones can ask it to pass over one.
+    static func hearingProblem(of deviceID: AudioDeviceID) -> MicrophoneProblem? {
+        guard value(kAudioDevicePropertyDeviceIsAlive, of: deviceID, startingFrom: UInt32(0)) == 1 else {
+            return .missing
+        }
+        if isMuted(deviceID) { return .muted }
+        if volumeIsOff(deviceID) { return .volumeOff }
+        if value(kAudioDevicePropertyTransportType, of: deviceID, startingFrom: UInt32(0)) == kAudioDeviceTransportTypeBuiltIn,
+           lidIsClosed() {
+            return .lidClosed
+        }
+        return nil
+    }
+
+    /// Whether a microphone takes seconds to start: Bluetooth, and an iPhone's through
+    /// Continuity.
+    static func isSlowToStart(_ deviceID: AudioDeviceID) -> Bool {
+        let slow = [
+            kAudioDeviceTransportTypeBluetooth,
+            kAudioDeviceTransportTypeBluetoothLE,
+            kAudioDeviceTransportTypeContinuityCaptureWired,
+            kAudioDeviceTransportTypeContinuityCaptureWireless
+        ]
+        return value(kAudioDevicePropertyTransportType, of: deviceID, startingFrom: UInt32(0)).map(slow.contains) ?? false
+    }
+
+    /// Yields whenever the microphone is muted or unmuted, or its input volume changes.
+    ///
+    /// Two causes have no listener here. A microphone unplugged mid-dictation ends the
+    /// capture, which ends the dictation. A lid closed mid-dictation silences the
+    /// built-in microphone, the silence is noticed within a second, and the test above
+    /// is asked again then to name the cause.
+    static func hearingChanges(of deviceID: AudioDeviceID) -> AsyncStream<Void> {
+        AsyncStream { continuation in
+            let sink = ChangeSink(continuation)
+            let context = Unmanaged.passUnretained(sink).toOpaque()
+
+            var found: [AudioObjectPropertyAddress] = []
+            for element in 0...AudioObjectPropertyElement(inputChannelCount(deviceID)) {
+                for selector in [kAudioDevicePropertyMute, kAudioDevicePropertyVolumeScalar] {
+                    var address = AudioObjectPropertyAddress(
+                        mSelector: selector,
+                        mScope: kAudioDevicePropertyScopeInput,
+                        mElement: element
+                    )
+                    if AudioObjectHasProperty(deviceID, &address) { found.append(address) }
+                }
+            }
+            let addresses = found
+            for var address in addresses {
+                AudioObjectAddPropertyListener(deviceID, &address, ChangeSink.proc, context)
+            }
+
+            // Capturing `sink` here keeps it alive until its listeners are gone.
+            continuation.onTermination = { _ in
+                for var address in addresses {
+                    AudioObjectRemovePropertyListener(
+                        deviceID, &address, ChangeSink.proc, Unmanaged.passUnretained(sink).toOpaque()
+                    )
+                }
+            }
+        }
+    }
+
+    /// Muted by its main control, or on every channel of a device that mutes its
+    /// channels one by one.
+    private static func isMuted(_ deviceID: AudioDeviceID) -> Bool {
+        let mutes = inputControls(kAudioDevicePropertyMute, of: deviceID, startingFrom: UInt32(0))
+        if let main = mutes[kAudioObjectPropertyElementMain] { return main != 0 }
+        return !mutes.isEmpty && mutes.values.allSatisfy { $0 != 0 }
+    }
+
+    /// At zero, on a device whose own scale puts zero at silence.
+    ///
+    /// The built-in microphone's input volume runs from −12 to +12 dB, so at zero it
+    /// still hears, 12 dB down (read on 2026-11-08). Zero counts only where the device
+    /// gives it no gain at all, or a gain of minus infinity.
+    private static func volumeIsOff(_ deviceID: AudioDeviceID) -> Bool {
+        var volumes = inputControls(kAudioDevicePropertyVolumeScalar, of: deviceID, startingFrom: Float32(0))
+        if let main = volumes[kAudioObjectPropertyElementMain] {
+            volumes = [kAudioObjectPropertyElementMain: main]
+        }
+        return !volumes.isEmpty && volumes.allSatisfy { element, volume in
+            // Asked by handing over the volume, here zero, and reading back decibels.
+            let decibels = value(kAudioDevicePropertyVolumeScalarToDecibels, of: deviceID,
+                                 scope: kAudioDevicePropertyScopeInput, element: element, startingFrom: Float32(0))
+            return volume == 0 && (decibels.map { $0 == -.infinity } ?? true)
+        }
+    }
+
+    /// An input control's value on the main element and on each channel that has one.
+    private static func inputControls<Value: BitwiseCopyable>(
+        _ selector: AudioObjectPropertySelector,
+        of deviceID: AudioDeviceID,
+        startingFrom initial: Value
+    ) -> [AudioObjectPropertyElement: Value] {
+        var values: [AudioObjectPropertyElement: Value] = [:]
+        for element in 0...AudioObjectPropertyElement(inputChannelCount(deviceID)) {
+            values[element] = value(selector, of: deviceID, scope: kAudioDevicePropertyScopeInput,
+                                    element: element, startingFrom: initial)
+        }
+        return values
+    }
+
+    /// Whether the lid is closed, by the power manager's record of it. False on a Mac
+    /// without one.
+    private static func lidIsClosed() -> Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != IO_OBJECT_NULL else { return false }
+        defer { IOObjectRelease(root) }
+        let state = IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)
+        return (state?.takeRetainedValue() as? Bool) ?? false
+    }
+
     // MARK: - CoreAudio Plumbing
 
     private static func allDeviceIDs() -> [AudioDeviceID] {
@@ -222,6 +385,10 @@ enum AudioDeviceCatalog {
 
     /// A device is an input if its input scope reports any channels at all.
     private static func hasInputChannels(_ deviceID: AudioDeviceID) -> Bool {
+        inputChannelCount(deviceID) > 0
+    }
+
+    private static func inputChannelCount(_ deviceID: AudioDeviceID) -> Int {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamConfiguration,
             mScope: kAudioDevicePropertyScopeInput,
@@ -230,7 +397,7 @@ enum AudioDeviceCatalog {
 
         var dataSize: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &dataSize) == noErr,
-              dataSize > 0 else { return false }
+              dataSize > 0 else { return 0 }
 
         let bufferList = UnsafeMutableRawPointer.allocate(
             byteCount: Int(dataSize),
@@ -239,13 +406,27 @@ enum AudioDeviceCatalog {
         defer { bufferList.deallocate() }
 
         guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, bufferList) == noErr else {
-            return false
+            return 0
         }
 
         let list = UnsafeMutableAudioBufferListPointer(
             bufferList.assumingMemoryBound(to: AudioBufferList.self)
         )
-        return list.contains { $0.mNumberChannels > 0 }
+        return list.reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+
+    /// A property's value, or nil when the device does not have it.
+    private static func value<Value: BitwiseCopyable>(
+        _ selector: AudioObjectPropertySelector,
+        of deviceID: AudioDeviceID,
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+        element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain,
+        startingFrom initial: Value
+    ) -> Value? {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: element)
+        var value = initial
+        var size = UInt32(MemoryLayout<Value>.size)
+        return AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value) == noErr ? value : nil
     }
 
     static func stringProperty(
