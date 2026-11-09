@@ -332,10 +332,19 @@ final class AppSettings {
         UserDefaults.standard.removeObject(forKey: "hotkeyString")
         self.dictationKeyRaw = UserDefaults.standard.string(forKey: "dictationKeyRaw") ?? "right"
         self.dictationMouseButtonRaw = UserDefaults.standard.string(forKey: "dictationMouseButtonRaw")
+        // The undo and type-again keys moved from ⌃⌥⌘Z and ⌃⌥⌘V to the shorter ⌃⌘Z and
+        // ⌃⌘V on 2026-11-08, the chords Wispr Flow uses. A stored copy of an old default,
+        // left by Reset or recorded by hand, moves with them; any other chord stays.
+        if UserDefaults.standard.string(forKey: "undoHotkeyString") == "⌃⌥⌘Z" {
+            UserDefaults.standard.removeObject(forKey: "undoHotkeyString")
+        }
+        if UserDefaults.standard.string(forKey: "retypeHotkeyString") == "⌃⌥⌘V" {
+            UserDefaults.standard.removeObject(forKey: "retypeHotkeyString")
+        }
         self.undoHotkeyEnabled = UserDefaults.standard.object(forKey: "undoHotkeyEnabled") as? Bool ?? true
-        self.undoHotkeyString = UserDefaults.standard.string(forKey: "undoHotkeyString") ?? "⌃⌥⌘Z"
+        self.undoHotkeyString = UserDefaults.standard.string(forKey: "undoHotkeyString") ?? "⌃⌘Z"
         self.retypeHotkeyEnabled = UserDefaults.standard.object(forKey: "retypeHotkeyEnabled") as? Bool ?? true
-        self.retypeHotkeyString = UserDefaults.standard.string(forKey: "retypeHotkeyString") ?? "⌃⌥⌘V"
+        self.retypeHotkeyString = UserDefaults.standard.string(forKey: "retypeHotkeyString") ?? "⌃⌘V"
         self.outputModeRaw = UserDefaults.standard.string(forKey: "outputModeRaw") ?? "smartInsert"
         self.restoreClipboardAfterPaste = UserDefaults.standard.object(forKey: "restoreClipboardAfterPaste") as? Bool ?? true
         self.autoSubmitAfterInsert = UserDefaults.standard.object(forKey: "autoSubmitAfterInsert") as? Bool ?? false
@@ -432,9 +441,9 @@ final class AppSettings {
         dictationKeyRaw = "right"
         dictationMouseButtonRaw = nil
         undoHotkeyEnabled = true
-        undoHotkeyString = "⌃⌥⌘Z"
+        undoHotkeyString = "⌃⌘Z"
         retypeHotkeyEnabled = true
-        retypeHotkeyString = "⌃⌥⌘V"
+        retypeHotkeyString = "⌃⌘V"
         outputModeRaw = "smartInsert"
         restoreClipboardAfterPaste = true
         autoSubmitAfterInsert = false
@@ -578,7 +587,7 @@ extension AppSettings {
         return keyCodes[lowered]
     }
 
-    /// Write a captured keystroke the way a shortcut is stored, e.g. "⌃⌥⌘Z".
+    /// Write a captured keystroke the way a shortcut is stored, e.g. "⌃⌘Z".
     ///
     /// Nil when the keystroke cannot be a trigger: a key outside the table above, or
     /// one pressed without ⌃, ⌥ or ⌘, which would swallow that plain keystroke in

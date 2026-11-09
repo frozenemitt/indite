@@ -188,7 +188,7 @@ enum HelpLibrary {
             it again if you chose "Press to start, press to stop". You can also click \
             Indite's I in the menu bar and choose "Stop Dictation".
 
-            If the words have already been typed, press Control-Option-Command-Z (⌃⌥⌘Z) \
+            If the words have already been typed, press Control-Command-Z (⌃⌘Z) \
             within two minutes to take them back.
             """,
         topic: .dictation
@@ -298,7 +298,7 @@ enum HelpLibrary {
         id: "undo-dictation",
         title: "Take back the last dictation",
         body: """
-            Press Control-Option-Command-Z (⌃⌥⌘Z) within two minutes of a dictation being \
+            Press Control-Command-Z (⌃⌘Z) within two minutes of a dictation being \
             typed. Indite sends Undo to the app that received the words, so they come out \
             again. It also puts them on the clipboard, in case you still want them.
 
@@ -316,7 +316,7 @@ enum HelpLibrary {
         title: "Put a dictation where it belongs",
         body: """
             If Indite typed a dictation into the wrong window, or nowhere, click the \
-            right place for the text and press Control-Option-Command-V (⌃⌥⌘V). Indite \
+            right place for the text and press Control-Command-V (⌃⌘V). Indite \
             types the last dictation again at the cursor, with no rewrite and no Return \
             after it.
 

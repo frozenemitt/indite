@@ -91,7 +91,7 @@ enum MouseButton: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// A key plus modifiers, e.g. ⌃⌥⌘Z: the undo and type-again shortcuts.
+/// A key plus modifiers, e.g. ⌃⌘Z: the undo and type-again shortcuts.
 struct HotkeyTrigger: Equatable, Sendable {
     let keyCode: CGKeyCode
     let modifiers: CGEventFlags

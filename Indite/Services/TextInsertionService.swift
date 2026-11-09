@@ -211,7 +211,7 @@ enum TextInsertionService {
         log.debug("Inserting \(text.count) chars into \(appName, privacy: .public)")
 
         // Physical modifiers from the hotkey may still be down; a ⌘V posted now
-        // would arrive as ⌃⌥⌘V. Wait for the user's hand to leave the keys.
+        // would arrive as ⌃⌘V. Wait for the user's hand to leave the keys.
         await waitForModifiersToClear()
 
         // The field was found by asking the target app, but ⌘V goes to whatever app is
