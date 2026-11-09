@@ -683,10 +683,12 @@ final class RecordingCoordinator {
         // held it, so whether a snippet is typed never depends on the rewrite. A cue
         // the model reworded can no longer be found, so the saved text it stands for
         // would be lost. That dictation goes out as heard instead, with its cues
-        // expanded.
+        // expanded, and the panel says so: it has just shown the rewrite being written.
         let rewritten = Snippets.expand(finalText, cuesOf: transcript, snippets: snippets)
         if rewritten == nil {
             Log.dictation.notice("The rewrite reworded a snippet's cue, so the dictation goes out as heard")
+            problem = [problem, "Delivered as heard. The rewrite changed a snippet's cue."]
+                .compactMap { $0 }.joined(separator: " ")
         }
         let delivered = rewritten ?? asHeard
         await deliver(delivered.text, problem: problem, pressesReturn: pressesReturn, keepsText: delivered.expanded > 0)
