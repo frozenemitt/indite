@@ -488,8 +488,9 @@ final class AppSettings {
         summarizeMeetingsAtEnd = true
         keepDictationHistory = true
         dictationHistoryLimit = 100
-        dictationRecordingDays = 14
-        keepDictationRecordingsForever = false
+        // The days recordings are kept, and "Keep forever", stay as the user set them. Set
+        // back to 14 days, the next dictation would delete every recording older than
+        // that.
         notifyOnError = true
         appProfilesData = nil
 
