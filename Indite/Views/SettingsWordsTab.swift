@@ -40,10 +40,15 @@ struct WordsSettingsView: View {
                     .font(.body)
                     .frame(minHeight: 120)
                     .onChange(of: vocabularyText) { _, text in
-                        settings.vocabularyHints = text
-                            .split(separator: "\n")
-                            .map { $0.trimmingCharacters(in: .whitespaces) }
-                            .filter { !$0.isEmpty }
+                        settings.vocabularyHints = Self.words(in: text)
+                    }
+                    // A word learned from a correction while this tab is open shows up at
+                    // once. Without this, the next edit here wrote the old list back, and
+                    // the learned word then counted as one the user had taken off for good.
+                    .onChange(of: settings.vocabularyHints) { _, hints in
+                        if Self.words(in: vocabularyText) != hints {
+                            vocabularyText = hints.joined(separator: "\n")
+                        }
                     }
             }
 
@@ -146,6 +151,13 @@ struct WordsSettingsView: View {
         guard let selectedReplacement else { return }
         replacements.removeAll { $0.id == selectedReplacement }
         self.selectedReplacement = nil
+    }
+
+    /// The Words list as the editor's text holds it: one entry per line, blank lines left out.
+    private static func words(in text: String) -> [String] {
+        text.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     private func load() {
