@@ -182,8 +182,25 @@ Punctuation is") are mended by no version.
 
 ## Awaiting Jonathan
 
-His four comments on the report, assessed on 2026-11-08, each a proposal of its own.
-The report's "Your comments" section has the evidence.
+**Decided by Jonathan later on 2026-11-08:**
+
+- Keep each dictation's recording, with a retention the user sets: a number of days,
+  or keep forever. Building as `wispr/recordings`.
+- Warn during a dictation when the microphone is dead, with a sound, timed from the
+  moment the microphone is confirmed to deliver sound, so slow external microphones get
+  time to connect. Building as `wispr/microphone`.
+- Shorter shortcuts: he never runs both apps at once, so Indite takes Control-Command-Z
+  and Control-Command-V. Done (8c28180).
+- Learn words from corrections the way Wispr Flow does, adding them with an Undo.
+  Building as `wispr/learning`.
+- Switch Simple Clean Better to greedy sampling, at the next install.
+- Wanted next, awaiting his go-ahead: a grammar test set of his last 100 dictations,
+  then rewriting each sentence while he talks, which measured 1.23 s down to 0.76 s at
+  the median (2.48 s down to 1.13 s at the slowest) without warm-up. The Mac's grammar
+  checker returns nothing when called from code, so it cannot help.
+
+His four comments on the report, as assessed before those decisions. The report's "Your
+comments" section has the evidence.
 
 - **Keeping dictation audio**, so a dictation can be transcribed again. A lossless file
   per history entry, kept exactly as long as the entry: about 31 MB per 100 dictations.
