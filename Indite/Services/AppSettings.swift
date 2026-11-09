@@ -505,6 +505,7 @@ final class AppSettings {
         maxRecordingSeconds = 600
         wordReplacements = [:]
         vocabularyHints = []
+        CorrectionWatcher.forgetNames()
         snippets = []
         microphoneOrder = MicrophoneOrder.movedOver(from: nil, connected: Self.connectedMicrophones())
         muteWhileDictating = false

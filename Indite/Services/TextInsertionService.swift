@@ -49,12 +49,16 @@ enum TextInsertionService {
         /// The field it went into, read again afterwards for corrections the user
         /// makes by hand.
         let field: AXUIElement
-        /// The words as pasted, fitted to the cursor.
+        /// The words as pasted, fitted to the cursor, and the line break Shift-Return
+        /// put after them.
         let pasted: String
         /// The field's text before and after the cursor when the words were pasted,
         /// which marks where they are later. Nil when the field did not report its text
         /// and cursor.
         let around: (before: String, after: String)?
+        /// Whether ⌘Z takes the words back. Not after Shift-Return, where it would take
+        /// back the line break and leave the words.
+        let undoable: Bool
     }
 
     private(set) static var lastInsertion: LastInsertion?
@@ -64,7 +68,7 @@ enum TextInsertionService {
     /// Time-limited: an undo fired ten minutes later would send ⌘Z into whatever the
     /// user has been doing since, throwing away unrelated work.
     static var canUndo: Bool {
-        guard let lastInsertion else { return false }
+        guard let lastInsertion, lastInsertion.undoable else { return false }
         return Date().timeIntervalSince(lastInsertion.at) < 120
     }
 
@@ -368,18 +372,21 @@ enum TextInsertionService {
             }
         }
 
-        // Not undoable once Return has been pressed. A chat app has already sent the
-        // message, so its ⌘Z would undo some earlier edit instead; after Shift+Return
-        // it would take back the line break and leave the text.
-        if !autoSubmit, let app = NSWorkspace.shared.frontmostApplication {
+        // Nothing is kept once Return has been pressed: a chat app has already sent the
+        // message, so its ⌘Z would undo some earlier edit instead, and there are no
+        // words left to correct. Shift+Return sends nothing, so the words stay in the
+        // field to be corrected, but they are not undoable: ⌘Z would take back the line
+        // break and leave the text.
+        if !autoSubmit || submitUsesShift, let app = NSWorkspace.shared.frontmostApplication {
             lastInsertion = LastInsertion(
                 text: text,
                 appName: appName,
                 processIdentifier: app.processIdentifier,
                 at: Date(),
                 field: field,
-                pasted: pasted,
-                around: around
+                pasted: autoSubmit ? pasted + "\n" : pasted,
+                around: around,
+                undoable: !autoSubmit
             )
         }
 

@@ -8,6 +8,8 @@ struct WordsSettingsView: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var vocabularyText = ""
+    /// The cursor in the Vocabulary editor, kept where it is when a learned word is added.
+    @State private var vocabularySelection: TextSelection?
     @State private var replacements: [ReplacementRow] = []
     @State private var selectedReplacement: ReplacementRow.ID?
     @State private var snippets: [SnippetRow] = []
@@ -36,7 +38,7 @@ struct WordsSettingsView: View {
 
                 // Names and jargon, in the system font. In monospaced type they read
                 // as code.
-                TextEditor(text: $vocabularyText)
+                TextEditor(text: $vocabularyText, selection: $vocabularySelection)
                     .font(.body)
                     .frame(minHeight: 120)
                     .onChange(of: vocabularyText) { _, text in
@@ -45,8 +47,15 @@ struct WordsSettingsView: View {
                     // A word learned from a correction while this tab is open shows up at
                     // once. Without this, the next edit here wrote the old list back, and
                     // the learned word then counted as one the user had taken off for good.
+                    // The editor's text is replaced only when words were taken off
+                    // elsewhere, by Undo: replaced while the user types, the cursor jumped
+                    // to the end, and the next keystrokes ran into the learned word.
                     .onChange(of: settings.vocabularyHints) { _, hints in
-                        if Self.words(in: vocabularyText) != hints {
+                        let listed = Self.words(in: vocabularyText)
+                        guard listed != hints else { return }
+                        if hints.count > listed.count, hints.starts(with: listed) {
+                            addLines(hints.dropFirst(listed.count))
+                        } else {
                             vocabularyText = hints.joined(separator: "\n")
                         }
                     }
@@ -158,6 +167,22 @@ struct WordsSettingsView: View {
         text.split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+    }
+
+    /// Put words learned while the tab is open on lines of their own at the end of the
+    /// editor, leaving the user's text and cursor as they are.
+    private func addLines(_ learned: ArraySlice<String>) {
+        let lines = learned.joined(separator: "\n")
+        let text = vocabularyText
+        let endsLine = text.isEmpty || text.hasSuffix("\n")
+        if endsLine, case .selection(let range) = vocabularySelection?.indices, range.isEmpty, range.lowerBound == text.endIndex {
+            // The cursor waits on an empty last line for the user's next word, so the
+            // learned words go above it.
+            vocabularyText = text + lines + "\n"
+            vocabularySelection = TextSelection(insertionPoint: vocabularyText.endIndex)
+        } else {
+            vocabularyText = text + (endsLine ? "" : "\n") + lines
+        }
     }
 
     private func load() {

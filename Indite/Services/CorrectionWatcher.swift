@@ -9,13 +9,14 @@ import UserNotifications
 /// For a minute after each dictation, the field it went into is watched (`FieldWatch`).
 /// The field's text on either side of the dictation marks where its words are, and what
 /// lies between is the dictation as it stands. The latest version that corrects what
-/// was pasted, rather than rewriting it, is kept and judged once, when the watch ends.
+/// was pasted, rather than rewriting it, and stayed unchanged for a second is kept and
+/// judged once, when the watch ends.
 ///
 /// A word of the dictation changed into a name, "Pria" into "Priya", is a mishearing the
 /// user fixed; on the Words list the recognizer listens for it next time. Only one word
 /// swapped for one counts, and the name has to be spelled like the word it replaced and
-/// be no ordinary English word. Indite adds it without asking and says so in a
-/// notification, whose Undo takes it back for good.
+/// be no ordinary English word. Indite adds it without asking, and only when it can say
+/// so in a notification, whose Undo takes it back for good.
 @MainActor
 final class CorrectionWatcher {
 
@@ -27,19 +28,27 @@ final class CorrectionWatcher {
 
     /// Names the user turned down, lower-cased, from when Indite asked before adding
     /// one. They are never added.
-    private static let declinedKey = "declinedWordSuggestions"
+    nonisolated private static let declinedKey = "declinedWordSuggestions"
 
     /// Names Indite added on its own, lower-cased. One that is no longer on the Words
     /// list was taken off by the user, with Undo or by deleting it, and is never added
     /// again.
-    private static let addedKey = "addedWordSuggestions"
+    nonisolated private static let addedKey = "addedWordSuggestions"
+
+    /// Forget the names added and declined, when the Words list is reset. Kept, they
+    /// would make every name added before count as one the user took off, never to be
+    /// added again.
+    nonisolated static func forgetNames() {
+        UserDefaults.standard.removeObject(forKey: addedKey)
+        UserDefaults.standard.removeObject(forKey: declinedKey)
+    }
 
     private static let log = Logger(subsystem: "com.indite.app", category: "Corrections")
 
     /// The app's settings, whose Words list a name goes on. Set at launch.
     var settings: AppSettings?
 
-    /// The watch under way. The next dictation ends it.
+    /// The watch under way. The next dictation to deliver words ends it.
     private var current: FieldWatch?
 
     private init() {
@@ -58,17 +67,23 @@ final class CorrectionWatcher {
             return
         }
         let app = insertion.appName
+        let length = around.before.utf16.count + insertion.pasted.utf16.count + around.after.utf16.count
+        guard length <= FieldWatch.longestField else {
+            Self.log.notice("Not watching \(app, privacy: .public) for corrections: its field holds \(length, privacy: .public) characters, more than \(FieldWatch.longestField, privacy: .public)")
+            return
+        }
         let anchors = FieldWatch.Anchors(before: around.before, pasted: insertion.pasted, after: around.after)
         let watch = FieldWatch(field: insertion.field, anchors: anchors) { [weak self] watch, result in
-            Task { @MainActor in self?.judge(watch, result, app: app) }
+            Task { @MainActor in await self?.judge(watch, result, app: app) }
         }
         current?.end(.nextDictation)
         current = watch
         watch.start()
     }
 
-    /// End the watch under way, because the next dictation has started. Its words may
-    /// land in the same field, so the last one's are judged as they stand now.
+    /// End the watch under way, because the next dictation's words are about to be
+    /// delivered. They may land in the same field, so the last one's are judged as they
+    /// stand now.
     func stopWatching() {
         current?.end(.nextDictation)
     }
@@ -82,35 +97,50 @@ final class CorrectionWatcher {
         let word: String
     }
 
-    /// Judge a dictation's last copy once its watch has ended, add the names the user
-    /// corrected, and log how the watch went: counts and seconds, never the text.
-    private func judge(_ watch: FieldWatch, _ result: FieldWatch.Result, app: String) {
+    /// Judge the copy a dictation's watch kept, once the watch has ended, add the names
+    /// the user corrected, and log how the watch went: counts and seconds, never the text.
+    private func judge(_ watch: FieldWatch, _ result: FieldWatch.Result, app: String) async {
         if current === watch { current = nil }
+        // Asked before the Words list is read, so the wait cannot leave the list stale.
+        let permission = result.copy == nil ? nil : await UNUserNotificationCenter.current().notificationSettings()
         var candidates: [Candidate] = []
         var names: [Candidate] = []
-        if let copy = result.copy, let settings {
+        var added = 0
+        if let copy = result.copy, let settings, let permission {
             let defaults = UserDefaults.standard
             let known = settings.vocabularyHints + (defaults.stringArray(forKey: Self.declinedKey) ?? [])
                 + (defaults.stringArray(forKey: Self.addedKey) ?? [])
             candidates = Self.candidates(pasted: watch.anchors.pasted, copy: copy, excluding: Set(known.map(Vocabulary.key)))
-            names = candidates.filter { Self.isMisheardName($0.heard, as: $0.word) }
-            add(names, app: app)
+            names = Self.names(among: candidates)
+            // A name is added with a notification that says so and offers Undo, or not
+            // at all: added unseen, it could not be taken back.
+            if !names.isEmpty, let blocked = Self.whyNoNotification(
+                status: permission.authorizationStatus, banners: permission.alertStyle != .none,
+                notificationCenter: permission.notificationCenterSetting == .enabled
+            ) {
+                Self.log.notice("Added none of \(names.count, privacy: .public) names, because \(blocked, privacy: .public): a name added without a notification has no Undo")
+            } else {
+                add(names, app: app)
+                added = names.count
+            }
         }
+        let words = !result.found ? "never found" : result.copy == nil ? "found, none unchanged for a second" : "found"
         Self.log.notice("""
             Watched \(app, privacy: .public) for \(result.seconds, format: .fixed(precision: 1), privacy: .public) s \
             until \(result.ending.rawValue, privacy: .public): \
             \(result.notifications, privacy: .public) notifications, \(result.reads, privacy: .public) reads, \
-            words \(result.copy == nil ? "never found" : "found", privacy: .public), \
-            \(candidates.count, privacy: .public) candidates, \(names.count, privacy: .public) added
+            words \(words, privacy: .public), \
+            \(candidates.count, privacy: .public) candidates, \(names.count, privacy: .public) names, \
+            \(added, privacy: .public) added
             """)
     }
 
-    /// Words the user typed in place of single words of the dictation: at most four,
-    /// names first.
+    /// Words the user typed in place of single words of the dictation, names first.
     ///
     /// Only one word for one counts, with the words on either side unchanged. Left out
-    /// are common words, words in `known` as `Vocabulary.key` writes them, and words
-    /// that end in a contraction such as 's or 'll.
+    /// are common words, words in `known` as `Vocabulary.key` writes them, words that
+    /// end in a contraction such as 's or 'll, and words with a digit. A word keeps only
+    /// its letters, apostrophes and hyphens.
     nonisolated static func candidates(pasted: String, copy: String, excluding known: Set<String>) -> [Candidate] {
         let said = WordGuard.words(in: pasted)
         let now = WordGuard.words(in: copy)
@@ -121,8 +151,16 @@ final class CorrectionWatcher {
             guard case .changed(let saidIndexes, let nowIndexes) = step,
                   saidIndexes.count == 1, nowIndexes.count == 1 else { continue }
             let typed = now[nowIndexes[0]]
-            let word = typed.text.trimmingCharacters(in: .punctuationCharacters)
-            guard !WordGuard.commonWords.contains(typed.key),
+            // "5th", "B13" and "FY25" pass the name test, and on the Words list they would
+            // be chosen over the recognizer's first guess. A name has no digits.
+            guard !typed.key.contains(where: \.isNumber) else { continue }
+            // An emoji or a mark typed onto the name stays off the Words list, which would
+            // otherwise type it into every later dictation of the name: "Priya🙏" is Priya.
+            // Apostrophes and hyphens stay inside a name such as O'Brien or Jean-Luc.
+            let word = String(typed.text.filter { $0.isLetter || "'’-".contains($0) })
+                .trimmingCharacters(in: CharacterSet(charactersIn: "'’-"))
+            guard !word.isEmpty,
+                  !WordGuard.commonWords.contains(typed.key),
                   !["'s", "'ll", "'re", "'ve", "'d", "'m", "'t"].contains(where: typed.key.hasSuffix),
                   !known.contains(Vocabulary.key(word)),
                   !found.contains(where: { Vocabulary.key($0.word) == Vocabulary.key(word) }) else { continue }
@@ -130,7 +168,13 @@ final class CorrectionWatcher {
             found.append(Candidate(heard: heard, word: word))
         }
         let capitalized = found.filter { $0.word.first?.isUppercase == true }
-        return Array((capitalized + found.filter { $0.word.first?.isUppercase != true }).prefix(4))
+        return capitalized + found.filter { $0.word.first?.isUppercase != true }
+    }
+
+    /// The candidates that pass `isMisheardName`, at most four. They are tested before
+    /// they are cut to four, so that words failing the test cannot crowd a name out.
+    static func names(among candidates: [Candidate]) -> [Candidate] {
+        Array(candidates.filter { isMisheardName($0.heard, as: $0.word) }.prefix(4))
     }
 
     /// Whether `word`, typed over `heard`, is a name the recognizer misheard: spelled
@@ -143,6 +187,21 @@ final class CorrectionWatcher {
     }
 
     // MARK: - Adding
+
+    /// Why a notification from Indite would not reach the user, or nil when it would:
+    /// allowed, and shown as a banner or kept in Notification Center.
+    static func whyNoNotification(status: UNAuthorizationStatus, banners: Bool, notificationCenter: Bool) -> String? {
+        switch status {
+        case .authorized, .provisional:
+            return banners || notificationCenter ? nil : "Indite's banners are set to None and Notification Center leaves it out"
+        case .denied:
+            return "notifications are turned off for Indite"
+        case .notDetermined:
+            return "Indite has not been allowed notifications yet"
+        @unknown default:
+            return "Indite's notification permission is of a kind it does not know"
+        }
+    }
 
     /// Put the names on the Words list, and say so in a notification with an Undo.
     private func add(_ names: [Candidate], app: String) {
@@ -195,6 +254,13 @@ final class FieldWatch: @unchecked Sendable {
         let before: String
         let pasted: String
         let after: String
+
+        /// Kept with plain spaces for no-break ones, as every read of the field is.
+        init(before: String, pasted: String, after: String) {
+            self.before = FieldWatch.plainSpaces(before)
+            self.pasted = FieldWatch.plainSpaces(pasted)
+            self.after = FieldWatch.plainSpaces(after)
+        }
     }
 
     /// Why a watch ended, as the log says it.
@@ -204,7 +270,8 @@ final class FieldWatch: @unchecked Sendable {
         case anchorsChanged = "the text around the words changed"
         case wordsDeleted = "the words were deleted"
         case closed = "the field closed"
-        case nextDictation = "the next dictation started"
+        case tooLong = "the field grew past 20,000 characters"
+        case nextDictation = "the next dictation's words arrived"
         case timeUp = "the minute was up"
     }
 
@@ -212,14 +279,26 @@ final class FieldWatch: @unchecked Sendable {
         let ending: Ending
         let seconds: Double
         /// The dictation's last copy that corrects what was pasted rather than
-        /// rewriting it. Nil when no read gave one.
+        /// rewriting it and stayed unchanged for a second. Nil when none did.
         let copy: String?
+        /// Whether any read found the dictation, as pasted or corrected.
+        let found: Bool
         let notifications: Int
         let reads: Int
     }
 
     /// How long a watch lasts, in seconds, as Wispr Flow's does.
     static let duration: Double = 60
+
+    /// The longest field watched, in characters as accessibility counts them. Every
+    /// change in the field is a read and a comparison of all of its text.
+    static let longestField = 20_000
+
+    /// How long a copy has to stay unchanged to be judged, in seconds: a second, less
+    /// the slack of the timer that reads the field once a second. A copy that changed
+    /// sooner may be a word caught halfway through being typed, "Priy" on its way to
+    /// "Priya".
+    static let steady: Double = 0.9
 
     let anchors: Anchors
     private let field: AXUIElement
@@ -233,15 +312,18 @@ final class FieldWatch: @unchecked Sendable {
 
     // The watch thread's own.
     private var ending: Ending?
-    private var copy: String?
+    private var copies: Copies
     private var notifications = 0
     private var reads = 0
     private var pendingRead: CFRunLoopTimer?
+    /// When the field posted the first change not read yet.
+    private var changedAt: Double?
 
     /// - Parameter finish: Called once on the watch's thread when it ends.
     init(field: AXUIElement, anchors: Anchors, finish: @escaping @Sendable (FieldWatch, Result) -> Void) {
         self.field = field
         self.anchors = anchors
+        self.copies = Copies(anchors: anchors)
         self.finish = finish
     }
 
@@ -252,12 +334,12 @@ final class FieldWatch: @unchecked Sendable {
         thread.start()
     }
 
-    /// End the watch now, from any thread. Its last copy is judged as at any ending.
+    /// End the watch now, from any thread. Its copy is judged as at any ending.
     func end(_ reason: Ending) {
         lock.withLock {
             guard !isOver else { return }
             guard let runLoop else { requested = reason; return }
-            CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in stop(reason) }
+            CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in stopUnread(reason) }
             CFRunLoopWakeUp(runLoop)
         }
     }
@@ -291,7 +373,7 @@ final class FieldWatch: @unchecked Sendable {
         read()
         while ending == nil {
             let left = Self.duration - (ProcessInfo.processInfo.systemUptime - started)
-            guard left > 0 else { ending = .timeUp; break }
+            guard left > 0 else { stopUnread(.timeUp); break }
             CFRunLoopRunInMode(.defaultMode, left, true)
         }
 
@@ -309,15 +391,16 @@ final class FieldWatch: @unchecked Sendable {
             isOver = true
         }
         finish(self, Result(ending: ending ?? .timeUp, seconds: ProcessInfo.processInfo.systemUptime - started,
-                            copy: copy, notifications: notifications, reads: reads))
+                            copy: copies.settled, found: copies.found, notifications: notifications, reads: reads))
     }
 
     private func posted(_ notification: String) {
         notifications += 1
         if notification == kAXUIElementDestroyedNotification {
-            stop(.closed)
+            stopUnread(.closed)
             return
         }
+        changedAt = changedAt ?? ProcessInfo.processInfo.systemUptime
         // One read for a burst of changes, since the app answers every read on its main
         // thread. A letter put into a text view the way typing puts it, with the cursor
         // placed first, posted three changes in a test; one read answered all three.
@@ -333,6 +416,9 @@ final class FieldWatch: @unchecked Sendable {
     private func read() {
         guard ending == nil else { return }
         reads += 1
+        // Taken as the read is asked for, so the reads once a second stay a second apart
+        // however long the app takes to answer each.
+        let time = ProcessInfo.processInfo.systemUptime
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(field, kAXValueAttribute as CFString, &value)
         // Gone with its window or its app.
@@ -342,9 +428,9 @@ final class FieldWatch: @unchecked Sendable {
         }
         // Busy, or no text this time; the next read will tell.
         guard status == .success, let text = value as? String else { return }
-        let reading = Self.reading(text, around: anchors, kept: copy)
-        copy = reading.copy
-        if let ending = reading.ending { stop(ending) }
+        let changed = changedAt
+        changedAt = nil
+        if let ending = copies.read(text, at: time, changedAt: changed) { stop(ending) }
     }
 
     private func stop(_ reason: Ending) {
@@ -353,29 +439,98 @@ final class FieldWatch: @unchecked Sendable {
         CFRunLoopStop(CFRunLoopGetCurrent())
     }
 
+    /// End the watch with no read to show how the field stands. A field that posts its
+    /// changes has posted none since its last read, or one not read yet, so the copy
+    /// that read found stayed until now, or until that change. A field that posts
+    /// nothing tells nothing.
+    private func stopUnread(_ reason: Ending) {
+        guard ending == nil else { return }
+        if notifications > 0 { copies.stayed(until: changedAt ?? ProcessInfo.processInfo.systemUptime) }
+        stop(reason)
+    }
+
     // MARK: - Reading
 
-    /// What one read of the field tells the watch: the copy of the dictation to keep
-    /// from now on, and the reason the watch ends, if it ends here.
+    /// The copies of the dictation that the reads of its field find, and the one to
+    /// judge. Apart from the field, so it can be run on sample texts.
+    ///
+    /// Only a copy that stayed unchanged for a second is judged. In an app read once a
+    /// second, "Pria" retyped as "Priya" and sent straight after could otherwise be
+    /// judged as "Priy", the copy the last read caught. A copy is known to have stayed
+    /// from the read that found it until a later read that still finds it, or, in a
+    /// field that posts its changes, until the field posts the next one. When the last
+    /// copy stayed too briefly, the one before it that stayed is judged.
+    struct Copies {
+        let anchors: Anchors
+
+        /// The latest copy that corrects what was pasted, rather than rewriting it, and
+        /// stayed unchanged for a second. A fix followed by a rewrite keeps the fix.
+        private(set) var settled: String?
+        /// Whether a read has found the dictation, as pasted or corrected.
+        private(set) var found = false
+
+        /// What the last read found between the anchors, when a read first found it,
+        /// and until when it is known to have stayed.
+        private var shown: String?
+        private var shownIsClose = false
+        private var since = 0.0
+        private var until = 0.0
+
+        init(anchors: Anchors) {
+            self.anchors = anchors
+        }
+
+        /// Take in a read of the field's text, made at `time`, and say why the watch
+        /// ends, if it ends here.
+        ///
+        /// - Parameter changedAt: When the field posted the change this read answers,
+        ///   if it posted one.
+        mutating func read(_ text: String, at time: Double, changedAt: Double?) -> Ending? {
+            guard text.utf16.count <= FieldWatch.longestField else { return .tooLong }
+            let reading = FieldWatch.reading(text, around: anchors, found: found)
+            if reading.words == shown {
+                stayed(until: time)
+            } else {
+                // A field that posts its changes had the last copy until it posted this one.
+                if let changedAt { stayed(until: changedAt) }
+                shown = reading.words
+                shownIsClose = reading.words.map { FieldWatch.isClose($0, to: anchors.pasted) } ?? false
+                since = time
+                until = time
+                found = found || shownIsClose
+            }
+            // The words before a new line are finished: the user has gone on past them.
+            if reading.ending == .newLine, shownIsClose { settled = shown }
+            return reading.ending
+        }
+
+        /// The copy the last read found stayed until `time`, as far as the watch knows.
+        mutating func stayed(until time: Double) {
+            until = max(until, time)
+            if shownIsClose, until - since >= FieldWatch.steady { settled = shown }
+        }
+    }
+
+    /// What one read of the field finds: the dictation as it stands there, and the
+    /// reason the watch ends, if it ends here.
     ///
     /// The field has to start with the text that was before the dictation and end with
-    /// the text that was after it; what lies between is the dictation as it stands. That
-    /// replaces the copy kept so far only while it corrects what was pasted rather than
-    /// rewriting it, so a fix followed by a rewrite keeps the fix.
+    /// the text that was after it; what lies between is the dictation as it stands. Nil
+    /// when the read does not find it.
     ///
     /// Until a read has found the dictation, a read without it is a field that has not
     /// caught up with the paste, and the watch goes on: Electron fields report their
     /// text late (see `TextInsertionService.pasteLanded`), and an empty chat box read
     /// too soon would otherwise look sent.
-    static func reading(_ field: String, around anchors: Anchors, kept copy: String?) -> (copy: String?, ending: Ending?) {
-        let found = copy != nil
+    static func reading(_ field: String, around anchors: Anchors, found: Bool) -> (words: String?, ending: Ending?) {
+        let field = plainSpaces(field)
         // Sent, or cleared.
-        guard field.contains(where: { !$0.isWhitespace }) else { return (copy, found ? .emptied : nil) }
+        guard field.contains(where: { !$0.isWhitespace }) else { return (nil, found ? .emptied : nil) }
         guard field.hasPrefix(anchors.before), field.hasSuffix(anchors.after) else {
-            return (copy, found ? .anchorsChanged : nil)
+            return (nil, found ? .anchorsChanged : nil)
         }
         var words = String(field.dropFirst(anchors.before.count).dropLast(anchors.after.count))
-        guard words.contains(where: { $0.isLetter || $0.isNumber }) else { return (copy, found ? .wordsDeleted : nil) }
+        guard words.contains(where: { $0.isLetter || $0.isNumber }) else { return (nil, found ? .wordsDeleted : nil) }
 
         // A line break the dictation did not have: the user went on to a new line. What
         // comes before it is still the dictation.
@@ -385,7 +540,15 @@ final class FieldWatch: @unchecked Sendable {
             words = String(words[..<cut])
             ending = .newLine
         }
-        return (isClose(words, to: anchors.pasted) ? words : copy, ending)
+        return (words, ending)
+    }
+
+    /// `text` with each no-break space made a plain one, so that the two match. An
+    /// editor may turn one into the other at the edge of the words: a space before the
+    /// cursor shown as a no-break one, so that it does not collapse, becomes a plain one
+    /// once the words follow it, and the text before them no longer matches.
+    static func plainSpaces(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{00A0}", with: " ")
     }
 
     /// Whether `words` is the dictation corrected rather than rewritten, by Wispr Flow's
@@ -399,14 +562,44 @@ final class FieldWatch: @unchecked Sendable {
         let limit = 0.4 / (1 + Double(b.count) / 30) + 0.2
         // Words typed on after the dictation pass the limit on length alone.
         guard Double(abs(a.count - b.count)) / Double(longer) < limit else { return false }
-        // The ends the two share cost no edits, so only the part between is counted. In
-        // a dictation of 1,500 words with one word fixed, that took 0.13 ms; counting
-        // the whole of both took 0.28 s.
-        var start = 0
-        while start < min(a.count, b.count), a[start] == b[start] { start += 1 }
-        var end = 0
-        while end < min(a.count, b.count) - start, a[a.count - 1 - end] == b[b.count - 1 - end] { end += 1 }
-        let edits = WordGuard.editDistance(String(a[start..<(a.count - end)]), String(b[start..<(b.count - end)]))
+        // Counted no further than the most edits the limit allows: past that, the answer
+        // is no.
+        guard let edits = edits(a, b, atMost: Int(limit * Double(longer)) + 1) else { return false }
         return Double(edits) / Double(longer) < limit
+    }
+
+    /// The insertions, deletions and substitutions that turn `a` into `b`, or nil when
+    /// there are more than `most`.
+    ///
+    /// The work grows with the edits found, not with the lengths multiplied: each count of
+    /// edits takes every diagonal of the edit table as far as that count reaches, and
+    /// runs along it while the two texts agree. In a dictation of 1,500 words with a name
+    /// fixed at each end, a read took 0.1 ms; the whole table, counted between the ends
+    /// the two texts share, took 0.27 s. The same words shuffled, far past the limit,
+    /// took 18 ms.
+    private static func edits(_ a: [Character], _ b: [Character], atMost most: Int) -> Int? {
+        let n = a.count, m = b.count
+        // The table ends on the diagonal of the difference in length.
+        let last = m - n
+        guard abs(last) <= most else { return nil }
+        // For each diagonal d, where b's position less a's is d, the furthest position in
+        // `a` reached with the edits counted so far, at index d + offset.
+        let offset = most + 1
+        let unreached = Int.min / 2
+        var furthest = [Int](repeating: unreached, count: 2 * most + 3)
+        var previous = furthest
+        for count in 0...most {
+            swap(&furthest, &previous)
+            for d in max(-count, -n)...min(count, m) {
+                // One more edit than `previous` counted: a substitution along the same
+                // diagonal, a deletion from the one above, an insertion from the one below.
+                var i = count == 0 ? 0 : max(previous[offset + d] + 1, previous[offset + d + 1] + 1, previous[offset + d - 1])
+                i = min(i, n, m - d)
+                while i < n, i + d < m, a[i] == b[i + d] { i += 1 }
+                furthest[offset + d] = i
+            }
+            if furthest[offset + last] >= n { return count }
+        }
+        return nil
     }
 }
