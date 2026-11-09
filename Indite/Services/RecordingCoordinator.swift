@@ -984,6 +984,8 @@ final class RecordingCoordinator {
             targetApp: appInFront,
             restoreClipboard: settings.restoreClipboardAfterPaste,
             autoSubmit: false,
+            // A snippet's saved text goes in as it was written, as it did the first time.
+            keepsText: Snippets.holdsSavedText(text, snippets: settings.snippets),
             names: settings.vocabularyHints
         )
         switch outcome {

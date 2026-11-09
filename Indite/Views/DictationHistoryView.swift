@@ -374,6 +374,9 @@ struct DictationHistoryView: View {
                 targetApp: coordinator.appInFront,
                 restoreClipboard: settings.restoreClipboardAfterPaste,
                 autoSubmit: false,
+                // A snippet's saved text goes in as it was written, as it did the
+                // first time.
+                keepsText: Snippets.holdsSavedText(dictation.text, snippets: settings.snippets),
                 names: settings.vocabularyHints
             )
 

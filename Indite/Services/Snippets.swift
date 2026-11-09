@@ -84,6 +84,13 @@ enum Snippets {
         return (result + whole.substring(from: position), expanded)
     }
 
+    /// Whether `text` holds the saved text of one of `snippets`, so that it is typed as
+    /// it stands. For a dictation typed again from the history, which keeps only the
+    /// text that was delivered.
+    static func holdsSavedText(_ text: String, snippets: [Snippet]) -> Bool {
+        snippets.contains { $0.isComplete && text.contains($0.text) }
+    }
+
     /// Whether saved text ends where a mark after it would be one too many: in a full
     /// stop, comma, semicolon, colon, question or exclamation mark, an ellipsis, a space
     /// or a line break. Not a closing bracket or quote, which a full stop can follow.
