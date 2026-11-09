@@ -1165,7 +1165,7 @@ final class RecordingCoordinator {
     func transcribeAgain(_ dictation: Dictation) async -> String? {
         guard canTranscribeAgain else { return "Indite is busy with another dictation." }
         guard let fileName = dictation.recordingFileName, DictationAudioStore.fileExists(named: fileName) else {
-            return "The recording of this dictation is no longer on this Mac."
+            return TranscribeAgainError.recordingGone.localizedDescription
         }
         transcribingAgain = dictation.persistentModelID
         defer { transcribingAgain = nil }

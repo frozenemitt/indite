@@ -80,7 +80,21 @@ enum FileTranscriber {
     /// the spotter's reading is most of the difference.
     static func transcribeDictation(fileURL: URL, vocabulary: [String]) async throws -> String {
         let terms = vocabulary.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        let audioFile = try AVAudioFile(forReading: fileURL)
+
+        // Opened before anything is awaited and held to the end, once for the recognizer
+        // and once for the spotter. A recording deleted meanwhile, past its days or with
+        // its dictation, is still read whole through them. The spotter's copy used to be
+        // opened by its path after the first await, and a recording deleted by then
+        // failed with AVFoundation's own error.
+        let audioFile: AVAudioFile
+        let spotterFile: AVAudioFile?
+        do {
+            audioFile = try AVAudioFile(forReading: fileURL)
+            spotterFile = terms.isEmpty ? nil : try AVAudioFile(forReading: fileURL)
+        } catch {
+            guard FileManager.default.fileExists(atPath: fileURL.path) else { throw TranscribeAgainError.recordingGone }
+            throw error
+        }
 
         // Asked for as the live engine asks: second guesses and confidence only when
         // there is a list for them to serve.
@@ -94,39 +108,53 @@ enum FileTranscriber {
             try await request.downloadAndInstall()
         }
 
-        // The spotter hears the recording while the recognizer reads it.
-        let spotting = terms.isEmpty ? nil : VocabularySpotter.shared.session().map { session in
-            Task.detached(priority: .userInitiated) {
-                try Self.feed(fileURL, to: session)
-                return await session.finish(terms: terms)
+        // The spotter hears the recording while the recognizer reads it. Its session
+        // stops with its task: the whole recording is handed over in a moment, and its
+        // windows are read in the background long after.
+        let spotting = spotterFile.flatMap { file in
+            VocabularySpotter.shared.session().map { session in
+                Task.detached(priority: .userInitiated) {
+                    try await withTaskCancellationHandler {
+                        try Self.feed(file, to: session)
+                        return await session.finish(terms: terms)
+                    } onCancel: {
+                        session.stop()
+                    }
+                }
             }
         }
 
-        let analyzer = try await SpeechAnalyzer(
-            inputAudioFile: audioFile,
-            modules: [transcriber],
-            finishAfterFile: true
-        )
-
         var text = ""
         var segments: [Vocabulary.Segment] = []
-        for try await result in transcriber.results where result.isFinal {
-            let heard = String(result.text.characters)
-            let chosen = Vocabulary.choose(
-                heard,
-                alternatives: result.alternatives.map { String($0.characters) },
-                terms: terms,
-                keeping: terms
+        do {
+            let analyzer = try await SpeechAnalyzer(
+                inputAudioFile: audioFile,
+                modules: [transcriber],
+                finishAfterFile: true
             )
-            text += chosen
-            segments.append(Vocabulary.Segment(
-                text: chosen,
-                tookSecondGuess: chosen != heard,
-                runs: TranscriptionEngine.vocabularyRuns(from: result.text)
-            ))
-        }
 
-        try await analyzer.finalizeAndFinishThroughEndOfInput()
+            for try await result in transcriber.results where result.isFinal {
+                let heard = String(result.text.characters)
+                let chosen = Vocabulary.choose(
+                    heard,
+                    alternatives: result.alternatives.map { String($0.characters) },
+                    terms: terms,
+                    keeping: terms
+                )
+                text += chosen
+                segments.append(Vocabulary.Segment(
+                    text: chosen,
+                    tookSecondGuess: chosen != heard,
+                    runs: TranscriptionEngine.vocabularyRuns(from: result.text)
+                ))
+            }
+
+            try await analyzer.finalizeAndFinishThroughEndOfInput()
+        } catch {
+            // The spotter would otherwise read on through a recording nobody waits for.
+            spotting?.cancel()
+            throw error
+        }
 
         if let spotting {
             let spotted = Vocabulary.applySpotted(try await spotting.value, to: segments, listed: terms)
@@ -136,14 +164,28 @@ enum FileTranscriber {
         return Vocabulary.spell(text, terms: terms).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Hand the spotter a recording's audio, a second at a time.
-    private nonisolated static func feed(_ fileURL: URL, to session: VocabularySpotter.Session) throws {
-        let file = try AVAudioFile(forReading: fileURL)
+    /// Hand the spotter a recording's audio, a second at a time, until it ends or the
+    /// reading is given up.
+    private nonisolated static func feed(_ file: AVAudioFile, to session: VocabularySpotter.Session) throws {
         while file.framePosition < file.length {
+            try Task.checkCancellation()
             guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 16_000) else { return }
             try file.read(into: buffer)
             guard buffer.frameLength > 0 else { return }
             session.append(buffer)
+        }
+    }
+}
+
+/// Why a dictation could not be transcribed again, in words for the person who asked.
+enum TranscribeAgainError: LocalizedError {
+    /// The recording was deleted before it could be opened.
+    case recordingGone
+
+    var errorDescription: String? {
+        switch self {
+        case .recordingGone:
+            "The recording of this dictation is no longer on this Mac."
         }
     }
 }
