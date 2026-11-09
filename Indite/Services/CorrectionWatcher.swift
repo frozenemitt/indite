@@ -66,7 +66,7 @@ final class CorrectionWatcher {
         }
         let anchors = FieldWatch.Anchors(before: around.before, pasted: insertion.pasted, after: around.after)
         let watch = FieldWatch(field: insertion.field, anchors: anchors) { [weak self] watch, result in
-            Task { @MainActor in self?.judge(watch, result, app: app) }
+            Task { @MainActor in await self?.judge(watch, result, app: app) }
         }
         current?.end(.nextDictation)
         current = watch
@@ -90,17 +90,30 @@ final class CorrectionWatcher {
 
     /// Judge a dictation's last copy once its watch has ended, add the names the user
     /// corrected, and log how the watch went: counts and seconds, never the text.
-    private func judge(_ watch: FieldWatch, _ result: FieldWatch.Result, app: String) {
+    private func judge(_ watch: FieldWatch, _ result: FieldWatch.Result, app: String) async {
         if current === watch { current = nil }
+        // Asked before the Words list is read, so the wait cannot leave the list stale.
+        let permission = result.copy == nil ? nil : await UNUserNotificationCenter.current().notificationSettings()
         var candidates: [Candidate] = []
         var names: [Candidate] = []
-        if let copy = result.copy, let settings {
+        var added = 0
+        if let copy = result.copy, let settings, let permission {
             let defaults = UserDefaults.standard
             let known = settings.vocabularyHints + (defaults.stringArray(forKey: Self.declinedKey) ?? [])
                 + (defaults.stringArray(forKey: Self.addedKey) ?? [])
             candidates = Self.candidates(pasted: watch.anchors.pasted, copy: copy, excluding: Set(known.map(Vocabulary.key)))
             names = Self.names(among: candidates)
-            add(names, app: app)
+            // A name is added with a notification that says so and offers Undo, or not
+            // at all: added unseen, it could not be taken back.
+            if !names.isEmpty, let blocked = Self.whyNoNotification(
+                status: permission.authorizationStatus, banners: permission.alertStyle != .none,
+                notificationCenter: permission.notificationCenterSetting == .enabled
+            ) {
+                Self.log.notice("Added none of \(names.count, privacy: .public) names, because \(blocked, privacy: .public): a name added without a notification has no Undo")
+            } else {
+                add(names, app: app)
+                added = names.count
+            }
         }
         let words = !result.found ? "never found" : result.copy == nil ? "found, none unchanged for a second" : "found"
         Self.log.notice("""
@@ -108,7 +121,8 @@ final class CorrectionWatcher {
             until \(result.ending.rawValue, privacy: .public): \
             \(result.notifications, privacy: .public) notifications, \(result.reads, privacy: .public) reads, \
             words \(words, privacy: .public), \
-            \(candidates.count, privacy: .public) candidates, \(names.count, privacy: .public) added
+            \(candidates.count, privacy: .public) candidates, \(names.count, privacy: .public) names, \
+            \(added, privacy: .public) added
             """)
     }
 
@@ -164,6 +178,21 @@ final class CorrectionWatcher {
     }
 
     // MARK: - Adding
+
+    /// Why a notification from Indite would not reach the user, or nil when it would:
+    /// allowed, and shown as a banner or kept in Notification Center.
+    static func whyNoNotification(status: UNAuthorizationStatus, banners: Bool, notificationCenter: Bool) -> String? {
+        switch status {
+        case .authorized, .provisional:
+            return banners || notificationCenter ? nil : "Indite's banners are set to None and Notification Center leaves it out"
+        case .denied:
+            return "notifications are turned off for Indite"
+        case .notDetermined:
+            return "Indite has not been allowed notifications yet"
+        @unknown default:
+            return "Indite's notification permission is of a kind it does not know"
+        }
+    }
 
     /// Put the names on the Words list, and say so in a notification with an Undo.
     private func add(_ names: [Candidate], app: String) {
