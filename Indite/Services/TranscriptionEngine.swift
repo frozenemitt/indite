@@ -769,7 +769,8 @@ final class TranscriptionEngine {
 
     /// Every run of a finished result, with its time and the recognizer's confidence
     /// where it has them. Untimed runs are kept too, so the text can be rebuilt whole.
-    private nonisolated static func vocabularyRuns(from text: AttributedString) -> [Vocabulary.Run] {
+    /// Transcribe Again reads its runs with this too.
+    nonisolated static func vocabularyRuns(from text: AttributedString) -> [Vocabulary.Run] {
         text.runs.map { run in
             Vocabulary.Run(
                 text: String(text[run.range].characters),

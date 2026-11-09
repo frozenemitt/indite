@@ -68,4 +68,9 @@ final class Dictation {
         guard let rawText else { return false }
         return rawText != text
     }
+
+    /// Whether the recording is still on disk, so the dictation can be transcribed again.
+    var hasRecording: Bool {
+        DictationAudioStore.fileExists(named: recordingFileName)
+    }
 }

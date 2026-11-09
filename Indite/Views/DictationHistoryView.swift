@@ -31,6 +31,8 @@ struct DictationHistoryView: View {
     /// The start of today, for the line above the list. Set again whenever the day
     /// changes, since the week and the days in a row depend on it.
     @State private var today = Calendar.current.startOfDay(for: .now)
+    /// Why the last Transcribe Again left its dictation as it was.
+    @State private var transcribeAgainFailure: String?
 
     /// What it takes to put a deleted dictation back as it was. Its recording stays on
     /// disk until Undo can no longer bring it back.
@@ -167,7 +169,7 @@ struct DictationHistoryView: View {
                 .help("Delete the selected dictation")
             }
 
-            // The rarer two, behind the toolbar's own More menu as Notes keeps its
+            // The rarer commands, behind the toolbar's own More menu as Notes keeps its
             // own. Laid out as buttons they overflowed the toolbar at the window's
             // usual width.
             ToolbarItem {
@@ -179,6 +181,11 @@ struct DictationHistoryView: View {
                     }
                     .disabled(selected?.wasEditedByAI != true || selected?.rawText == nil)
 
+                    Button("Transcribe Again") {
+                        if let selected { transcribeAgain(selected) }
+                    }
+                    .disabled(selected?.hasRecording != true || !coordinator.canTranscribeAgain)
+
                     Divider()
 
                     Button("Clear All\u{2026}", role: .destructive) {
@@ -188,7 +195,7 @@ struct DictationHistoryView: View {
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
-                .help("Copy the words as they were heard, or clear the history")
+                .help("Copy the words as they were heard, transcribe the dictation again from its recording, or clear the history")
                 .confirmationDialog(
                     dictations.count == 1 ? "Delete 1 dictation?" : "Delete all \(dictations.count) dictations?",
                     isPresented: $isConfirmingClearAll,
@@ -202,6 +209,18 @@ struct DictationHistoryView: View {
                     Text("This cannot be undone.")
                 }
             }
+        }
+        .alert(
+            "Indite could not transcribe this dictation again.",
+            isPresented: Binding(
+                get: { transcribeAgainFailure != nil },
+                set: { if !$0 { transcribeAgainFailure = nil } }
+            ),
+            presenting: transcribeAgainFailure
+        ) { _ in
+            Button("OK") { }
+        } message: { reason in
+            Text(reason)
         }
     }
 
@@ -229,6 +248,14 @@ struct DictationHistoryView: View {
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                        }
+
+                        if coordinator.transcribingAgain == dictation.persistentModelID {
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("Transcribing again\u{2026}")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
 
@@ -267,6 +294,10 @@ struct DictationHistoryView: View {
                     Button("Copy") { copy(dictation.text, as: .cleaned(dictation.persistentModelID)) }
                     if dictation.wasEditedByAI, let raw = dictation.rawText {
                         Button("Copy Original") { copy(raw, as: .original(dictation.persistentModelID)) }
+                    }
+                    if dictation.hasRecording {
+                        Button("Transcribe Again") { transcribeAgain(dictation) }
+                            .disabled(!coordinator.canTranscribeAgain)
                     }
                     Divider()
                     Button("Delete", role: .destructive) { delete(dictation) }
@@ -357,6 +388,16 @@ struct DictationHistoryView: View {
         modelContext.saveOrLog()
         undoTimeout?.cancel()
         lastDeleted = nil
+    }
+
+    /// Transcribe the dictation again from its recording, and say why when its words
+    /// were left as they were.
+    private func transcribeAgain(_ dictation: Dictation) {
+        Task {
+            if let failure = await coordinator.transcribeAgain(dictation) {
+                transcribeAgainFailure = failure
+            }
+        }
     }
 
     /// The time alone for something dictated today; the date and time otherwise, so
