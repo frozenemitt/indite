@@ -197,6 +197,13 @@ final class FieldWatch: @unchecked Sendable {
         let before: String
         let pasted: String
         let after: String
+
+        /// Kept with plain spaces for no-break ones, as every read of the field is.
+        init(before: String, pasted: String, after: String) {
+            self.before = FieldWatch.plainSpaces(before)
+            self.pasted = FieldWatch.plainSpaces(pasted)
+            self.after = FieldWatch.plainSpaces(after)
+        }
     }
 
     /// Why a watch ended, as the log says it.
@@ -453,6 +460,7 @@ final class FieldWatch: @unchecked Sendable {
     /// text late (see `TextInsertionService.pasteLanded`), and an empty chat box read
     /// too soon would otherwise look sent.
     static func reading(_ field: String, around anchors: Anchors, found: Bool) -> (words: String?, ending: Ending?) {
+        let field = plainSpaces(field)
         // Sent, or cleared.
         guard field.contains(where: { !$0.isWhitespace }) else { return (nil, found ? .emptied : nil) }
         guard field.hasPrefix(anchors.before), field.hasSuffix(anchors.after) else {
@@ -470,6 +478,14 @@ final class FieldWatch: @unchecked Sendable {
             ending = .newLine
         }
         return (words, ending)
+    }
+
+    /// `text` with each no-break space made a plain one, so that the two match. An
+    /// editor may turn one into the other at the edge of the words: a space before the
+    /// cursor shown as a no-break one, so that it does not collapse, becomes a plain one
+    /// once the words follow it, and the text before them no longer matches.
+    static func plainSpaces(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{00A0}", with: " ")
     }
 
     /// Whether `words` is the dictation corrected rather than rewritten, by Wispr Flow's
