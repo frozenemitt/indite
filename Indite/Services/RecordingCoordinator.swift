@@ -582,10 +582,12 @@ final class RecordingCoordinator {
 
         // A closing "press enter" is a command, not words. It comes off before the AI
         // pass, so the model never sees it and cannot reword it. It comes off only where
-        // the words will be typed, since Return can follow only a paste.
+        // the words will be typed, since Return can follow only a paste, and never in
+        // the welcome window's practice box, which has nothing to send: there the words
+        // are practice like any others.
         var spokenReturn: String?
         #if os(macOS)
-        if settings.pressEnterSubmits, typesText(into: appInFront) {
+        if settings.pressEnterSubmits, !practiceIsInFront, typesText(into: appInFront) {
             spokenReturn = TextProcessor.removingPressEnter(from: heard)
         }
         #endif
@@ -814,13 +816,22 @@ final class RecordingCoordinator {
 
     // MARK: - Output
 
+    #if os(macOS)
+    /// Whether the app in front is the one the dictation was aimed at, so that Return
+    /// for "press enter" may go to it. The welcome window's practice box never is.
+    private var frontIsWhereAimed: Bool {
+        !practiceIsInFront && appInFront?.processIdentifier == targetApp?.processIdentifier
+    }
+    #endif
+
     /// Send finished text wherever the user's output setting says it goes.
     ///
     /// - Parameters:
     ///   - problem: Something that went wrong on the way, for the panel to say once the
     ///     text has landed.
     ///   - pressesReturn: Press Return after the paste, whatever the settings say,
-    ///     because the dictation ended with "press enter".
+    ///     because the dictation ended with "press enter". Only in the app the
+    ///     dictation was aimed at.
     ///   - keepsText: Paste the text's own characters unchanged, because it holds a
     ///     snippet's saved text.
     private func deliver(_ text: String, problem: String? = nil, pressesReturn: Bool = false, keepsText: Bool = false) async {
@@ -828,6 +839,18 @@ final class RecordingCoordinator {
         // Dismissed before insertion: the panel is borderless and non-activating, but
         // leaving it up while text lands is visual noise at the wrong moment.
         overlay.hide()
+
+        // Return for "press enter" goes only to the app the dictation was aimed at. The
+        // words can be ready seconds after the key came up, and Return in whatever app
+        // is in front by then could send something there that nobody has read, or press
+        // a dialog's default button. The words still go to the app in front, as any
+        // dictation's do, with no Return after them, and the panel says so.
+        var problem = problem
+        let sends = pressesReturn && frontIsWhereAimed
+        if pressesReturn, !sends {
+            problem = [problem, "Return was not pressed. Another app is in front."].compactMap { $0 }.joined(separator: " ")
+            Log.dictation.notice("Another app is in front of the one the dictation began in, so Return is not pressed")
+        }
 
         if practiceIsInFront, let practiceReceiver {
             practiceReceiver(text)
@@ -842,7 +865,9 @@ final class RecordingCoordinator {
         let destination = appInFront
         let profile = settings.profile(forBundleIdentifier: destination?.bundleIdentifier)
         let outputMode = profile?.outputModeRaw.flatMap(OutputMode.init(rawValue:)) ?? settings.outputMode
-        let autoSubmit = pressesReturn || (profile?.autoSubmit ?? settings.autoSubmitAfterInsert)
+        // A dictation that said "press enter" presses Return where it was aimed and
+        // nowhere else; the setting decides for every other dictation.
+        let autoSubmit = pressesReturn ? sends : (profile?.autoSubmit ?? settings.autoSubmitAfterInsert)
 
         switch outputMode {
         case .clipboardOnly:
