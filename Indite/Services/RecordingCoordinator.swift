@@ -1349,11 +1349,13 @@ final class RecordingCoordinator {
     /// Watch the microphone for as long as the dictation records, and warn when it
     /// sends no sound.
     ///
-    /// What the microphone says about itself is said at once: muted, turned off, or
-    /// behind a closed lid. Its buffers are judged by `MicrophoneSignal`, whose verdict
-    /// is read twenty times a second, so a warning shows within 50 ms of the buffer that
-    /// decides it. Nothing is said until the dictation has shown itself, so a tap that
-    /// turns out not to be a dictation says nothing.
+    /// A problem the microphone reports about itself, such as being muted, turned off or
+    /// behind a closed lid, is said once half a second passes with no live sound from
+    /// it, and never while sound comes through. Its buffers are judged by
+    /// `MicrophoneSignal`, whose verdict is read twenty times a second, so a warning
+    /// shows within 50 ms of the buffer that decides it. Nothing is said until the
+    /// dictation has shown itself, so a tap that turns out not to be a dictation says
+    /// nothing.
     ///
     /// - Parameter chosen: The microphone the ranked list chose, or nil for the system
     ///   default. Its name stands in when the device opened has none to give.
@@ -1390,7 +1392,7 @@ final class RecordingCoordinator {
                 }
                 verdict = latest
                 if self.isAnnounced {
-                    self.showMicrophoneTrouble(self.currentMicrophoneTrouble(verdict: verdict, lastSoundAt: signal?.lastSoundAt))
+                    self.showMicrophoneTrouble(self.currentMicrophoneTrouble(verdict: verdict, signal: signal))
                 }
                 try? await Task.sleep(for: .milliseconds(50))
             }
@@ -1407,15 +1409,22 @@ final class RecordingCoordinator {
 
     /// Why the microphone is not heard now, or nil when it is.
     ///
-    /// The microphone's own word comes first. A fix it reports, such as being unmuted,
-    /// reaches the buffers a buffer or two later, and until then they still say
-    /// silence. The warning it raised waits up to half a second for sound, rather than
-    /// turning into "It is sending silence" in between; after that the buffers decide.
+    /// The microphone's own word comes first, once the buffers bear it out with half a
+    /// second of no live sound. Live sound clears it: the microphone hears, whatever it
+    /// reports. See `MicrophoneSignal.confirmsReportedProblem(at:)`.
+    ///
+    /// A fix it reports, such as being unmuted, reaches the buffers a buffer or two
+    /// later, and until then they still say silence. The warning it raised waits up to
+    /// half a second for sound, rather than turning into "It is sending silence" in
+    /// between; after that the buffers decide.
     private func currentMicrophoneTrouble(verdict: MicrophoneSignal.Verdict,
-                                          lastSoundAt: ContinuousClock.Instant?) -> MicrophoneTrouble? {
-        if let microphoneProblem { return .device(microphoneProblem) }
+                                          signal: MicrophoneSignal?) -> MicrophoneTrouble? {
+        let now = ContinuousClock.now
+        if let microphoneProblem, signal?.confirmsReportedProblem(at: now) ?? true {
+            return .device(microphoneProblem)
+        }
         if case .device = microphoneTrouble, let fixed = microphoneFixedAt,
-           (lastSoundAt ?? fixed) <= fixed, ContinuousClock.now - fixed < .milliseconds(500) {
+           (signal?.lastSoundAt ?? fixed) <= fixed, now - fixed < .milliseconds(500) {
             return microphoneTrouble
         }
         return verdict == .fine ? nil : .signal(verdict)

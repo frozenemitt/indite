@@ -114,6 +114,24 @@ struct MicrophoneSignal: Sendable {
         }
     }
 
+    /// How long the buffers must go without live sound before a problem the microphone
+    /// reports about itself is believed: five buffers of a tenth of a second.
+    static let reportWait: Duration = .milliseconds(500)
+
+    /// Whether the buffers bear out a problem the microphone reports about itself, such
+    /// as being muted: no live sound for half a second, counted from the start of the
+    /// capture until the first live buffer comes.
+    ///
+    /// Live sound says the microphone hears, whatever its controls read. A report the
+    /// buffers contradicted used to outrank them, and a microphone whose mute or volume
+    /// read wrong was warned about for as long as it reported, while its words came
+    /// through. The half second also lets the buffer already on its way when a
+    /// microphone is muted arrive without overruling the mute: a buffer holds a tenth
+    /// of a second of what came before.
+    func confirmsReportedProblem(at now: ContinuousClock.Instant) -> Bool {
+        now - (lastSoundAt ?? startedAt) >= Self.reportWait
+    }
+
     /// What the buffers so far say at `now`.
     func verdict(at now: ContinuousClock.Instant) -> Verdict {
         guard heardSound else {
