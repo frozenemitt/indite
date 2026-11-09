@@ -395,7 +395,10 @@ final class RecordingCoordinator {
         #endif
 
         // A recording is kept only with its entry, so only while entries are kept.
-        let recording = settings.keepDictationHistory ? DictationAudioWriter() : nil
+        // They must be kept on disk, too: a store fallen back to memory loses every entry
+        // at quit, and their recordings would be left with nothing to name them.
+        let keepsRecording = settings.keepDictationHistory && MeetingStoreStatus.shared.isPersistent
+        let recording = keepsRecording ? DictationAudioWriter() : nil
         do {
             try await engine.startRecording(
                 owner: .dictation,
