@@ -679,17 +679,19 @@ final class RecordingCoordinator {
             return
         }
 
-        // A cue the model reworded can no longer be found, so the saved text it stands
-        // for would be lost. That dictation goes out as heard instead, with its cues
+        // Only the cues the transcript held are expanded, each no more times than it
+        // held it, so whether a snippet is typed never depends on the rewrite. A cue
+        // the model reworded can no longer be found, so the saved text it stands for
+        // would be lost. That dictation goes out as heard instead, with its cues
         // expanded.
-        let keepsCues = Snippets.keepsCues(of: transcript, in: finalText, snippets: snippets)
-        if !keepsCues {
+        let rewritten = Snippets.expand(finalText, cuesOf: transcript, snippets: snippets)
+        if rewritten == nil {
             Log.dictation.notice("The rewrite reworded a snippet's cue, so the dictation goes out as heard")
         }
-        let delivered = keepsCues ? Snippets.expand(finalText, snippets: snippets) : asHeard
+        let delivered = rewritten ?? asHeard
         await deliver(delivered.text, problem: problem, pressesReturn: pressesReturn, keepsText: delivered.expanded > 0)
-        let promptName = keepsCues ? aiProcessor.promptConfiguration.prompt(withId: promptId)?.name : nil
-        finishHistory(entry, text: delivered.text, rawText: keepsCues ? asHeard.text : nil, promptName: promptName)
+        let promptName = rewritten != nil ? aiProcessor.promptConfiguration.prompt(withId: promptId)?.name : nil
+        finishHistory(entry, text: delivered.text, rawText: rewritten != nil ? asHeard.text : nil, promptName: promptName)
         AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
         NotificationService.shared.showTranscriptionCompleteIfEnabled(
             characterCount: delivered.text.count,

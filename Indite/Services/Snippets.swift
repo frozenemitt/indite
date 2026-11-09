@@ -32,17 +32,43 @@ enum Snippets {
     /// What follows keeps the capital the recognizer gave it.
     static func expand(_ text: String, snippets: [Snippet]) -> (text: String, expanded: Int) {
         guard let cues = Cues(snippets) else { return (text, 0) }
+        return expand(text, cues: cues, limits: nil)
+    }
+
+    /// `answer` with the cues that `said` held replaced by their saved text, each no
+    /// more times than `said` held it, or nil when `answer` holds one of them fewer
+    /// times.
+    ///
+    /// For the AI pass, so that whether a snippet is typed depends on what was said and
+    /// not on the rewrite: a cue that first appears in the model's answer stays as
+    /// words. A cue the model reworded cannot be found in its answer, so the saved text
+    /// it stands for would be lost.
+    static func expand(_ answer: String, cuesOf said: String, snippets: [Snippet]) -> (text: String, expanded: Int)? {
+        guard let cues = Cues(snippets) else { return (answer, 0) }
+        let held = cues.counts(in: said)
+        let kept = cues.counts(in: answer)
+        guard held.allSatisfy({ kept[$0.key, default: 0] >= $0.value }) else { return nil }
+        return expand(answer, cues: cues, limits: held)
+    }
+
+    /// `text` with its cues replaced, the first ones of each up to the number `limits`
+    /// gives it, or all of them when there are no limits.
+    private static func expand(_ text: String, cues: Cues, limits: [Int: Int]?) -> (text: String, expanded: Int) {
         // The dictation's own spaces at either end go, as a paste fitted to the cursor
         // takes them off. The saved text keeps its own.
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let whole = trimmed as NSString
-        let matches = cues.pattern.matches(in: trimmed, range: NSRange(location: 0, length: whole.length))
-        guard !matches.isEmpty else { return (text, 0) }
-
+        var remaining = limits
         var result = ""
         var position = 0
-        for match in matches {
-            let saved = cues.savedTexts[cues.cue(of: match)]
+        var expanded = 0
+        for match in cues.pattern.matches(in: trimmed, range: NSRange(location: 0, length: whole.length)) {
+            let cue = cues.cue(of: match)
+            if let left = remaining?[cue, default: 0] {
+                guard left > 0 else { continue }
+                remaining?[cue] = left - 1
+            }
+            let saved = cues.savedTexts[cue]
             result += whole.substring(with: NSRange(location: position, length: match.range.location - position))
             result += saved
             let markRange = match.range(at: cues.savedTexts.count + 1)
@@ -52,18 +78,10 @@ enum Snippets {
                 if !endsDictation, !endsInMark(saved) { result += mark }
             }
             position = NSMaxRange(match.range)
+            expanded += 1
         }
-        return (result + whole.substring(from: position), matches.count)
-    }
-
-    /// Whether `answer` still holds each cue that `said` held, at least as many times.
-    ///
-    /// For the AI pass. A cue the model reworded cannot be found in its answer, so the
-    /// saved text it stands for would be lost.
-    static func keepsCues(of said: String, in answer: String, snippets: [Snippet]) -> Bool {
-        guard let cues = Cues(snippets) else { return true }
-        let kept = cues.counts(in: answer)
-        return cues.counts(in: said).allSatisfy { kept[$0.key, default: 0] >= $0.value }
+        guard expanded > 0 else { return (text, 0) }
+        return (result + whole.substring(from: position), expanded)
     }
 
     /// Whether saved text ends where a mark after it would be one too many: in a full
