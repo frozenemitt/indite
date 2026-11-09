@@ -116,9 +116,9 @@ final class CorrectionWatcher {
     /// names first.
     ///
     /// Only one word for one counts, with the words on either side unchanged. Left out
-    /// are common words, words in `known` as `Vocabulary.key` writes them, and words
-    /// that end in a contraction such as 's or 'll. A word keeps only its letters,
-    /// apostrophes and hyphens.
+    /// are common words, words in `known` as `Vocabulary.key` writes them, words that
+    /// end in a contraction such as 's or 'll, and words with a digit. A word keeps only
+    /// its letters, apostrophes and hyphens.
     nonisolated static func candidates(pasted: String, copy: String, excluding known: Set<String>) -> [Candidate] {
         let said = WordGuard.words(in: pasted)
         let now = WordGuard.words(in: copy)
@@ -129,6 +129,9 @@ final class CorrectionWatcher {
             guard case .changed(let saidIndexes, let nowIndexes) = step,
                   saidIndexes.count == 1, nowIndexes.count == 1 else { continue }
             let typed = now[nowIndexes[0]]
+            // "5th", "B13" and "FY25" pass the name test, and on the Words list they would
+            // be chosen over the recognizer's first guess. A name has no digits.
+            guard !typed.key.contains(where: \.isNumber) else { continue }
             // An emoji or a mark typed onto the name stays off the Words list, which would
             // otherwise type it into every later dictation of the name: "Priya🙏" is Priya.
             // Apostrophes and hyphens stay inside a name such as O'Brien or Jean-Luc.
