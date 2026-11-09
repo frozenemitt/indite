@@ -99,7 +99,7 @@ final class CorrectionWatcher {
             let known = settings.vocabularyHints + (defaults.stringArray(forKey: Self.declinedKey) ?? [])
                 + (defaults.stringArray(forKey: Self.addedKey) ?? [])
             candidates = Self.candidates(pasted: watch.anchors.pasted, copy: copy, excluding: Set(known.map(Vocabulary.key)))
-            names = candidates.filter { Self.isMisheardName($0.heard, as: $0.word) }
+            names = Self.names(among: candidates)
             add(names, app: app)
         }
         let words = !result.found ? "never found" : result.copy == nil ? "found, none unchanged for a second" : "found"
@@ -112,8 +112,7 @@ final class CorrectionWatcher {
             """)
     }
 
-    /// Words the user typed in place of single words of the dictation: at most four,
-    /// names first.
+    /// Words the user typed in place of single words of the dictation, names first.
     ///
     /// Only one word for one counts, with the words on either side unchanged. Left out
     /// are common words, words in `known` as `Vocabulary.key` writes them, words that
@@ -146,7 +145,13 @@ final class CorrectionWatcher {
             found.append(Candidate(heard: heard, word: word))
         }
         let capitalized = found.filter { $0.word.first?.isUppercase == true }
-        return Array((capitalized + found.filter { $0.word.first?.isUppercase != true }).prefix(4))
+        return capitalized + found.filter { $0.word.first?.isUppercase != true }
+    }
+
+    /// The candidates that pass `isMisheardName`, at most four. They are tested before
+    /// they are cut to four, so that words failing the test cannot crowd a name out.
+    static func names(among candidates: [Candidate]) -> [Candidate] {
+        Array(candidates.filter { isMisheardName($0.heard, as: $0.word) }.prefix(4))
     }
 
     /// Whether `word`, typed over `heard`, is a name the recognizer misheard: spelled
