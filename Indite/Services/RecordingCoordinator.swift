@@ -1153,10 +1153,11 @@ final class RecordingCoordinator {
     /// entry keeps its time, destination and recording.
     ///
     /// The words go through the steps a live dictation's take, apart from those that
-    /// deliver them: nothing is typed, and a closing "press enter" stays as words, since
-    /// no Return follows. The words wait in Recent Dictations to be inserted or copied.
-    /// The entry is left as it was when any step fails, a rewrite included, since its
-    /// words may be a rewrite worth more than the words as heard.
+    /// deliver them: nothing is typed, and nothing is pressed for a closing "press
+    /// enter", which comes off as it does from a live dictation. The words wait in
+    /// Recent Dictations to be inserted or copied. The entry is left as it was when any
+    /// step fails, a rewrite included, since its words may be a rewrite worth more than
+    /// the words as heard.
     ///
     /// A 30-second recording took 2.5 s with 14 listed words and a prompt that keeps the
     /// speaker's words: 0.9 s to read it and 1.6 s to rewrite it.
@@ -1182,9 +1183,19 @@ final class RecordingCoordinator {
             return error.localizedDescription
         }
 
-        let transcript = TextProcessor.process(heard, replacements: settings.wordReplacements)
+        var transcript = TextProcessor.process(heard, replacements: settings.wordReplacements)
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return "Nothing was heard in the recording."
+        }
+
+        // A closing "press enter" is a command, and comes off while the setting is on, as
+        // it does from a live dictation. Left on, Insert would type it as words, since it
+        // never presses Return.
+        if settings.pressEnterSubmits, let withoutCommand = TextProcessor.removingPressEnter(from: transcript) {
+            guard !withoutCommand.isEmpty else {
+                return "The recording holds only \u{201C}press enter\u{201D}, so there are no words to keep."
+            }
+            transcript = withoutCommand
         }
 
         // Snippets as a live dictation expands them: after the AI pass, which never sees
