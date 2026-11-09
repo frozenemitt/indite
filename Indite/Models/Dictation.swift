@@ -13,7 +13,8 @@ final class Dictation {
     /// The text as delivered, after replacements and any AI pass.
     var text: String
 
-    /// The raw transcript before AI processing, when the two differ.
+    /// The words as heard, when they differ from the text: the transcript before AI
+    /// processing and before any snippet was expanded, without a closing "press enter".
     ///
     /// Kept because the AI occasionally rewrites something better left alone, and the
     /// original is unrecoverable otherwise.

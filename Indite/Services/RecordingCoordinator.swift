@@ -605,7 +605,7 @@ final class RecordingCoordinator {
             // leaves it unused.
             aiProcessor.discardPrewarm()
             await deliver(asHeard.text, problem: problem, pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0)
-            finishHistory(entry, text: asHeard.text, rawText: nil, promptName: nil)
+            finishHistory(entry, text: asHeard.text, rawText: transcript, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showTranscriptionCompleteIfEnabled(
                 characterCount: asHeard.text.count,
@@ -669,7 +669,7 @@ final class RecordingCoordinator {
 
             await deliver(asHeard.text, problem: "Delivered as heard. The rewrite failed.",
                           pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0)
-            finishHistory(entry, text: asHeard.text, rawText: nil, promptName: nil)
+            finishHistory(entry, text: asHeard.text, rawText: transcript, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showAIProcessingFailedIfEnabled(
                 characterCount: asHeard.text.count,
@@ -693,7 +693,7 @@ final class RecordingCoordinator {
         let delivered = rewritten ?? asHeard
         await deliver(delivered.text, problem: problem, pressesReturn: pressesReturn, keepsText: delivered.expanded > 0)
         let promptName = rewritten != nil ? aiProcessor.promptConfiguration.prompt(withId: promptId)?.name : nil
-        finishHistory(entry, text: delivered.text, rawText: rewritten != nil ? asHeard.text : nil, promptName: promptName)
+        finishHistory(entry, text: delivered.text, rawText: transcript, promptName: promptName)
         AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
         NotificationService.shared.showTranscriptionCompleteIfEnabled(
             characterCount: delivered.text.count,
@@ -734,6 +734,11 @@ final class RecordingCoordinator {
     /// The prompt is named only when its output is what landed. A raw transcript
     /// delivered after the AI pass failed used to carry the prompt's name, and the
     /// default prompt's output carried none.
+    ///
+    /// - Parameter rawText: The words heard: the transcript before the AI pass and
+    ///   before snippets are expanded, without a closing "press enter". Kept only where
+    ///   it differs from the text. The speaking speed counts these words, so a snippet's
+    ///   saved text used to count as words spoken.
     private func finishHistory(_ entry: Dictation?, text: String, rawText: String?, promptName: String?) {
         guard let entry, let modelContext, !entry.isDeleted else { return }
         entry.text = text
