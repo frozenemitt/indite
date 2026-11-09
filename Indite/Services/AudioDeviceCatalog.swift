@@ -198,8 +198,7 @@ enum AudioDeviceCatalog {
     /// same function and context in both calls let the HAL match the removal.
     static func changes() -> AsyncStream<Void> {
         AsyncStream { continuation in
-            let sink = ChangeSink(continuation)
-            let context = Unmanaged.passUnretained(sink).toOpaque()
+            let token = ChangeSink.register(continuation)
             let system = AudioObjectID(kAudioObjectSystemObject)
             let selectors = [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice]
 
@@ -209,10 +208,9 @@ enum AudioDeviceCatalog {
                     mScope: kAudioObjectPropertyScopeGlobal,
                     mElement: kAudioObjectPropertyElementMain
                 )
-                AudioObjectAddPropertyListener(system, &address, ChangeSink.proc, context)
+                AudioObjectAddPropertyListener(system, &address, ChangeSink.proc, ChangeSink.context(token))
             }
 
-            // Capturing `sink` here keeps it alive until its listeners are gone.
             continuation.onTermination = { _ in
                 for selector in selectors {
                     var address = AudioObjectPropertyAddress(
@@ -220,27 +218,50 @@ enum AudioDeviceCatalog {
                         mScope: kAudioObjectPropertyScopeGlobal,
                         mElement: kAudioObjectPropertyElementMain
                     )
-                    AudioObjectRemovePropertyListener(
-                        system, &address, ChangeSink.proc, Unmanaged.passUnretained(sink).toOpaque()
-                    )
+                    AudioObjectRemovePropertyListener(system, &address, ChangeSink.proc, ChangeSink.context(token))
                 }
+                ChangeSink.unregister(token)
             }
         }
     }
 
-    /// Carries a stream's continuation to the listener function through its context pointer.
+    /// Carries each stream's continuation to the listener function, found by a number
+    /// in the context pointer rather than by a pointer to an object.
     ///
-    /// The HAL calls `proc` on its own notification thread. `yield` is thread-safe, and
-    /// the stream's consumer resumes on its own actor.
-    private final class ChangeSink: Sendable {
-        let continuation: AsyncStream<Void>.Continuation
+    /// Removing a listener does not wait for a notification already on its way. The HAL
+    /// calls `proc` on its own notification thread, and a call that started before
+    /// AudioObjectRemovePropertyListener returned can arrive after it. A context that
+    /// pointed at an object, freed with its stream, was then read after it was freed.
+    /// A number that is no longer registered finds nothing, and the late call does
+    /// nothing. `yield` is thread-safe, and the stream's consumer resumes on its own
+    /// actor.
+    private enum ChangeSink {
+        private static let streams = OSAllocatedUnfairLock(
+            initialState: (next: UInt(1), continuations: [UInt: AsyncStream<Void>.Continuation]())
+        )
 
-        init(_ continuation: AsyncStream<Void>.Continuation) {
-            self.continuation = continuation
+        /// A number for the stream, never zero, so it makes a valid context pointer.
+        static func register(_ continuation: AsyncStream<Void>.Continuation) -> UInt {
+            streams.withLock { state in
+                let token = state.next
+                state.next += 1
+                state.continuations[token] = continuation
+                return token
+            }
+        }
+
+        /// Called once the stream's listeners are removed.
+        static func unregister(_ token: UInt) {
+            _ = streams.withLock { $0.continuations.removeValue(forKey: token) }
+        }
+
+        static func context(_ token: UInt) -> UnsafeMutableRawPointer? {
+            UnsafeMutableRawPointer(bitPattern: token)
         }
 
         static let proc: AudioObjectPropertyListenerProc = { _, _, _, context in
-            Unmanaged<ChangeSink>.fromOpaque(context!).takeUnretainedValue().continuation.yield()
+            let token = UInt(bitPattern: context)
+            streams.withLock { $0.continuations[token] }?.yield()
             return noErr
         }
     }
@@ -316,8 +337,7 @@ enum AudioDeviceCatalog {
     /// is asked again then to name the cause.
     static func hearingChanges(of deviceID: AudioDeviceID) -> AsyncStream<Void> {
         AsyncStream { continuation in
-            let sink = ChangeSink(continuation)
-            let context = Unmanaged.passUnretained(sink).toOpaque()
+            let token = ChangeSink.register(continuation)
 
             var found: [AudioObjectPropertyAddress] = []
             for element in 0...AudioObjectPropertyElement(inputChannelCount(deviceID)) {
@@ -332,16 +352,14 @@ enum AudioDeviceCatalog {
             }
             let addresses = found
             for var address in addresses {
-                AudioObjectAddPropertyListener(deviceID, &address, ChangeSink.proc, context)
+                AudioObjectAddPropertyListener(deviceID, &address, ChangeSink.proc, ChangeSink.context(token))
             }
 
-            // Capturing `sink` here keeps it alive until its listeners are gone.
             continuation.onTermination = { _ in
                 for var address in addresses {
-                    AudioObjectRemovePropertyListener(
-                        deviceID, &address, ChangeSink.proc, Unmanaged.passUnretained(sink).toOpaque()
-                    )
+                    AudioObjectRemovePropertyListener(deviceID, &address, ChangeSink.proc, ChangeSink.context(token))
                 }
+                ChangeSink.unregister(token)
             }
         }
     }
