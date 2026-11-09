@@ -402,6 +402,8 @@ final class RecordingCoordinator {
         }
 
         Log.dictation.notice("Recording started")
+        // The last dictation's field is judged before this one's words can land in it.
+        CorrectionWatcher.shared.stopWatching()
 
         // Accessibility work on the target app, after the sound and the panel and
         // outside the start the release waits for. Each call waits on the target app,

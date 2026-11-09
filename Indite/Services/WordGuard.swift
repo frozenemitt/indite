@@ -284,7 +284,7 @@ enum WordGuard {
     }
 
     /// Insertions, deletions and substitutions that turn `a` into `b`.
-    private static func editDistance(_ a: String, _ b: String) -> Int {
+    static func editDistance(_ a: String, _ b: String) -> Int {
         let a = Array(a), b = Array(b)
         guard !a.isEmpty else { return b.count }
         guard !b.isEmpty else { return a.count }

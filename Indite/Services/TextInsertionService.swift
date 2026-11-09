@@ -49,6 +49,12 @@ enum TextInsertionService {
         /// The field it went into, read again afterwards for corrections the user
         /// makes by hand.
         let field: AXUIElement
+        /// The words as pasted, fitted to the cursor.
+        let pasted: String
+        /// The field's text before and after the cursor when the words were pasted,
+        /// which marks where they are later. Nil when the field did not report its text
+        /// and cursor.
+        let around: (before: String, after: String)?
     }
 
     private(set) static var lastInsertion: LastInsertion?
@@ -371,7 +377,9 @@ enum TextInsertionService {
                 appName: appName,
                 processIdentifier: app.processIdentifier,
                 at: Date(),
-                field: field
+                field: field,
+                pasted: pasted,
+                around: around
             )
         }
 
