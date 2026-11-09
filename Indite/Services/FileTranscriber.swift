@@ -96,6 +96,29 @@ enum FileTranscriber {
             throw error
         }
 
+        // Bounded, as the live engine bounds each wait in its stop: a recognizer that
+        // never finished left Transcribe Again unavailable until Indite was relaunched. A
+        // recording is read about 30 times faster than it was spoken. A reading that
+        // takes longer than the recording lasts, or than 30 seconds for a short one, has
+        // stalled, and is given up: its recognizer and spotter are stopped.
+        let limit = max(30, (Double(audioFile.length) / audioFile.fileFormat.sampleRate).rounded(.up))
+        let reading = Task { try await read(audioFile, spotterFile: spotterFile, terms: terms) }
+        do {
+            // A caller that gives up stops the reading too, as the deadline does.
+            return try await withTaskCancellationHandler {
+                try await withDeadline(seconds: limit) { try await reading.value }
+            } onCancel: {
+                reading.cancel()
+            }
+        } catch is DeadlineExceeded {
+            reading.cancel()
+            Self.log.error("Gave up reading a dictation's recording again after \(Int(limit), privacy: .public) s")
+            throw TranscribeAgainError.tookTooLong(seconds: Int(limit))
+        }
+    }
+
+    /// The reading behind `transcribeDictation`, which stops when its task is cancelled.
+    private static func read(_ audioFile: AVAudioFile, spotterFile: AVAudioFile?, terms: [String]) async throws -> String {
         // Asked for as the live engine asks: second guesses and confidence only when
         // there is a list for them to serve.
         let transcriber = SpeechTranscriber(
@@ -107,6 +130,7 @@ enum FileTranscriber {
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await request.downloadAndInstall()
         }
+        try Task.checkCancellation()
 
         // The spotter hears the recording while the recognizer reads it. Its session
         // stops with its task: the whole recording is handed over in a moment, and its
@@ -133,23 +157,31 @@ enum FileTranscriber {
                 finishAfterFile: true
             )
 
-            for try await result in transcriber.results where result.isFinal {
-                let heard = String(result.text.characters)
-                let chosen = Vocabulary.choose(
-                    heard,
-                    alternatives: result.alternatives.map { String($0.characters) },
-                    terms: terms,
-                    keeping: terms
-                )
-                text += chosen
-                segments.append(Vocabulary.Segment(
-                    text: chosen,
-                    tookSecondGuess: chosen != heard,
-                    runs: TranscriptionEngine.vocabularyRuns(from: result.text)
-                ))
-            }
+            try await withTaskCancellationHandler {
+                for try await result in transcriber.results where result.isFinal {
+                    let heard = String(result.text.characters)
+                    let chosen = Vocabulary.choose(
+                        heard,
+                        alternatives: result.alternatives.map { String($0.characters) },
+                        terms: terms,
+                        keeping: terms
+                    )
+                    text += chosen
+                    segments.append(Vocabulary.Segment(
+                        text: chosen,
+                        tookSecondGuess: chosen != heard,
+                        runs: TranscriptionEngine.vocabularyRuns(from: result.text)
+                    ))
+                }
 
-            try await analyzer.finalizeAndFinishThroughEndOfInput()
+                try await analyzer.finalizeAndFinishThroughEndOfInput()
+            } onCancel: {
+                // Ending the analysis ends its results, which the loop above could
+                // otherwise wait on for ever, as the live engine's once did.
+                Task { await analyzer.cancelAndFinishNow() }
+            }
+            // A reading given up ends its loop early, with only some of the words.
+            try Task.checkCancellation()
         } catch {
             // The spotter would otherwise read on through a recording nobody waits for.
             spotting?.cancel()
@@ -157,7 +189,12 @@ enum FileTranscriber {
         }
 
         if let spotting {
-            let spotted = Vocabulary.applySpotted(try await spotting.value, to: segments, listed: terms)
+            let detections = try await withTaskCancellationHandler {
+                try await spotting.value
+            } onCancel: {
+                spotting.cancel()
+            }
+            let spotted = Vocabulary.applySpotted(detections, to: segments, listed: terms)
             text = spotted.text
             Self.log.notice("Spotter put in \(spotted.replaced, privacy: .public) listed words on a second reading")
         }
@@ -181,11 +218,15 @@ enum FileTranscriber {
 enum TranscribeAgainError: LocalizedError {
     /// The recording was deleted before it could be opened.
     case recordingGone
+    /// The reading was given up after this many seconds.
+    case tookTooLong(seconds: Int)
 
     var errorDescription: String? {
         switch self {
         case .recordingGone:
             "The recording of this dictation is no longer on this Mac."
+        case .tookTooLong(let seconds):
+            "Reading the recording took longer than \(seconds) seconds, so Indite stopped."
         }
     }
 }
