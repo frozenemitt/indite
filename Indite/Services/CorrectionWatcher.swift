@@ -117,7 +117,8 @@ final class CorrectionWatcher {
     ///
     /// Only one word for one counts, with the words on either side unchanged. Left out
     /// are common words, words in `known` as `Vocabulary.key` writes them, and words
-    /// that end in a contraction such as 's or 'll.
+    /// that end in a contraction such as 's or 'll. A word keeps only its letters,
+    /// apostrophes and hyphens.
     nonisolated static func candidates(pasted: String, copy: String, excluding known: Set<String>) -> [Candidate] {
         let said = WordGuard.words(in: pasted)
         let now = WordGuard.words(in: copy)
@@ -128,8 +129,13 @@ final class CorrectionWatcher {
             guard case .changed(let saidIndexes, let nowIndexes) = step,
                   saidIndexes.count == 1, nowIndexes.count == 1 else { continue }
             let typed = now[nowIndexes[0]]
-            let word = typed.text.trimmingCharacters(in: .punctuationCharacters)
-            guard !WordGuard.commonWords.contains(typed.key),
+            // An emoji or a mark typed onto the name stays off the Words list, which would
+            // otherwise type it into every later dictation of the name: "Priya🙏" is Priya.
+            // Apostrophes and hyphens stay inside a name such as O'Brien or Jean-Luc.
+            let word = String(typed.text.filter { $0.isLetter || "'’-".contains($0) })
+                .trimmingCharacters(in: CharacterSet(charactersIn: "'’-"))
+            guard !word.isEmpty,
+                  !WordGuard.commonWords.contains(typed.key),
                   !["'s", "'ll", "'re", "'ve", "'d", "'m", "'t"].contains(where: typed.key.hasSuffix),
                   !known.contains(Vocabulary.key(word)),
                   !found.contains(where: { Vocabulary.key($0.word) == Vocabulary.key(word) }) else { continue }
