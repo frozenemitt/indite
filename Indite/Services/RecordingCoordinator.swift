@@ -1474,9 +1474,11 @@ final class RecordingCoordinator {
     /// The error sound, once, as a warning appears.
     ///
     /// It follows the start sound when that is still playing, as the lock sound does.
-    /// The Mac's sound comes back first: a dictation that muted the Mac would swallow
-    /// the alarm, and one whose microphone hears nothing has nothing to keep quiet for.
+    /// The Mac's sound comes back first, when there is an alarm to hear: a dictation
+    /// that muted the Mac would swallow it. With sounds off, or the error sound set to
+    /// None, nothing plays, and a mute already made stays.
     private func soundAlarm() {
+        guard AudioFeedbackService.shared.willPlay(.error, settings: settings) else { return }
         unmute()
         let wait = startSoundEnds.map { $0 - .now } ?? .zero
         alarmTask?.cancel()

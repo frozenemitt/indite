@@ -71,6 +71,17 @@ final class AudioFeedbackService {
         #endif
     }
 
+    /// Whether `playIfEnabled` would play anything for this sound: sounds are on, and the
+    /// one chosen for it is not None and can be found.
+    func willPlay(_ sound: Sound, settings: AppSettings) -> Bool {
+        guard settings.playFeedbackSounds else { return false }
+        #if os(macOS)
+        return SoundCatalog.shared.makeNSSound(for: settings.soundId(for: sound)) != nil
+        #else
+        return true
+        #endif
+    }
+
     // MARK: - Processing Loop (macOS)
 
     #if os(macOS)
