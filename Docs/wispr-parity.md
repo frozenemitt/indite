@@ -85,7 +85,7 @@ the summary; action items; and a few templates run on a finished meeting.
 | 1a | Sentence breaks the recognizer makes at pauses | Jonathan, 2026-11-08 | medium, uphill | Committed: mends 27 of 80 cuts, joins no real end |
 | 2 | A layout level that keeps the words | 1 | medium, uphill | Not started |
 | 3 | Secure input warning | 4 | small, uphill | Not started |
-| 4 | Microphone order | 6 | small, uphill | Not started |
+| 4 | Microphone order | 6 | small, uphill | Installed 1.2.590 (built-in first) |
 | 5 | Your prompts on selected text | 3 | medium | Not started |
 | 6 | Spoken commands on a selection | 14 | large, uphill | Shaped after 5 |
 | 7 | A cue when the recording locks | 9 | small | Merged; review fixes committed |
@@ -181,6 +181,14 @@ Punctuation is") are mended by no version.
   sharing, learning a style from Gmail, and sending through Gmail, Slack or Notion.
 
 ## Awaiting Jonathan
+
+**Installed 2026-11-09 as 1.2.590**, after a review of each feature and its fixes:
+recordings with a retention the user sets and Transcribe Again; the dead-microphone
+warning; word learning with Undo; the ranked microphone list; and a word-check rule that
+refuses a word's negation ("inelegant" had become "elegant"). The store is at version 4.
+The grammar test kit (outside the repository, in `~/Development/inscribe-bench/grammar`)
+scores the installed AI step at 53 of 96 dictations exactly right, against 44 for the
+week's version and 49 with no AI step.
 
 **Decided by Jonathan later on 2026-11-08:**
 
