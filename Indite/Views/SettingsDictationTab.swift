@@ -28,6 +28,15 @@ struct DictationSettingsView: View {
     @State private var capturing: CaptureTarget?
     @State private var captureError: String?
 
+    /// A dictation that still has its recording, if any does, for the recording settings.
+    @Query(DictationSettingsView.oneRecorded) private var recorded: [Dictation]
+
+    private static var oneRecorded: FetchDescriptor<Dictation> {
+        var descriptor = FetchDescriptor<Dictation>(predicate: #Predicate { $0.recordingFileName != nil })
+        descriptor.fetchLimit = 1
+        return descriptor
+    }
+
     var body: some View {
         @Bindable var settings = settings
 
@@ -189,7 +198,11 @@ struct DictationSettingsView: View {
                         DictationHistory.prune(to: newLimit, in: modelContext)
                         modelContext.saveOrLog()
                     }
+                }
 
+                // With the history off, recordings kept before still go after their days,
+                // so their settings show for as long as any is left.
+                if settings.keepDictationHistory || !recorded.isEmpty {
                     // Any number of days, typed, as Jonathan asked on 2026-11-08, rather
                     // than a menu of lengths. Recordings past it go at the next launch or
                     // dictation, not as the field changes; see

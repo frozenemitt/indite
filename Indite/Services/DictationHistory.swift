@@ -34,6 +34,10 @@ enum DictationHistory {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard settings.keepDictationHistory, !trimmed.isEmpty else {
             DictationAudioStore.delete(fileNamed: recordingFileName)
+            // Recordings kept before the history was switched off still go when their
+            // days are up, not only at the next launch.
+            expireRecordings(settings: settings, in: context)
+            context.saveOrLog()
             return nil
         }
 
@@ -98,9 +102,9 @@ enum DictationHistory {
     /// Delete the recordings older than the days chosen in Settings. Their dictations
     /// keep their text. Nothing is deleted while "Keep forever" is on.
     ///
-    /// Run at launch and after each dictation. Not when the number of days changes:
-    /// typing 30 over 14 passes through 3 on the way, and the recordings deleted at 3
-    /// would be gone for good.
+    /// Run at launch and after each dictation, whether the history keeps it or not. Not
+    /// when the number of days changes: typing 30 over 14 passes through 3 on the way,
+    /// and the recordings deleted at 3 would be gone for good.
     static func expireRecordings(settings: AppSettings, in context: ModelContext, now: Date = .now) {
         guard !settings.keepDictationRecordingsForever else { return }
         let recordingDays = max(1, settings.dictationRecordingDays)
