@@ -193,7 +193,8 @@ final class RecordingCoordinator {
     /// Warms the AI session on the words confirmed so far, while recording.
     @ObservationIgnored private var prefixWarmer: Task<Void, Never>?
 
-    /// The history entry for the dictation being delivered, written by the stop task.
+    /// The history entry for the dictation being delivered, written by the stop task, or
+    /// the one kept for its recording alone when recognition failed with no words.
     ///
     /// Kept inside the stop rather than after it, so a quit that waits on the stop
     /// finds the words already in the history.
@@ -614,16 +615,16 @@ final class RecordingCoordinator {
             // Closed once the engine has handed its last buffer over.
             let recordingFileName = recording?.finish()
             let processed = TextProcessor.process(raw, replacements: replacements)
+            // Kept before anything else can fail or the app can quit: from here on the
+            // words survive a hung AI pass, a paste into the wrong window, or a quit
+            // mid-delivery, which waits on this task. The entry is brought up to date
+            // once the text has landed. A dictation with no words is kept only when
+            // recognition failed, for its recording.
+            self.deliveringEntry = self.recordHistory(processed, spokenDuration: spokenDuration,
+                                                      recordingFileName: recordingFileName,
+                                                      recordingSeconds: recording?.seconds ?? 0)
             if processed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                DictationAudioStore.delete(fileNamed: recordingFileName)
                 self.isDelivering = false
-            } else {
-                // Kept before anything else can fail or the app can quit: from here on
-                // the words survive a hung AI pass, a paste into the wrong window, or a
-                // quit mid-delivery, which waits on this task. The entry is brought up
-                // to date once the text has landed.
-                self.deliveringEntry = self.recordHistory(processed, spokenDuration: spokenDuration,
-                                                          recordingFileName: recordingFileName)
             }
             return processed
         }
@@ -632,19 +633,23 @@ final class RecordingCoordinator {
         stopTask = nil
 
         guard !heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Kept with no words only when recognition failed, for its recording.
+            let keptForRecording = deliveringEntry != nil
+            deliveringEntry = nil
             // A session loaded for this dictation's prompt would otherwise be picked up
             // by the next one, with the instructions it held when it was loaded.
             aiProcessor.discardPrewarm()
 
             // A recognizer that failed and a room that was quiet used to look exactly
-            // the same from outside: both ended in silence with no text. Say which.
+            // the same from outside: both ended in silence with no text. Say which, and
+            // where a recording kept can be read again.
             if let engineError = engine.error {
+                let detail = keptForRecording
+                    ? "\(engineError.localizedDescription) Its recording is in Recent Dictations, where Transcribe Again can read it."
+                    : engineError.localizedDescription
                 AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
-                NotificationService.shared.showErrorIfEnabled(
-                    engineError.localizedDescription,
-                    settings: settings
-                )
-                report(.problem(engineError.localizedDescription))
+                NotificationService.shared.showErrorIfEnabled(detail, settings: settings)
+                report(.problem(detail))
                 Log.dictation.error("Recognition failed: \(engineError, privacy: .public)")
             } else if !engine.receivedAudio, (spokenDuration ?? 0) < 0.5 {
                 // Let go before the microphone's first buffer arrived, so nothing was
@@ -849,11 +854,24 @@ final class RecordingCoordinator {
     }
 
     /// Keep the dictation the moment its words exist, with its recording.
+    ///
+    /// When recognition failed before it heard a word, the recording is the one copy of
+    /// what was said. The dictation is then kept with no text, for Transcribe Again to
+    /// recover, if the recording lasts a second or more.
     private func recordHistory(_ transcript: String, spokenDuration: TimeInterval?,
-                               recordingFileName: String?) -> Dictation? {
+                               recordingFileName: String?, recordingSeconds: TimeInterval) -> Dictation? {
         guard let modelContext else {
             DictationAudioStore.delete(fileNamed: recordingFileName)
             return nil
+        }
+        if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, engine.error != nil {
+            return DictationHistory.recordUnrecognized(
+                recordingFileName: recordingFileName,
+                recordingSeconds: recordingSeconds,
+                spokenDuration: spokenDuration,
+                settings: settings,
+                in: modelContext
+            )
         }
         return DictationHistory.record(
             text: transcript,
@@ -963,7 +981,7 @@ final class RecordingCoordinator {
         let raw = await engine.stopRecording(owner: .dictation)
         let recordingFileName = recording?.finish()
         if recordHistory(TextProcessor.process(raw, replacements: settings.wordReplacements), spokenDuration: spokenDuration,
-                         recordingFileName: recordingFileName) != nil {
+                         recordingFileName: recordingFileName, recordingSeconds: recording?.seconds ?? 0) != nil {
             Log.dictation.notice("Kept the dictation in the history on quit")
         } else {
             Log.dictation.notice("Stopped the dictation on quit; it had nothing to keep")
@@ -1091,7 +1109,11 @@ final class RecordingCoordinator {
 
     /// Type the newest dictation in the history where the cursor is now.
     func typeLastDictation() async {
-        var descriptor = FetchDescriptor<Dictation>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        // Not one kept with no words after its recognition failed: there is nothing to type.
+        var descriptor = FetchDescriptor<Dictation>(
+            predicate: #Predicate { $0.text != "" },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
         descriptor.fetchLimit = 1
         guard let last = (try? modelContext?.fetch(descriptor))?.first else {
             AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)

@@ -136,7 +136,8 @@ struct DictationHistoryView: View {
                     Label(insertTitle, systemImage: "text.cursor")
                         .labelStyle(.titleAndIcon)
                 }
-                .disabled(selected == nil)
+                // A dictation whose recognition failed has no words to type or copy.
+                .disabled(selected.map(\.recognitionFailed) ?? true)
                 .help("Type the selected dictation where the cursor is in the app you came from")
 
                 Button {
@@ -144,7 +145,7 @@ struct DictationHistoryView: View {
                 } label: {
                     Label("Copy", systemImage: copiedCleaned ? "checkmark" : "doc.on.doc")
                 }
-                .disabled(selected == nil)
+                .disabled(selected.map(\.recognitionFailed) ?? true)
                 .help("Copy the selected dictation")
 
                 Button(role: .destructive) {
@@ -251,8 +252,16 @@ struct DictationHistoryView: View {
 
                     // Not selectable as text: a click on the words selects the row,
                     // and Copy is a command.
-                    Text(dictation.text)
-                        .lineLimit(isExpanded ? nil : 4)
+                    if dictation.recognitionFailed {
+                        // Kept for its recording alone, which may still hold the words.
+                        Text(dictation.hasRecording
+                             ? "Recognition failed, and no words were heard. Transcribe Again can read the recording."
+                             : "Recognition failed, and no words were heard.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(dictation.text)
+                            .lineLimit(isExpanded ? nil : 4)
+                    }
 
                     // A long dictation stopped at four lines with no way to read on.
                     // In gray, not the link blue: blue all but vanished on the azure
@@ -280,8 +289,10 @@ struct DictationHistoryView: View {
                     }
                 }
                 .contextMenu {
-                    Button(insertTitle) { insert(dictation) }
-                    Button("Copy") { copy(dictation.text, as: .cleaned(dictation.persistentModelID)) }
+                    if !dictation.recognitionFailed {
+                        Button(insertTitle) { insert(dictation) }
+                        Button("Copy") { copy(dictation.text, as: .cleaned(dictation.persistentModelID)) }
+                    }
                     if dictation.wasEditedByAI, let raw = dictation.rawText {
                         Button("Copy Original") { copy(raw, as: .original(dictation.persistentModelID)) }
                     }

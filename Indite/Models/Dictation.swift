@@ -10,7 +10,8 @@ import SwiftData
 @Model
 final class Dictation {
 
-    /// The text as delivered, after replacements and any AI pass.
+    /// The text as delivered, after replacements and any AI pass. Empty for a dictation
+    /// whose recognition failed; see `recognitionFailed`.
     var text: String
 
     /// The words as heard, when they differ from the text: the transcript before AI
@@ -72,5 +73,12 @@ final class Dictation {
     /// Whether the recording is still on disk, so the dictation can be transcribed again.
     var hasRecording: Bool {
         DictationAudioStore.fileExists(named: recordingFileName)
+    }
+
+    /// Whether recognition failed before any words were heard. Such a dictation is kept
+    /// with no text, only for its recording, the one copy Transcribe Again can recover
+    /// the words from. No other dictation is kept without words.
+    var recognitionFailed: Bool {
+        text.isEmpty
     }
 }

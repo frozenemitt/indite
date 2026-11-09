@@ -33,11 +33,7 @@ enum DictationHistory {
     ) -> Dictation? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard settings.keepDictationHistory, !trimmed.isEmpty else {
-            DictationAudioStore.delete(fileNamed: recordingFileName)
-            // Recordings kept before the history was switched off still go when their
-            // days are up, not only at the next launch.
-            expireRecordings(settings: settings, in: context)
-            context.saveOrLog()
+            keepNothing(recordingFileName: recordingFileName, settings: settings, in: context)
             return nil
         }
 
@@ -49,13 +45,51 @@ enum DictationHistory {
             spokenDuration: spokenDuration,
             recordingFileName: recordingFileName
         )
+        keep(entry, settings: settings, in: context)
+        return entry
+    }
+
+    /// Keep a dictation whose recognition failed before it heard any words, for its
+    /// recording alone: the one copy Transcribe Again can recover the words from. The
+    /// entry has no text; see `Dictation.recognitionFailed`.
+    ///
+    /// A recording under a second is deleted instead, as any recording without words
+    /// is: too short to hold words worth recovering.
+    @discardableResult
+    static func recordUnrecognized(
+        recordingFileName: String?,
+        recordingSeconds: TimeInterval,
+        spokenDuration: TimeInterval?,
+        settings: AppSettings,
+        in context: ModelContext
+    ) -> Dictation? {
+        guard settings.keepDictationHistory, recordingSeconds >= 1, let recordingFileName else {
+            keepNothing(recordingFileName: recordingFileName, settings: settings, in: context)
+            return nil
+        }
+        let entry = Dictation(text: "", spokenDuration: spokenDuration, recordingFileName: recordingFileName)
+        keep(entry, settings: settings, in: context)
+        log.notice("Kept a dictation whose recognition failed, for its recording of \(recordingSeconds, format: .fixed(precision: 1), privacy: .public) s")
+        return entry
+    }
+
+    private static func keep(_ entry: Dictation, settings: AppSettings, in context: ModelContext) {
         context.insert(entry)
         noteDay(of: entry.createdAt, in: context)
 
         prune(to: settings.dictationHistoryLimit, in: context)
         expireRecordings(settings: settings, in: context)
         context.saveOrLog()
-        return entry
+    }
+
+    /// For a dictation that is not kept: its recording goes, since a recording is kept
+    /// only with its entry.
+    private static func keepNothing(recordingFileName: String?, settings: AppSettings, in context: ModelContext) {
+        DictationAudioStore.delete(fileNamed: recordingFileName)
+        // Recordings kept before the history was switched off still go when their days
+        // are up, not only at the next launch.
+        expireRecordings(settings: settings, in: context)
+        context.saveOrLog()
     }
 
     /// Drop the oldest entries beyond `limit`, with their recordings.
@@ -100,7 +134,8 @@ enum DictationHistory {
     // MARK: - Recordings
 
     /// Delete the recordings older than the days chosen in Settings. Their dictations
-    /// keep their text. Nothing is deleted while "Keep forever" is on.
+    /// keep their text. A dictation whose recognition failed, kept only for its
+    /// recording, goes with it. Nothing is deleted while "Keep forever" is on.
     ///
     /// Run at launch and after each dictation, whether the history keeps it or not. Not
     /// when the number of days changes: typing 30 over 14 passes through 3 on the way,
@@ -117,7 +152,11 @@ enum DictationHistory {
             guard !entries.isEmpty else { return }
             for entry in entries {
                 DictationAudioStore.delete(fileNamed: entry.recordingFileName)
-                entry.recordingFileName = nil
+                if entry.recognitionFailed {
+                    context.delete(entry)
+                } else {
+                    entry.recordingFileName = nil
+                }
             }
             log.notice("Deleted \(entries.count, privacy: .public) recordings older than \(recordingDays, privacy: .public) days")
         } catch {

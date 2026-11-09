@@ -111,6 +111,7 @@ final class DictationAudioWriter: @unchecked Sendable {
     private let lock = NSLock()
     private var file: AVAudioFile?
     private var framesWritten: AVAudioFramePosition = 0
+    private var sampleRate: Double = 0
     /// Set once the file has been closed or abandoned, or could not be opened. A buffer
     /// arriving after that is dropped rather than opening the file again.
     private var isDone = false
@@ -139,6 +140,7 @@ final class DictationAudioWriter: @unchecked Sendable {
                     commonFormat: format.commonFormat,
                     interleaved: format.isInterleaved
                 )
+                sampleRate = format.sampleRate
             } catch {
                 Self.log.error("Could not open the dictation's recording: \(error, privacy: .public)")
                 isDone = true
@@ -153,6 +155,13 @@ final class DictationAudioWriter: @unchecked Sendable {
             // One lost buffer costs the recording a moment; the dictation is unaffected.
             Self.log.error("Dropped a buffer from the dictation's recording: \(error, privacy: .public)")
         }
+    }
+
+    /// How long the audio written so far lasts, in seconds.
+    var seconds: TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        return sampleRate > 0 ? Double(framesWritten) / sampleRate : 0
     }
 
     /// Close the file, and return its name, or nil when nothing was written.

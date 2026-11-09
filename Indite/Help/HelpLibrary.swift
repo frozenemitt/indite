@@ -355,7 +355,9 @@ enum HelpLibrary {
             Indite hears the recording again with your Words and the rewriting you have \
             chosen now. The new words take the place of the old ones, and nothing is typed \
             until you insert or copy them. For a few seconds afterwards, Undo at the bottom \
-            of the window puts the old words back.
+            of the window puts the old words back. When recognition fails before any \
+            words are heard, the dictation is still listed with its recording, so \
+            Transcribe Again can recover them.
 
             To keep more or fewer, open Indite's Settings, choose Dictation, and change \
             "Keep the last" under "Recent Dictations". "Keep recordings for" sets how many \
