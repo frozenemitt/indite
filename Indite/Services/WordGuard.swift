@@ -133,6 +133,11 @@ enum WordGuard {
             return a == b
         }
 
+        // A word and its negation are opposites, not mishearings. On 2026-11-08 the
+        // model turned Jonathan's "an inelegant solution" into "an elegant solution",
+        // and both rules below let it through.
+        if flipsNegation(said, into: rewritten) { return false }
+
         // "pending" heard for "impending", "crack" for "cracking". Not "in" for
         // "within": the shorter word must be most of the longer one.
         let (shorter, longer) = said.count <= rewritten.count ? (said, rewritten) : (rewritten, said)
@@ -147,6 +152,23 @@ enum WordGuard {
         // One sound apart, starting on the same sound: "there" and "they", "fought"
         // and "font". Not "Monday" and "Sunday".
         return !isName && a.first == b.first && editDistance(a, b) == 1
+    }
+
+    /// Whether `rewritten` is `said` with a negation added or taken away.
+    ///
+    /// Taking away a negating prefix is never a fix: the recognizer does not invent
+    /// the syllable "in" that turned "elegant" into "inelegant". Adding "in", "im", "il"
+    /// or "ir" can be one, because the recognizer drops an unstressed opening syllable,
+    /// as it did when "impending" came out as "pending". "un", "non" and "dis" are
+    /// stressed, so adding one is a change of meaning. "n't" flips a word either way:
+    /// "could" and "couldn't".
+    static func flipsNegation(_ said: String, into rewritten: String) -> Bool {
+        let dropped = ["un", "in", "im", "il", "ir", "non", "dis"]
+        if dropped.contains(where: { said == $0 + rewritten }) { return true }
+        if ["un", "non", "dis"].contains(where: { rewritten == $0 + said }) { return true }
+        let negations: Set<[String]> = [["can", "can't"], ["can", "cannot"], ["will", "won't"], ["shall", "shan't"]]
+        if negations.contains([said, rewritten]) || negations.contains([rewritten, said]) { return true }
+        return said == rewritten + "n't" || rewritten == said + "n't"
     }
 
     /// Written with a capital and not a word that takes one only to start a sentence.
