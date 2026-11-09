@@ -100,9 +100,10 @@ final class AppSettings {
 
     // MARK: - Audio Input
 
-    /// CoreAudio UID of the microphone, or "default" to follow the system setting.
-    var inputDeviceUID: String {
-        didSet { save("inputDeviceUID", inputDeviceUID) }
+    /// Every microphone Indite has seen, in the order the user ranks them. A recording
+    /// takes the first one that can hear; see `MicrophoneOrder`.
+    var microphoneOrder: [AudioInputDevice] {
+        didSet { MicrophoneOrder.save(microphoneOrder, in: .standard) }
     }
 
     /// Mute the Mac's sound while a dictation records.
@@ -380,7 +381,8 @@ final class AppSettings {
         self.vocabularyHints = UserDefaults.standard.stringArray(forKey: "vocabularyHints") ?? []
         self.snippets = (UserDefaults.standard.array(forKey: "snippets") as? [[String: String]] ?? [])
             .map { Snippet(cue: $0["cue"] ?? "", text: $0["text"] ?? "") }
-        self.inputDeviceUID = UserDefaults.standard.string(forKey: "inputDeviceUID") ?? "default"
+        // The single microphone choice becomes the ranked list the first time.
+        self.microphoneOrder = MicrophoneOrder.stored(in: .standard, connected: Self.connectedMicrophones())
         self.muteWhileDictating = UserDefaults.standard.object(forKey: "muteWhileDictating") as? Bool ?? false
         self.captureSystemAudioInMeetings = UserDefaults.standard.object(forKey: "captureSystemAudioInMeetings") as? Bool ?? false
         self.keepMeetingAudio = UserDefaults.standard.object(forKey: "keepMeetingAudio") as? Bool ?? true
@@ -433,6 +435,29 @@ final class AppSettings {
         return profile
     }
 
+    // MARK: - Microphones
+
+    /// The microphones connected now. None on iOS, which records from its own.
+    private static func connectedMicrophones() -> [AudioInputDevice] {
+        #if os(macOS)
+        AudioDeviceCatalog.inputDevices()
+        #else
+        []
+        #endif
+    }
+
+    /// Add every connected microphone the list lacks at the bottom, and bring the names
+    /// of the ones it has up to date.
+    func rememberMicrophones(_ connected: [AudioInputDevice]) {
+        let updated = MicrophoneOrder.remembering(connected, in: microphoneOrder)
+        if updated != microphoneOrder { microphoneOrder = updated }
+    }
+
+    /// Rank a microphone first, as choosing it from the menu does.
+    func rankFirst(_ microphone: AudioInputDevice) {
+        microphoneOrder = [microphone] + microphoneOrder.filter { $0.uid != microphone.uid }
+    }
+
     // MARK: - Persistence
 
     private func save(_ key: String, _ value: Any?) {
@@ -481,7 +506,7 @@ final class AppSettings {
         wordReplacements = [:]
         vocabularyHints = []
         snippets = []
-        inputDeviceUID = "default"
+        microphoneOrder = MicrophoneOrder.movedOver(from: nil, connected: Self.connectedMicrophones())
         muteWhileDictating = false
         captureSystemAudioInMeetings = false
         keepMeetingAudio = true

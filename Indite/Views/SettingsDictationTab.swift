@@ -23,8 +23,8 @@ struct DictationSettingsView: View {
 
     @Binding var tab: SettingsTab
 
-    @State private var devices: [AudioInputDevice] = []
-    @State private var systemDefaultName = ""
+    /// Which microphones are connected, kept current while the app runs.
+    private let inputs = AudioInputList.shared
     @State private var capturing: CaptureTarget?
     @State private var captureError: String?
 
@@ -97,24 +97,7 @@ struct DictationSettingsView: View {
             }
 
             Section("Microphone") {
-                Picker("Record from", selection: $settings.inputDeviceUID) {
-                    Text("System Default (\(systemDefaultName))")
-                        .tag(AudioInputDevice.systemDefaultUID)
-                    ForEach(devices) { device in
-                        Text(device.name).tag(device.uid)
-                    }
-                }
-
-                if settings.inputDeviceUID != AudioInputDevice.systemDefaultUID,
-                   !devices.contains(where: { $0.uid == settings.inputDeviceUID }) {
-                    Label {
-                        Text("That device is not connected, so recording uses the system default.")
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
-                    }
-                    .font(.caption)
-                }
+                MicrophoneOrderRows(order: $settings.microphoneOrder, connected: inputs.devices)
 
                 // A menu of lengths: the 30-second stepper this replaced took up to
                 // 119 clicks to cross its range. A length it saved that is not listed
@@ -222,18 +205,6 @@ struct DictationSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear {
-            devices = AudioDeviceCatalog.inputDevices()
-            systemDefaultName = AudioDeviceCatalog.systemDefaultName()
-        }
-        .task {
-            // Picks up a microphone plugged in, or a default switched, while this tab
-            // is open.
-            for await _ in AudioDeviceCatalog.changes() {
-                devices = AudioDeviceCatalog.inputDevices()
-                systemDefaultName = AudioDeviceCatalog.systemDefaultName()
-            }
-        }
         .onChange(of: capturing) { _, target in
             if let target { startCapturing(target) } else { hotkeyMonitor.endCapture() }
         }

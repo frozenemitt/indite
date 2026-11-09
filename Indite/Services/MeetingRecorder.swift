@@ -595,26 +595,26 @@ final class MeetingRecorder {
         lastError = lastError.map { "\($0)\n\(message)" } ?? message
     }
 
-    /// The device this meeting records from.
+    /// The device this meeting records from: the microphone the ranked list chooses as
+    /// the session starts.
     ///
     /// With system audio on, that is a private aggregate carrying the microphone and
-    /// system playback together. Falling back to the plain microphone on failure is
-    /// deliberate: half a meeting beats none, and the reason is surfaced rather than
-    /// swallowed.
+    /// system playback together. A resume keeps the aggregate already built, and the
+    /// microphone in it. Falling back to the plain microphone on failure is deliberate:
+    /// half a meeting beats none, and the reason is surfaced rather than swallowed.
     private func meetingInputDeviceUID() async -> String {
-        guard settings.captureSystemAudioInMeetings else {
-            systemAudioActive = false
-            return settings.inputDeviceUID
-        }
-
-        if systemAudio.isActive, let uid = systemAudio.aggregateUID {
+        if settings.captureSystemAudioInMeetings, systemAudio.isActive, let uid = systemAudio.aggregateUID {
             return uid
         }
 
+        let microphone = AudioDeviceCatalog.microphoneForRecording(settings.microphoneOrder)
+        guard settings.captureSystemAudioInMeetings else {
+            systemAudioActive = false
+            return microphone.uid
+        }
+
         do {
-            let micUID = settings.inputDeviceUID == AudioInputDevice.systemDefaultUID
-                ? nil
-                : settings.inputDeviceUID
+            let micUID = microphone.microphone?.uid
             // Off the main thread: creating the tap and the aggregate device waits on
             // the audio server, and on the main thread the whole app stalled for it.
             let capture = systemAudio
@@ -627,7 +627,7 @@ final class MeetingRecorder {
             systemAudioActive = false
             lastError = error.localizedDescription
             Log.meetings.error("System audio unavailable, microphone only: \(error, privacy: .public)")
-            return settings.inputDeviceUID
+            return microphone.uid
         }
     }
 

@@ -380,32 +380,32 @@ struct MenuBarView: View {
 
     // MARK: - Microphone
 
+    /// The microphone the next recording takes, and the connected ones in the ranked
+    /// order. Choosing one ranks it first.
+    ///
+    /// Asked again when something the menu watches changes, such as a microphone
+    /// plugged in or the order. A mute or the lid is not watched, so the title can lag
+    /// them until something else changes.
     private var microphoneMenu: some View {
-        Menu("Microphone: \(microphoneName)") {
+        let choice = AudioDeviceCatalog.microphone(for: settings.microphoneOrder)
+        let connected = MicrophoneOrder.remembering(inputs.devices, in: settings.microphoneOrder)
+            .filter { microphone in inputs.devices.contains { $0.uid == microphone.uid } }
+        return Menu("Microphone: \(choice.microphone?.name ?? inputs.systemDefaultName)") {
             Picker("Microphone", selection: Binding(
-                get: { settings.inputDeviceUID },
-                set: { settings.inputDeviceUID = $0 }
+                get: { choice.uid },
+                set: { uid in
+                    if let microphone = connected.first(where: { $0.uid == uid }) {
+                        settings.rankFirst(microphone)
+                    }
+                }
             )) {
-                Text("System Default (\(inputs.systemDefaultName))")
-                    .tag(AudioInputDevice.systemDefaultUID)
-                Divider()
-                ForEach(inputs.devices) { device in
-                    Text(device.name).tag(device.uid)
+                ForEach(connected) { microphone in
+                    Text(microphone.name).tag(microphone.uid)
                 }
             }
             .pickerStyle(.inline)
             .labelsHidden()
         }
-    }
-
-    /// The chosen microphone, or what recording falls back to when it is unplugged.
-    private var microphoneName: String {
-        let uid = settings.inputDeviceUID
-        if uid == AudioInputDevice.systemDefaultUID {
-            return inputs.systemDefaultName
-        }
-        return inputs.devices.first { $0.uid == uid }?.name
-            ?? "Not Connected, Using \(inputs.systemDefaultName)"
     }
 
     // MARK: - Windows

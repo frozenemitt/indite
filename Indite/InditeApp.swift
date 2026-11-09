@@ -350,6 +350,15 @@ struct InditeApp: App {
             // hour, the sound may since have been muted on purpose.
             OutputMute.restore(madeWithin: 3600)
 
+            // Every microphone that appears joins the ranked list at the bottom, so one
+            // that is unplugged keeps its place. Watched for as long as the app runs.
+            Task {
+                settings.rememberMicrophones(AudioDeviceCatalog.inputDevices())
+                for await _ in AudioDeviceCatalog.changes() {
+                    settings.rememberMicrophones(AudioDeviceCatalog.inputDevices())
+                }
+            }
+
             // Ask for notification permission at launch. Otherwise the first banner is
             // what creates the service, and it is posted before the request is answered,
             // so the system drops it.
