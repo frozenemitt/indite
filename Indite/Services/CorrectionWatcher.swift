@@ -9,7 +9,8 @@ import UserNotifications
 /// For a minute after each dictation, the field it went into is watched (`FieldWatch`).
 /// The field's text on either side of the dictation marks where its words are, and what
 /// lies between is the dictation as it stands. The latest version that corrects what
-/// was pasted, rather than rewriting it, is kept and judged once, when the watch ends.
+/// was pasted, rather than rewriting it, and stayed unchanged for a second is kept and
+/// judged once, when the watch ends.
 ///
 /// A word of the dictation changed into a name, "Pria" into "Priya", is a mishearing the
 /// user fixed; on the Words list the recognizer listens for it next time. Only one word
@@ -96,11 +97,12 @@ final class CorrectionWatcher {
             names = candidates.filter { Self.isMisheardName($0.heard, as: $0.word) }
             add(names, app: app)
         }
+        let words = !result.found ? "never found" : result.copy == nil ? "found, none unchanged for a second" : "found"
         Self.log.notice("""
             Watched \(app, privacy: .public) for \(result.seconds, format: .fixed(precision: 1), privacy: .public) s \
             until \(result.ending.rawValue, privacy: .public): \
             \(result.notifications, privacy: .public) notifications, \(result.reads, privacy: .public) reads, \
-            words \(result.copy == nil ? "never found" : "found", privacy: .public), \
+            words \(words, privacy: .public), \
             \(candidates.count, privacy: .public) candidates, \(names.count, privacy: .public) added
             """)
     }
@@ -212,14 +214,22 @@ final class FieldWatch: @unchecked Sendable {
         let ending: Ending
         let seconds: Double
         /// The dictation's last copy that corrects what was pasted rather than
-        /// rewriting it. Nil when no read gave one.
+        /// rewriting it and stayed unchanged for a second. Nil when none did.
         let copy: String?
+        /// Whether any read found the dictation, as pasted or corrected.
+        let found: Bool
         let notifications: Int
         let reads: Int
     }
 
     /// How long a watch lasts, in seconds, as Wispr Flow's does.
     static let duration: Double = 60
+
+    /// How long a copy has to stay unchanged to be judged, in seconds: a second, less
+    /// the slack of the timer that reads the field once a second. A copy that changed
+    /// sooner may be a word caught halfway through being typed, "Priy" on its way to
+    /// "Priya".
+    static let steady: Double = 0.9
 
     let anchors: Anchors
     private let field: AXUIElement
@@ -233,15 +243,18 @@ final class FieldWatch: @unchecked Sendable {
 
     // The watch thread's own.
     private var ending: Ending?
-    private var copy: String?
+    private var copies: Copies
     private var notifications = 0
     private var reads = 0
     private var pendingRead: CFRunLoopTimer?
+    /// When the field posted the first change not read yet.
+    private var changedAt: Double?
 
     /// - Parameter finish: Called once on the watch's thread when it ends.
     init(field: AXUIElement, anchors: Anchors, finish: @escaping @Sendable (FieldWatch, Result) -> Void) {
         self.field = field
         self.anchors = anchors
+        self.copies = Copies(anchors: anchors)
         self.finish = finish
     }
 
@@ -252,12 +265,12 @@ final class FieldWatch: @unchecked Sendable {
         thread.start()
     }
 
-    /// End the watch now, from any thread. Its last copy is judged as at any ending.
+    /// End the watch now, from any thread. Its copy is judged as at any ending.
     func end(_ reason: Ending) {
         lock.withLock {
             guard !isOver else { return }
             guard let runLoop else { requested = reason; return }
-            CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in stop(reason) }
+            CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in stopUnread(reason) }
             CFRunLoopWakeUp(runLoop)
         }
     }
@@ -291,7 +304,7 @@ final class FieldWatch: @unchecked Sendable {
         read()
         while ending == nil {
             let left = Self.duration - (ProcessInfo.processInfo.systemUptime - started)
-            guard left > 0 else { ending = .timeUp; break }
+            guard left > 0 else { stopUnread(.timeUp); break }
             CFRunLoopRunInMode(.defaultMode, left, true)
         }
 
@@ -309,15 +322,16 @@ final class FieldWatch: @unchecked Sendable {
             isOver = true
         }
         finish(self, Result(ending: ending ?? .timeUp, seconds: ProcessInfo.processInfo.systemUptime - started,
-                            copy: copy, notifications: notifications, reads: reads))
+                            copy: copies.settled, found: copies.found, notifications: notifications, reads: reads))
     }
 
     private func posted(_ notification: String) {
         notifications += 1
         if notification == kAXUIElementDestroyedNotification {
-            stop(.closed)
+            stopUnread(.closed)
             return
         }
+        changedAt = changedAt ?? ProcessInfo.processInfo.systemUptime
         // One read for a burst of changes, since the app answers every read on its main
         // thread. A letter put into a text view the way typing puts it, with the cursor
         // placed first, posted three changes in a test; one read answered all three.
@@ -333,6 +347,9 @@ final class FieldWatch: @unchecked Sendable {
     private func read() {
         guard ending == nil else { return }
         reads += 1
+        // Taken as the read is asked for, so the reads once a second stay a second apart
+        // however long the app takes to answer each.
+        let time = ProcessInfo.processInfo.systemUptime
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(field, kAXValueAttribute as CFString, &value)
         // Gone with its window or its app.
@@ -342,9 +359,9 @@ final class FieldWatch: @unchecked Sendable {
         }
         // Busy, or no text this time; the next read will tell.
         guard status == .success, let text = value as? String else { return }
-        let reading = Self.reading(text, around: anchors, kept: copy)
-        copy = reading.copy
-        if let ending = reading.ending { stop(ending) }
+        let changed = changedAt
+        changedAt = nil
+        if let ending = copies.read(text, at: time, changedAt: changed) { stop(ending) }
     }
 
     private func stop(_ reason: Ending) {
@@ -353,29 +370,96 @@ final class FieldWatch: @unchecked Sendable {
         CFRunLoopStop(CFRunLoopGetCurrent())
     }
 
+    /// End the watch with no read to show how the field stands. A field that posts its
+    /// changes has posted none since its last read, or one not read yet, so the copy
+    /// that read found stayed until now, or until that change. A field that posts
+    /// nothing tells nothing.
+    private func stopUnread(_ reason: Ending) {
+        guard ending == nil else { return }
+        if notifications > 0 { copies.stayed(until: changedAt ?? ProcessInfo.processInfo.systemUptime) }
+        stop(reason)
+    }
+
     // MARK: - Reading
 
-    /// What one read of the field tells the watch: the copy of the dictation to keep
-    /// from now on, and the reason the watch ends, if it ends here.
+    /// The copies of the dictation that the reads of its field find, and the one to
+    /// judge. Apart from the field, so it can be run on sample texts.
+    ///
+    /// Only a copy that stayed unchanged for a second is judged. In an app read once a
+    /// second, "Pria" retyped as "Priya" and sent straight after could otherwise be
+    /// judged as "Priy", the copy the last read caught. A copy is known to have stayed
+    /// from the read that found it until a later read that still finds it, or, in a
+    /// field that posts its changes, until the field posts the next one. When the last
+    /// copy stayed too briefly, the one before it that stayed is judged.
+    struct Copies {
+        let anchors: Anchors
+
+        /// The latest copy that corrects what was pasted, rather than rewriting it, and
+        /// stayed unchanged for a second. A fix followed by a rewrite keeps the fix.
+        private(set) var settled: String?
+        /// Whether a read has found the dictation, as pasted or corrected.
+        private(set) var found = false
+
+        /// What the last read found between the anchors, when a read first found it,
+        /// and until when it is known to have stayed.
+        private var shown: String?
+        private var shownIsClose = false
+        private var since = 0.0
+        private var until = 0.0
+
+        init(anchors: Anchors) {
+            self.anchors = anchors
+        }
+
+        /// Take in a read of the field's text, made at `time`, and say why the watch
+        /// ends, if it ends here.
+        ///
+        /// - Parameter changedAt: When the field posted the change this read answers,
+        ///   if it posted one.
+        mutating func read(_ text: String, at time: Double, changedAt: Double?) -> Ending? {
+            let reading = FieldWatch.reading(text, around: anchors, found: found)
+            if reading.words == shown {
+                stayed(until: time)
+            } else {
+                // A field that posts its changes had the last copy until it posted this one.
+                if let changedAt { stayed(until: changedAt) }
+                shown = reading.words
+                shownIsClose = reading.words.map { FieldWatch.isClose($0, to: anchors.pasted) } ?? false
+                since = time
+                until = time
+                found = found || shownIsClose
+            }
+            // The words before a new line are finished: the user has gone on past them.
+            if reading.ending == .newLine, shownIsClose { settled = shown }
+            return reading.ending
+        }
+
+        /// The copy the last read found stayed until `time`, as far as the watch knows.
+        mutating func stayed(until time: Double) {
+            until = max(until, time)
+            if shownIsClose, until - since >= FieldWatch.steady { settled = shown }
+        }
+    }
+
+    /// What one read of the field finds: the dictation as it stands there, and the
+    /// reason the watch ends, if it ends here.
     ///
     /// The field has to start with the text that was before the dictation and end with
-    /// the text that was after it; what lies between is the dictation as it stands. That
-    /// replaces the copy kept so far only while it corrects what was pasted rather than
-    /// rewriting it, so a fix followed by a rewrite keeps the fix.
+    /// the text that was after it; what lies between is the dictation as it stands. Nil
+    /// when the read does not find it.
     ///
     /// Until a read has found the dictation, a read without it is a field that has not
     /// caught up with the paste, and the watch goes on: Electron fields report their
     /// text late (see `TextInsertionService.pasteLanded`), and an empty chat box read
     /// too soon would otherwise look sent.
-    static func reading(_ field: String, around anchors: Anchors, kept copy: String?) -> (copy: String?, ending: Ending?) {
-        let found = copy != nil
+    static func reading(_ field: String, around anchors: Anchors, found: Bool) -> (words: String?, ending: Ending?) {
         // Sent, or cleared.
-        guard field.contains(where: { !$0.isWhitespace }) else { return (copy, found ? .emptied : nil) }
+        guard field.contains(where: { !$0.isWhitespace }) else { return (nil, found ? .emptied : nil) }
         guard field.hasPrefix(anchors.before), field.hasSuffix(anchors.after) else {
-            return (copy, found ? .anchorsChanged : nil)
+            return (nil, found ? .anchorsChanged : nil)
         }
         var words = String(field.dropFirst(anchors.before.count).dropLast(anchors.after.count))
-        guard words.contains(where: { $0.isLetter || $0.isNumber }) else { return (copy, found ? .wordsDeleted : nil) }
+        guard words.contains(where: { $0.isLetter || $0.isNumber }) else { return (nil, found ? .wordsDeleted : nil) }
 
         // A line break the dictation did not have: the user went on to a new line. What
         // comes before it is still the dictation.
@@ -385,7 +469,7 @@ final class FieldWatch: @unchecked Sendable {
             words = String(words[..<cut])
             ending = .newLine
         }
-        return (isClose(words, to: anchors.pasted) ? words : copy, ending)
+        return (words, ending)
     }
 
     /// Whether `words` is the dictation corrected rather than rewritten, by Wispr Flow's
