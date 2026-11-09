@@ -31,33 +31,36 @@ struct MicrophoneSignal: Sendable {
     /// nothing a microphone heard.
     static let floor: Float = 1 / 32_768
 
-    /// How long sound may be missing, once it has arrived, before that is a problem.
+    /// How long sound may be missing from the built-in microphone, once it has arrived,
+    /// before that is a problem.
     static let limit: Duration = .seconds(1)
 
-    /// The same limit for a Bluetooth or Continuity microphone. AirPods clean up the
-    /// voice in the earbuds before sending it, and whether that turns the gaps between
-    /// words into exact silence has not been measured, so the one-second limit could
-    /// sound the alarm at every pause. Five seconds is the limit Wispr Flow uses for
-    /// every microphone. Jonathan chose it for these on 2026-11-08, until AirPods are
-    /// measured.
+    /// The same limit for every other microphone, none of which has been measured.
+    ///
+    /// AirPods clean up the voice in the earbuds before sending it, and whether that
+    /// turns the gaps between words into exact silence is not known, so the one-second
+    /// limit could sound the alarm at every pause. A USB headset on a radio dongle, a
+    /// microphone behind a noise gate such as Krisp or Blue VO!CE, and an aggregate
+    /// device can send silence between words too. Five seconds is the limit Wispr Flow
+    /// uses for every microphone. Jonathan chose it for Bluetooth on 2026-11-08, until
+    /// AirPods are measured, and every microphone not measured gets the same.
     static let slowLimit: Duration = .seconds(5)
 
-    /// How long a microphone has to send its first live buffer, counted from when
-    /// capture started.
+    /// How long the built-in microphone has to send its first live buffer, counted from
+    /// when capture started.
     ///
-    /// The built-in microphone sent its first buffer 103 to 104 ms after the engine
-    /// started in all 48 dictations logged on 2026-11-08, and every saved dictation
-    /// held sound within its first two tenths of a second, so its first live buffer
-    /// arrives by about 0.2 s. A second leaves room for a USB microphone, which none
-    /// of those used.
+    /// It sent its first buffer 103 to 104 ms after the engine started in all 48
+    /// dictations logged on 2026-11-08, and every saved dictation held sound within its
+    /// first two tenths of a second, so its first live buffer arrives by about 0.2 s.
     static let quickStart: Duration = .seconds(1)
 
-    /// The allowance for Bluetooth and Continuity microphones.
+    /// The allowance for every other microphone.
     ///
     /// The iPhone's microphone took 2 to 3 s to start on 2026-09-28, and in a meeting
     /// that day its first audio came as late as 6.1 s after the start. Eight seconds is
     /// the wait the audio capture already gives a microphone that has sent nothing
-    /// yet. No Bluetooth microphone has been measured; it gets the iPhone's allowance.
+    /// yet. No Bluetooth, USB or aggregate microphone has been measured, and each gets
+    /// the iPhone's allowance.
     static let slowStart: Duration = .seconds(8)
 
     let startedAt: ContinuousClock.Instant

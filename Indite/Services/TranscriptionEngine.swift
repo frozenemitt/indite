@@ -303,15 +303,15 @@ final class TranscriptionEngine {
         self.audioCaptureHelper = helper
 
         // The microphone's time to start is counted from here, where the capture is
-        // live and the start sound plays. A Bluetooth or Continuity microphone gets
-        // longer than the others.
+        // live and the start sound plays. The one-second rules were measured on the
+        // built-in microphone alone, so every other microphone gets the longer ones.
         #if os(macOS)
         // Resolved as the capture resolved it a moment ago: the chosen microphone, or
         // the system default when that is not connected.
         microphone = AudioDeviceCatalog.recordingDevice(forUID: inputDeviceUID)
-        let isSlow = microphone.map(AudioDeviceCatalog.isSlowToStart) == true
-        let startAllowance = isSlow ? MicrophoneSignal.slowStart : MicrophoneSignal.quickStart
-        let silenceLimit = isSlow ? MicrophoneSignal.slowLimit : MicrophoneSignal.limit
+        let isMeasured = microphone.map(AudioDeviceCatalog.isBuiltInMicrophone) == true
+        let startAllowance = isMeasured ? MicrophoneSignal.quickStart : MicrophoneSignal.slowStart
+        let silenceLimit = isMeasured ? MicrophoneSignal.limit : MicrophoneSignal.slowLimit
         #else
         let startAllowance = MicrophoneSignal.quickStart
         let silenceLimit = MicrophoneSignal.limit
