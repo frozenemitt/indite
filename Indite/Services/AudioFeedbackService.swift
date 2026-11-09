@@ -196,9 +196,12 @@ final class NotificationService {
     }
 
     /// Report a failure, if error notifications are on.
-    func showErrorIfEnabled(_ message: String, settings: AppSettings) {
+    ///
+    /// - Parameter title: What failed, when it is more than the transcription: a
+    ///   microphone that sends no sound is named in the title.
+    func showErrorIfEnabled(_ message: String, title: String = "Transcription Error", settings: AppSettings) {
         guard settings.notifyOnError else { return }
-        post(title: "Transcription Error", body: message, withSound: !settings.playFeedbackSounds)
+        post(title: title, body: message, withSound: !settings.playFeedbackSounds)
     }
 
     /// Report that the AI pass failed but the raw transcript survived.

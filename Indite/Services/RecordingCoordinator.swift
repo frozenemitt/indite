@@ -47,6 +47,31 @@ final class RecordingCoordinator {
     /// Whether this dictation has muted the Mac yet, so a lock sound knows whether it
     /// can still be heard.
     @ObservationIgnored private var hasMuted = false
+
+    /// Watches the microphone while a dictation records. See `watchMicrophone()`.
+    @ObservationIgnored private var microphoneWatch: Task<Void, Never>?
+
+    /// The microphone this dictation records from, by name, for its warnings.
+    @ObservationIgnored private var microphoneName = ""
+
+    /// What the microphone itself says stops it hearing, kept current by its listener.
+    @ObservationIgnored private var microphoneProblem: MicrophoneProblem?
+
+    /// When the microphone last said its problem had gone, such as being unmuted.
+    @ObservationIgnored private var microphoneFixedAt: ContinuousClock.Instant?
+
+    /// Why the microphone is not heard, as the dictation shows it now, or nil while it is.
+    @ObservationIgnored private var microphoneTrouble: MicrophoneTrouble?
+
+    /// The last trouble this dictation showed, kept after it clears, so that a dictation
+    /// whose microphone never sent sound can say why at its end.
+    @ObservationIgnored private var lastMicrophoneTrouble: MicrophoneTrouble?
+
+    /// The alarm for a warning, waiting for the start sound to finish.
+    @ObservationIgnored private var alarmTask: Task<Void, Never>?
+
+    /// When this dictation's start sound will have played out.
+    @ObservationIgnored private var startSoundEnds: ContinuousClock.Instant?
     #endif
 
     /// The lock sound, waiting for the start sound to finish. Cancelled when the
@@ -390,6 +415,9 @@ final class RecordingCoordinator {
         }
 
         microphoneOpenedAt = SuspendingClock.now
+        #if os(macOS)
+        watchMicrophone()
+        #endif
         if announcesWhenLive { announce() }
         startMaxDurationWatchdog()
 
@@ -479,6 +507,7 @@ final class RecordingCoordinator {
         Log.dictation.notice("Start sound played")
 
         #if os(macOS)
+        startSoundEnds = .now + .seconds(startSound)
         if settings.showDictationOverlay {
             overlay.show()
             startOverlayTicker()
@@ -551,6 +580,7 @@ final class RecordingCoordinator {
         lockSoundTask?.cancel()
         lockSoundTask = nil
         #if os(macOS)
+        stopWatchingMicrophone()
         unmute()
         #endif
         AudioFeedbackService.shared.playIfEnabled(.recordingStopped, settings: settings)
@@ -620,6 +650,13 @@ final class RecordingCoordinator {
                 overlay.hide()
                 #endif
                 Log.dictation.notice("The recording ended before any audio arrived, so there is nothing to deliver")
+            } else if let noSound = noSoundOutcome() {
+                // The microphone never sent sound, and the panel said so while it ran.
+                // "Nothing was heard" would blame a quiet room for a dead microphone.
+                AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
+                NotificationService.shared.showErrorIfEnabled(noSound.detail, title: noSound.headline, settings: settings)
+                report(noSound)
+                Log.dictation.notice("Empty transcript: the microphone sent no sound at all")
             } else {
                 AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
                 NotificationService.shared.showErrorIfEnabled(
@@ -868,6 +905,7 @@ final class RecordingCoordinator {
         lockSoundTask = nil
         #if os(macOS)
         stopOverlayTicker()
+        stopWatchingMicrophone()
         overlay.hide()
         unmute()
         #endif
@@ -908,6 +946,7 @@ final class RecordingCoordinator {
         lockSoundTask = nil
         #if os(macOS)
         stopOverlayTicker()
+        stopWatchingMicrophone()
         overlay.hide()
         unmute()
         #endif
@@ -1275,7 +1314,9 @@ final class RecordingCoordinator {
         muteTask = Task {
             try? await Task.sleep(for: .seconds(wait))
             // Ended while waiting: `unmute()` has run, and nothing would put this back.
-            guard !Task.isCancelled, isRecording, !isDelivering else { return }
+            // A dictation that has warned about its microphone keeps the Mac's sound, so
+            // that its alarm is heard.
+            guard !Task.isCancelled, isRecording, !isDelivering, lastMicrophoneTrouble == nil else { return }
             OutputMute.mute()
             hasMuted = true
         }
@@ -1293,7 +1334,148 @@ final class RecordingCoordinator {
         hasMuted = false
         OutputMute.restore()
     }
+
+    // MARK: - The Microphone
+
+    /// Watch the microphone for as long as the dictation records, and warn when it
+    /// sends no sound.
+    ///
+    /// What the microphone says about itself is said at once: muted, turned off, or
+    /// behind a closed lid. Its buffers are judged by `MicrophoneSignal`, whose verdict
+    /// is read twenty times a second, so a warning shows within 50 ms of the buffer that
+    /// decides it. Nothing is said until the dictation has shown itself, so a tap that
+    /// turns out not to be a dictation says nothing.
+    private func watchMicrophone() {
+        stopWatchingMicrophone()
+        lastMicrophoneTrouble = nil
+        microphoneProblem = nil
+        microphoneFixedAt = nil
+        guard let device = engine.microphone else { return }
+        microphoneName = AudioDeviceCatalog.name(of: device) ?? AudioInputList.shared.name(forUID: settings.inputDeviceUID)
+        checkMicrophoneProblem()
+
+        microphoneWatch = Task { [weak self] in
+            let listener = Task { [weak self] in
+                for await _ in AudioDeviceCatalog.hearingChanges(of: device) {
+                    self?.checkMicrophoneProblem()
+                }
+            }
+            defer { listener.cancel() }
+
+            var verdict = MicrophoneSignal.Verdict.fine
+            while !Task.isCancelled {
+                guard let self, self.isRecording else { return }
+                let signal = self.engine.microphoneSignal
+                let latest = signal?.verdict(at: .now) ?? .fine
+                // Asked again as the buffers turn silent, which is how a lid closed
+                // mid-dictation shows itself, and for as long as a problem lasts, which
+                // is how the lid opening does. Neither has a listener.
+                if (latest != verdict && latest != .fine) || self.microphoneProblem != nil {
+                    self.checkMicrophoneProblem()
+                }
+                verdict = latest
+                if self.isAnnounced {
+                    self.showMicrophoneTrouble(self.currentMicrophoneTrouble(verdict: verdict, lastSoundAt: signal?.lastSoundAt))
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+    }
+
+    /// Ask the microphone again whether it can hear, and note when a problem goes away.
+    private func checkMicrophoneProblem() {
+        guard let device = engine.microphone else { return }
+        let problem = AudioDeviceCatalog.hearingProblem(of: device)
+        if microphoneProblem != nil, problem == nil { microphoneFixedAt = .now }
+        microphoneProblem = problem
+    }
+
+    /// Why the microphone is not heard now, or nil when it is.
+    ///
+    /// The microphone's own word comes first. A fix it reports, such as being unmuted,
+    /// reaches the buffers a buffer or two later, and until then they still say
+    /// silence. The warning it raised waits up to half a second for sound, rather than
+    /// turning into "It is sending silence" in between; after that the buffers decide.
+    private func currentMicrophoneTrouble(verdict: MicrophoneSignal.Verdict,
+                                          lastSoundAt: ContinuousClock.Instant?) -> MicrophoneTrouble? {
+        if let microphoneProblem { return .device(microphoneProblem) }
+        if case .device = microphoneTrouble, let fixed = microphoneFixedAt,
+           (lastSoundAt ?? fixed) <= fixed, ContinuousClock.now - fixed < .milliseconds(500) {
+            return microphoneTrouble
+        }
+        return verdict == .fine ? nil : .signal(verdict)
+    }
+
+    private func stopWatchingMicrophone() {
+        microphoneWatch?.cancel()
+        microphoneWatch = nil
+        alarmTask?.cancel()
+        alarmTask = nil
+        microphoneTrouble = nil
+    }
+
+    /// Show a change in the microphone's trouble: a warning in the panel, or a
+    /// notification with the panel off, and the alarm when a warning appears.
+    ///
+    /// Only a change of cause updates a warning already showing: no second alarm, and no
+    /// second notification.
+    private func showMicrophoneTrouble(_ trouble: MicrophoneTrouble?) {
+        guard trouble != microphoneTrouble else { return }
+        let appears = microphoneTrouble == nil
+        microphoneTrouble = trouble
+
+        guard let trouble else {
+            alarmTask?.cancel()
+            alarmTask = nil
+            overlay.clearWarning()
+            Log.dictation.notice("The microphone warning cleared")
+            return
+        }
+
+        lastMicrophoneTrouble = trouble
+        Log.dictation.notice("The microphone sends no sound: \(trouble.logDescription, privacy: .public)")
+        let warning = trouble.warning(microphone: microphoneName)
+        if settings.showDictationOverlay {
+            overlay.showWarning(warning)
+        } else if appears {
+            NotificationService.shared.showErrorIfEnabled(warning.detail, title: warning.headline, settings: settings)
+        }
+        if appears { soundAlarm() }
+    }
+
+    /// The error sound, once, as a warning appears.
+    ///
+    /// It follows the start sound when that is still playing, as the lock sound does.
+    /// The Mac's sound comes back first: a dictation that muted the Mac would swallow
+    /// the alarm, and one whose microphone hears nothing has nothing to keep quiet for.
+    private func soundAlarm() {
+        unmute()
+        let wait = startSoundEnds.map { $0 - .now } ?? .zero
+        alarmTask?.cancel()
+        alarmTask = Task { [settings] in
+            if wait > .zero {
+                try? await Task.sleep(for: wait)
+                guard !Task.isCancelled else { return }
+            }
+            AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
+        }
+    }
     #endif
+
+    /// What the end of a dictation says when its microphone never sent any sound and
+    /// the dictation warned about it while it ran, or nil otherwise.
+    ///
+    /// A microphone that had no time to start is not blamed: without a warning, the end
+    /// says "Nothing was heard" as before.
+    private func noSoundOutcome() -> OverlayOutcome? {
+        #if os(macOS)
+        guard engine.microphoneSignal?.heardSound != true, let trouble = lastMicrophoneTrouble else { return nil }
+        let cause = engine.microphone.flatMap(AudioDeviceCatalog.hearingProblem(of:))?.sentence ?? trouble.endingCause
+        return .noSoundCame(from: microphoneName, cause: cause)
+        #else
+        return nil
+        #endif
+    }
 
     // MARK: - Safety Cap
 
@@ -1318,3 +1500,42 @@ final class RecordingCoordinator {
         }
     }
 }
+
+#if os(macOS)
+/// Why a dictation's microphone is not heard.
+private enum MicrophoneTrouble: Equatable {
+    /// The microphone says it cannot hear: muted, turned off, or behind a closed lid.
+    case device(MicrophoneProblem)
+    /// Its buffers say so.
+    case signal(MicrophoneSignal.Verdict)
+
+    /// What the panel, or a notification, says while the dictation goes on.
+    func warning(microphone: String) -> OverlayOutcome {
+        switch self {
+        case .device(let problem):
+            .noSound(from: microphone, yet: false, cause: problem.sentence)
+        case .signal(.notStarted(let sentAudio)):
+            .noSound(from: microphone, yet: true,
+                     cause: sentAudio ? "It is sending silence." : "It has not started sending sound.")
+        case .signal(.stalled):
+            .noSound(from: microphone, yet: false, cause: "It stopped sending sound.")
+        case .signal:
+            .noSound(from: microphone, yet: false, cause: "It is sending silence.")
+        }
+    }
+
+    /// The cause a dictation gives at its end, when this was its last trouble, no sound
+    /// ever came, and the microphone says nothing is wrong with it by then.
+    var endingCause: String {
+        self == .signal(.notStarted(sentAudio: false)) ? "It never started sending sound." : "It sent only silence."
+    }
+
+    /// For the log, which never names the microphone: its name can hold the owner's.
+    var logDescription: String {
+        switch self {
+        case .device(let problem): "\(problem)"
+        case .signal(let verdict): "\(verdict)"
+        }
+    }
+}
+#endif
