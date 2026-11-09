@@ -25,26 +25,13 @@ struct DictationHistoryView: View {
     @State private var isConfirmingClearAll = false
     /// The dictations shown in full. The rest stop at four lines.
     @State private var expanded: Set<PersistentIdentifier> = []
-    /// The dictation deleted last, held for a few seconds so it can be put back.
-    @State private var lastDeleted: DeletedDictation?
-    @State private var undoTimeout: Task<Void, Never>?
+    /// The last change Undo can take back: a dictation deleted, or one transcribed again.
+    @State private var undo = DictationUndo()
     /// The start of today, for the line above the list. Set again whenever the day
     /// changes, since the week and the days in a row depend on it.
     @State private var today = Calendar.current.startOfDay(for: .now)
     /// Why the last Transcribe Again left its dictation as it was.
     @State private var transcribeAgainFailure: String?
-
-    /// What it takes to put a deleted dictation back as it was. Its recording stays on
-    /// disk until Undo can no longer bring it back.
-    private struct DeletedDictation {
-        let text: String
-        let rawText: String?
-        let destination: String?
-        let promptName: String?
-        let spokenDuration: TimeInterval?
-        let recordingFileName: String?
-        let createdAt: Date
-    }
 
     /// Which copy last completed, so only that button's own symbol changes.
     private enum CopiedKind: Equatable {
@@ -111,13 +98,13 @@ struct DictationHistoryView: View {
                 list
             }
 
-            // Delete acts at once, as it should for one row among a hundred, and
-            // this is the way back.
-            if lastDeleted != nil {
+            // Delete and Transcribe Again act at once, as they should for one row among
+            // a hundred, and this is the way back.
+            if let message = undo.message {
                 HStack {
-                    Text("Dictation deleted.")
+                    Text(message)
                     Spacer()
-                    Button("Undo") { undoDelete() }
+                    Button("Undo") { undo.undo(in: modelContext) }
                         .keyboardShortcut("z")
                 }
                 .font(.callout)
@@ -149,7 +136,8 @@ struct DictationHistoryView: View {
                     Label(insertTitle, systemImage: "text.cursor")
                         .labelStyle(.titleAndIcon)
                 }
-                .disabled(selected == nil)
+                // A dictation whose recognition failed has no words to type or copy.
+                .disabled(selected.map(\.recognitionFailed) ?? true)
                 .help("Type the selected dictation where the cursor is in the app you came from")
 
                 Button {
@@ -157,7 +145,7 @@ struct DictationHistoryView: View {
                 } label: {
                     Label("Copy", systemImage: copiedCleaned ? "checkmark" : "doc.on.doc")
                 }
-                .disabled(selected == nil)
+                .disabled(selected.map(\.recognitionFailed) ?? true)
                 .help("Copy the selected dictation")
 
                 Button(role: .destructive) {
@@ -202,6 +190,9 @@ struct DictationHistoryView: View {
                     titleVisibility: .visible
                 ) {
                     Button("Delete All", role: .destructive) {
+                        // The dialog says this cannot be undone, so the Undo of a
+                        // dictation deleted just before ends too, and its recording goes.
+                        undo.end()
                         DictationHistory.clear(in: modelContext)
                     }
                     Button("Cancel", role: .cancel) { }
@@ -261,8 +252,16 @@ struct DictationHistoryView: View {
 
                     // Not selectable as text: a click on the words selects the row,
                     // and Copy is a command.
-                    Text(dictation.text)
-                        .lineLimit(isExpanded ? nil : 4)
+                    if dictation.recognitionFailed {
+                        // Kept for its recording alone, which may still hold the words.
+                        Text(dictation.hasRecording
+                             ? "Recognition failed, and no words were heard. Transcribe Again can read the recording."
+                             : "Recognition failed, and no words were heard.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(dictation.text)
+                            .lineLimit(isExpanded ? nil : 4)
+                    }
 
                     // A long dictation stopped at four lines with no way to read on.
                     // In gray, not the link blue: blue all but vanished on the azure
@@ -290,8 +289,10 @@ struct DictationHistoryView: View {
                     }
                 }
                 .contextMenu {
-                    Button(insertTitle) { insert(dictation) }
-                    Button("Copy") { copy(dictation.text, as: .cleaned(dictation.persistentModelID)) }
+                    if !dictation.recognitionFailed {
+                        Button(insertTitle) { insert(dictation) }
+                        Button("Copy") { copy(dictation.text, as: .cleaned(dictation.persistentModelID)) }
+                    }
                     if dictation.wasEditedByAI, let raw = dictation.rawText {
                         Button("Copy Original") { copy(raw, as: .original(dictation.persistentModelID)) }
                     }
@@ -347,55 +348,23 @@ struct DictationHistoryView: View {
             let next = index + 1 < listed.count ? listed[index + 1] : (index > 0 ? listed[index - 1] : nil)
             selection = next?.persistentModelID
         }
-
-        // Undo puts back only the dictation deleted last, so the one before it is gone
-        // for good, and its recording with it.
-        DictationAudioStore.delete(fileNamed: lastDeleted?.recordingFileName)
-        lastDeleted = DeletedDictation(
-            text: dictation.text,
-            rawText: dictation.rawText,
-            destination: dictation.destination,
-            promptName: dictation.promptName,
-            spokenDuration: dictation.spokenDuration,
-            recordingFileName: dictation.recordingFileName,
-            createdAt: dictation.createdAt
-        )
-        modelContext.delete(dictation)
-        modelContext.saveOrLog()
-
-        undoTimeout?.cancel()
-        undoTimeout = Task {
-            try? await Task.sleep(for: .seconds(8))
-            guard !Task.isCancelled else { return }
-            DictationAudioStore.delete(fileNamed: lastDeleted?.recordingFileName)
-            lastDeleted = nil
-        }
+        undo.delete(dictation, in: modelContext)
     }
 
-    /// Put the dictation deleted last back where it was, by its own date, with its
-    /// recording.
-    private func undoDelete() {
-        guard let deleted = lastDeleted else { return }
-        modelContext.insert(Dictation(
-            text: deleted.text,
-            rawText: deleted.rawText,
-            destination: deleted.destination,
-            promptName: deleted.promptName,
-            spokenDuration: deleted.spokenDuration,
-            recordingFileName: deleted.recordingFileName,
-            createdAt: deleted.createdAt
-        ))
-        modelContext.saveOrLog()
-        undoTimeout?.cancel()
-        lastDeleted = nil
-    }
-
-    /// Transcribe the dictation again from its recording, and say why when its words
-    /// were left as they were.
+    /// Transcribe the dictation again from its recording, and offer Undo once its words
+    /// have changed, with a note on anything that fell short, or say why they were left
+    /// as they were.
+    ///
+    /// The words it held are kept for Undo before it is read: a second reading can be
+    /// worse than the first, and the first is otherwise lost.
     private func transcribeAgain(_ dictation: Dictation) {
+        let earlier = DictationUndo.EarlierWords(of: dictation)
         Task {
-            if let failure = await coordinator.transcribeAgain(dictation) {
-                transcribeAgainFailure = failure
+            switch await coordinator.transcribeAgain(dictation) {
+            case .replaced(let note):
+                undo.transcribedAgain(earlier, note: note)
+            case .failed(let reason):
+                transcribeAgainFailure = reason
             }
         }
     }
@@ -457,6 +426,142 @@ struct DictationHistoryView: View {
                 destination: destination,
                 settings: settings
             )
+        }
+    }
+}
+
+/// What Undo in Recent Dictations takes back: the dictation deleted last, or the words a
+/// dictation held before Transcribe Again replaced them.
+///
+/// One change at a time, offered for eight seconds; the next change ends the one before,
+/// and so does Clear All. A deleted dictation's recording stays on disk while Undo can
+/// bring it back, and goes when the offer ends.
+@MainActor
+@Observable
+final class DictationUndo {
+
+    /// What it takes to put a deleted dictation back as it was.
+    struct DeletedDictation {
+        let text: String
+        let rawText: String?
+        let destination: String?
+        let promptName: String?
+        let spokenDuration: TimeInterval?
+        let recordingFileName: String?
+        let createdAt: Date
+    }
+
+    /// The words a dictation held before Transcribe Again replaced them: the text, the
+    /// words as heard, and the prompt that wrote the text.
+    struct EarlierWords {
+        let dictation: Dictation
+        let text: String
+        let rawText: String?
+        let promptName: String?
+
+        init(of dictation: Dictation) {
+            self.dictation = dictation
+            text = dictation.text
+            rawText = dictation.rawText
+            promptName = dictation.promptName
+        }
+    }
+
+    private enum Change {
+        case deleted(DeletedDictation)
+        case transcribedAgain(EarlierWords)
+    }
+
+    /// What the bar beside Undo says, while a change can be taken back.
+    private(set) var message: String?
+
+    @ObservationIgnored private var change: Change?
+    @ObservationIgnored private var expiry: Task<Void, Never>?
+
+    /// Delete a dictation at once, and offer to put it back.
+    func delete(_ dictation: Dictation, in context: ModelContext) {
+        let deleted = DeletedDictation(
+            text: dictation.text,
+            rawText: dictation.rawText,
+            destination: dictation.destination,
+            promptName: dictation.promptName,
+            spokenDuration: dictation.spokenDuration,
+            recordingFileName: dictation.recordingFileName,
+            createdAt: dictation.createdAt
+        )
+        context.delete(dictation)
+        context.saveOrLog()
+        // No dictation names the recording until Undo puts it back. Marked as just
+        // written, it is not taken for a leftover by another copy of Indite launching
+        // meanwhile.
+        DictationAudioStore.markHeldForUndo(fileNamed: deleted.recordingFileName)
+        offer(.deleted(deleted), saying: "Dictation deleted.")
+    }
+
+    /// Offer to put back the words a dictation held before it was transcribed again,
+    /// with what fell short on the way, such as a rewrite that failed.
+    func transcribedAgain(_ earlier: EarlierWords, note: String?) {
+        offer(.transcribedAgain(earlier), saying: ["Dictation transcribed again.", note].compactMap { $0 }.joined(separator: " "))
+    }
+
+    /// Take the change back: the deleted dictation goes back where it was, by its own
+    /// date and with its recording, or the dictation transcribed again gets its earlier
+    /// words back.
+    func undo(in context: ModelContext) {
+        switch change {
+        case .deleted(let deleted):
+            context.insert(Dictation(
+                text: deleted.text,
+                rawText: deleted.rawText,
+                destination: deleted.destination,
+                promptName: deleted.promptName,
+                spokenDuration: deleted.spokenDuration,
+                recordingFileName: deleted.recordingFileName,
+                createdAt: deleted.createdAt
+            ))
+            context.saveOrLog()
+        case .transcribedAgain(let earlier):
+            // One the history's limit has deleted since has nothing to put them back into.
+            if !earlier.dictation.isDeleted, earlier.dictation.modelContext != nil {
+                earlier.dictation.text = earlier.text
+                earlier.dictation.rawText = earlier.rawText
+                earlier.dictation.promptName = earlier.promptName
+                context.saveOrLog()
+            }
+        case nil:
+            break
+        }
+        // Taken back, so nothing is left to end: a recording put back with its
+        // dictation stays.
+        expiry?.cancel()
+        change = nil
+        message = nil
+    }
+
+    /// End the offer. A dictation deleted is then gone for good, and its recording
+    /// with it.
+    func end() {
+        expiry?.cancel()
+        expiry = nil
+        if case .deleted(let deleted) = change {
+            DictationAudioStore.delete(fileNamed: deleted.recordingFileName)
+        }
+        change = nil
+        message = nil
+    }
+
+    /// Offer Undo for a change, and end the offer before it: Undo takes back only the
+    /// change made last.
+    private func offer(_ change: Change, saying message: String) {
+        end()
+        self.change = change
+        self.message = message
+        // Held strongly, so the offer still ends, and a deleted dictation's recording
+        // still goes, when the window closes before the eight seconds are up.
+        expiry = Task {
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            self.end()
         }
     }
 }

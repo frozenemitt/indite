@@ -156,8 +156,13 @@ struct MCPServer {
         return (try? context.fetch(descriptor)) ?? []
     }
 
+    /// The dictations with words, newest first. One kept with no words after its
+    /// recognition failed, for Transcribe Again, has nothing to read.
     private func dictations() -> [Dictation] {
-        let descriptor = FetchDescriptor<Dictation>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        let descriptor = FetchDescriptor<Dictation>(
+            predicate: #Predicate { $0.text != "" },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
         return (try? context.fetch(descriptor)) ?? []
     }
 

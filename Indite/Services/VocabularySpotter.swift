@@ -95,6 +95,8 @@ final class VocabularySpotter: Sendable {
         private var frameDuration: Double = 0
         private var nextWindowEnd = Session.window
         private var reading: Task<Void, Never>?
+        /// Set by `stop()`. No window is read after it.
+        private var isStopped = false
         private let converter = BufferConverter()
         private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
 
@@ -112,13 +114,23 @@ final class VocabularySpotter: Sendable {
             }
         }
 
+        /// Stop reading, for audio nobody is waiting on any longer. The window being read
+        /// finishes, and no other is begun.
+        ///
+        /// Transcribe Again hands over a whole recording at once, and its windows are then
+        /// read one after another in the background: given up on six minutes of speech,
+        /// the reading kept a core busy for more than six seconds.
+        func stop() {
+            lock.withLock { isStopped = true }
+        }
+
         /// Read what is left and find the listed terms in the whole recording.
         func finish(terms: [String]) async -> [Detection] {
             // A window already being read finishes first: its frames are wanted.
             while let running = lock.withLock({ reading }) { await running.value }
 
-            let (total, end) = lock.withLock { (samples.count, frames.count) }
-            guard total > 0 else { return [] }
+            let (total, end, stopped) = lock.withLock { (samples.count, frames.count, isStopped) }
+            guard total > 0, !stopped else { return [] }
             let start = max(0, total - Self.window)
             // From the first frame no earlier read covered, or from a second into this
             // window, whichever comes first.
@@ -145,7 +157,7 @@ final class VocabularySpotter: Sendable {
         /// Start reading the next full window in the background, if the audio for it is in.
         /// Called with the lock held.
         private func startReadIfDue() {
-            guard reading == nil, samples.count >= nextWindowEnd else { return }
+            guard !isStopped, reading == nil, samples.count >= nextWindowEnd else { return }
             let end = nextWindowEnd
             let start = end - Self.window
             nextWindowEnd += Self.step

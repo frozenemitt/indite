@@ -41,21 +41,53 @@ enum DictationAudioStore {
         return FileManager.default.fileExists(atPath: url(forFileNamed: name).path)
     }
 
+    /// Delete a recording by the name its dictation holds.
+    ///
+    /// The name is read from the store, so it is taken only when it can be a
+    /// recording's: a plain file name ending in .caf, with no slash and no "..". Any
+    /// other name could reach a file outside this folder.
     static func delete(fileNamed name: String?) {
         guard let name else { return }
+        guard isPlainName(name) else {
+            log.error("Did not delete a recording whose name is not a plain .\(fileExtension, privacy: .public) file name")
+            return
+        }
         try? FileManager.default.removeItem(at: url(forFileNamed: name))
     }
 
-    /// Delete every recording whose name is not in `kept`, and return how many went.
+    /// Mark a recording as written now, when its dictation has been deleted and the
+    /// recording is held for Undo. A copy of Indite launching meanwhile then leaves it
+    /// alone, though no dictation names it; see `deleteRecordings(notNamedIn:writtenBefore:)`.
+    static func markHeldForUndo(fileNamed name: String?) {
+        guard let name, isPlainName(name) else { return }
+        try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: url(forFileNamed: name).path)
+    }
+
+    /// Whether a name read from the store can be a recording's here: a plain file name
+    /// ending in .caf, with no slash and no "..".
+    private static func isPlainName(_ name: String) -> Bool {
+        name.hasSuffix(".\(fileExtension)") && !name.contains("/") && !name.contains("..")
+    }
+
+    /// Delete every recording whose name is not in `kept` and that was last written
+    /// before `cutoff`, and return how many went.
     ///
     /// For the recordings no entry names: one whose dictation ended in a crash before
     /// it reached Recent Dictations, or whose entry was deleted while Indite was quitting.
-    static func deleteRecordings(notNamedIn kept: Set<String>) -> Int {
+    ///
+    /// One written since `cutoff` is left alone, because another copy of Indite may be
+    /// running and need it. A copy recording a dictation writes its file as the words
+    /// are spoken, and one holding a deleted dictation for Undo marks its recording as
+    /// written when it sets the recording aside.
+    static func deleteRecordings(notNamedIn kept: Set<String>, writtenBefore cutoff: Date) -> Int {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         var deleted = 0
         for name in names where name.hasSuffix(".\(fileExtension)") && !kept.contains(name) {
+            let file = url(forFileNamed: name)
+            guard let written = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                  written < cutoff else { continue }
             do {
-                try FileManager.default.removeItem(at: url(forFileNamed: name))
+                try FileManager.default.removeItem(at: file)
                 deleted += 1
             } catch {
                 log.error("Could not delete a recording no dictation names: \(error, privacy: .public)")
@@ -79,6 +111,7 @@ final class DictationAudioWriter: @unchecked Sendable {
     private let lock = NSLock()
     private var file: AVAudioFile?
     private var framesWritten: AVAudioFramePosition = 0
+    private var sampleRate: Double = 0
     /// Set once the file has been closed or abandoned, or could not be opened. A buffer
     /// arriving after that is dropped rather than opening the file again.
     private var isDone = false
@@ -107,6 +140,7 @@ final class DictationAudioWriter: @unchecked Sendable {
                     commonFormat: format.commonFormat,
                     interleaved: format.isInterleaved
                 )
+                sampleRate = format.sampleRate
             } catch {
                 Self.log.error("Could not open the dictation's recording: \(error, privacy: .public)")
                 isDone = true
@@ -121,6 +155,13 @@ final class DictationAudioWriter: @unchecked Sendable {
             // One lost buffer costs the recording a moment; the dictation is unaffected.
             Self.log.error("Dropped a buffer from the dictation's recording: \(error, privacy: .public)")
         }
+    }
+
+    /// How long the audio written so far lasts, in seconds.
+    var seconds: TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        return sampleRate > 0 ? Double(framesWritten) / sampleRate : 0
     }
 
     /// Close the file, and return its name, or nil when nothing was written.

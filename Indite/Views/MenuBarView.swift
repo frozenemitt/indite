@@ -32,7 +32,12 @@ struct MenuBarView: View {
     @Query(MenuBarView.recentDictations) private var recent: [Dictation]
 
     private static var recentDictations: FetchDescriptor<Dictation> {
-        var descriptor = FetchDescriptor<Dictation>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        // Not one kept with no words after its recognition failed: there is nothing to
+        // type, and the newest carries the type-again key, which skips it too.
+        var descriptor = FetchDescriptor<Dictation>(
+            predicate: #Predicate { $0.text != "" },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
         descriptor.fetchLimit = 5
         return descriptor
     }

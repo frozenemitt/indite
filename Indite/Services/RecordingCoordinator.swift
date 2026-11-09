@@ -197,7 +197,8 @@ final class RecordingCoordinator {
     /// Warms the AI session on the words confirmed so far, while recording.
     @ObservationIgnored private var prefixWarmer: Task<Void, Never>?
 
-    /// The history entry for the dictation being delivered, written by the stop task.
+    /// The history entry for the dictation being delivered, written by the stop task, or
+    /// the one kept for its recording alone when recognition failed with no words.
     ///
     /// Kept inside the stop rather than after it, so a quit that waits on the stop
     /// finds the words already in the history.
@@ -406,7 +407,10 @@ final class RecordingCoordinator {
         #endif
 
         // A recording is kept only with its entry, so only while entries are kept.
-        let recording = settings.keepDictationHistory ? DictationAudioWriter() : nil
+        // They must be kept on disk, too: a store fallen back to memory loses every entry
+        // at quit, and their recordings would be left with nothing to name them.
+        let keepsRecording = settings.keepDictationHistory && MeetingStoreStatus.shared.isPersistent
+        let recording = keepsRecording ? DictationAudioWriter() : nil
         do {
             try await engine.startRecording(
                 owner: .dictation,
@@ -620,16 +624,16 @@ final class RecordingCoordinator {
             // Closed once the engine has handed its last buffer over.
             let recordingFileName = recording?.finish()
             let processed = TextProcessor.process(raw, replacements: replacements)
+            // Kept before anything else can fail or the app can quit: from here on the
+            // words survive a hung AI pass, a paste into the wrong window, or a quit
+            // mid-delivery, which waits on this task. The entry is brought up to date
+            // once the text has landed. A dictation with no words is kept only when
+            // recognition failed, for its recording.
+            self.deliveringEntry = self.recordHistory(processed, spokenDuration: spokenDuration,
+                                                      recordingFileName: recordingFileName,
+                                                      recordingSeconds: recording?.seconds ?? 0)
             if processed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                DictationAudioStore.delete(fileNamed: recordingFileName)
                 self.isDelivering = false
-            } else {
-                // Kept before anything else can fail or the app can quit: from here on
-                // the words survive a hung AI pass, a paste into the wrong window, or a
-                // quit mid-delivery, which waits on this task. The entry is brought up
-                // to date once the text has landed.
-                self.deliveringEntry = self.recordHistory(processed, spokenDuration: spokenDuration,
-                                                          recordingFileName: recordingFileName)
             }
             return processed
         }
@@ -638,19 +642,23 @@ final class RecordingCoordinator {
         stopTask = nil
 
         guard !heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Kept with no words only when recognition failed, for its recording.
+            let keptForRecording = deliveringEntry != nil
+            deliveringEntry = nil
             // A session loaded for this dictation's prompt would otherwise be picked up
             // by the next one, with the instructions it held when it was loaded.
             aiProcessor.discardPrewarm()
 
             // A recognizer that failed and a room that was quiet used to look exactly
-            // the same from outside: both ended in silence with no text. Say which.
+            // the same from outside: both ended in silence with no text. Say which, and
+            // where a recording kept can be read again.
             if let engineError = engine.error {
+                let detail = keptForRecording
+                    ? "\(engineError.localizedDescription) Its recording is in Recent Dictations, where Transcribe Again can read it."
+                    : engineError.localizedDescription
                 AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
-                NotificationService.shared.showErrorIfEnabled(
-                    engineError.localizedDescription,
-                    settings: settings
-                )
-                report(.problem(engineError.localizedDescription))
+                NotificationService.shared.showErrorIfEnabled(detail, settings: settings)
+                report(.problem(detail))
                 Log.dictation.error("Recognition failed: \(engineError, privacy: .public)")
             } else if !engine.receivedAudio, (spokenDuration ?? 0) < 0.5 {
                 // Let go before the microphone's first buffer arrived, so nothing was
@@ -855,11 +863,24 @@ final class RecordingCoordinator {
     }
 
     /// Keep the dictation the moment its words exist, with its recording.
+    ///
+    /// When recognition failed before it heard a word, the recording is the one copy of
+    /// what was said. The dictation is then kept with no text, for Transcribe Again to
+    /// recover, if the recording lasts a second or more.
     private func recordHistory(_ transcript: String, spokenDuration: TimeInterval?,
-                               recordingFileName: String?) -> Dictation? {
+                               recordingFileName: String?, recordingSeconds: TimeInterval) -> Dictation? {
         guard let modelContext else {
             DictationAudioStore.delete(fileNamed: recordingFileName)
             return nil
+        }
+        if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, engine.error != nil {
+            return DictationHistory.recordUnrecognized(
+                recordingFileName: recordingFileName,
+                recordingSeconds: recordingSeconds,
+                spokenDuration: spokenDuration,
+                settings: settings,
+                in: modelContext
+            )
         }
         return DictationHistory.record(
             text: transcript,
@@ -969,7 +990,7 @@ final class RecordingCoordinator {
         let raw = await engine.stopRecording(owner: .dictation)
         let recordingFileName = recording?.finish()
         if recordHistory(TextProcessor.process(raw, replacements: settings.wordReplacements), spokenDuration: spokenDuration,
-                         recordingFileName: recordingFileName) != nil {
+                         recordingFileName: recordingFileName, recordingSeconds: recording?.seconds ?? 0) != nil {
             Log.dictation.notice("Kept the dictation in the history on quit")
         } else {
             Log.dictation.notice("Stopped the dictation on quit; it had nothing to keep")
@@ -1104,7 +1125,11 @@ final class RecordingCoordinator {
 
     /// Type the newest dictation in the history where the cursor is now.
     func typeLastDictation() async {
-        var descriptor = FetchDescriptor<Dictation>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        // Not one kept with no words after its recognition failed: there is nothing to type.
+        var descriptor = FetchDescriptor<Dictation>(
+            predicate: #Predicate { $0.text != "" },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
         descriptor.fetchLimit = 1
         guard let last = (try? modelContext?.fetch(descriptor))?.first else {
             AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
@@ -1161,24 +1186,33 @@ final class RecordingCoordinator {
         !isCancellable && !isDelivering && transcribingAgain == nil
     }
 
+    /// How Transcribe Again ended.
+    enum TranscribeAgainOutcome: Equatable {
+        /// The dictation holds the new words. The note, when there is one, says what
+        /// fell short on the way, such as a rewrite that failed.
+        case replaced(note: String?)
+        /// The dictation was left as it was, for this reason.
+        case failed(String)
+    }
+
     /// Transcribe a kept dictation again from its recording, with the Words settings
     /// and the rewriting choice as they are now, and put the result in its entry. The
     /// entry keeps its time, destination and recording.
     ///
     /// The words go through the steps a live dictation's take, apart from those that
-    /// deliver them: nothing is typed, and a closing "press enter" stays as words, since
-    /// no Return follows. The words wait in Recent Dictations to be inserted or copied.
-    /// The entry is left as it was when any step fails, a rewrite included, since its
-    /// words may be a rewrite worth more than the words as heard.
+    /// deliver them: nothing is typed, and nothing is pressed for a closing "press
+    /// enter", which comes off as it does from a live dictation. The words wait in
+    /// Recent Dictations to be inserted or copied, and Undo there puts back the words
+    /// the entry held. A rewrite that fails leaves the words as heard, as it does in a
+    /// live dictation, and the note says so. Any other step that fails leaves the entry
+    /// as it was.
     ///
     /// A 30-second recording took 2.5 s with 14 listed words and a prompt that keeps the
     /// speaker's words: 0.9 s to read it and 1.6 s to rewrite it.
-    ///
-    /// - Returns: Why the entry was left as it was, or nil once it holds the new words.
-    func transcribeAgain(_ dictation: Dictation) async -> String? {
-        guard canTranscribeAgain else { return "Indite is busy with another dictation." }
+    func transcribeAgain(_ dictation: Dictation) async -> TranscribeAgainOutcome {
+        guard canTranscribeAgain else { return .failed("Indite is busy with another dictation.") }
         guard let fileName = dictation.recordingFileName, DictationAudioStore.fileExists(named: fileName) else {
-            return "The recording of this dictation is no longer on this Mac."
+            return .failed(TranscribeAgainError.recordingGone.localizedDescription)
         }
         transcribingAgain = dictation.persistentModelID
         defer { transcribingAgain = nil }
@@ -1192,12 +1226,22 @@ final class RecordingCoordinator {
             )
         } catch {
             Log.dictation.error("Could not transcribe a dictation again: \(error, privacy: .public)")
-            return error.localizedDescription
+            return .failed(error.localizedDescription)
         }
 
-        let transcript = TextProcessor.process(heard, replacements: settings.wordReplacements)
+        var transcript = TextProcessor.process(heard, replacements: settings.wordReplacements)
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "Nothing was heard in the recording."
+            return .failed("Nothing was heard in the recording.")
+        }
+
+        // A closing "press enter" is a command, and comes off while the setting is on, as
+        // it does from a live dictation. Left on, Insert would type it as words, since it
+        // never presses Return.
+        if settings.pressEnterSubmits, let withoutCommand = TextProcessor.removingPressEnter(from: transcript) {
+            guard !withoutCommand.isEmpty else {
+                return .failed("The recording holds only \u{201C}press enter\u{201D}, so there are no words to keep.")
+            }
+            transcript = withoutCommand
         }
 
         // Snippets as a live dictation expands them: after the AI pass, which never sees
@@ -1205,6 +1249,7 @@ final class RecordingCoordinator {
         let snippets = settings.snippets
         var text = Snippets.expand(transcript, snippets: snippets).text
         var promptName: String?
+        var note: String?
 
         // The prompt chosen in the Rewrite menu now. No app's own choice applies, since
         // the words are going to no app.
@@ -1220,19 +1265,28 @@ final class RecordingCoordinator {
                 if let rewritten = Snippets.expand(rewrite, cuesOf: transcript, snippets: snippets) {
                     text = rewritten.text
                     promptName = aiProcessor.promptConfiguration.prompt(withId: chosen)?.name
+                } else {
+                    note = "The rewrite changed a snippet\u{2019}s cue, so the words are as heard."
                 }
             } catch {
+                // The words go in as heard, as a live dictation's do when its rewrite
+                // fails. Undo in Recent Dictations brings back the words the entry held,
+                // so a rewrite worth keeping is not lost.
                 aiPass.cancel()
                 let detail = error is DeadlineExceeded
-                    ? "The rewrite took longer than \(Int(Self.aiDeadline)) seconds."
+                    ? "It took longer than \(Int(Self.aiDeadline)) seconds."
                     : error.localizedDescription
-                Log.dictation.error("Transcribe Again left the entry as it was, as the rewrite failed: \(detail, privacy: .public)")
-                return "The rewrite failed. \(detail)"
+                Log.dictation.error("Transcribe Again keeps the words as heard, as the rewrite failed: \(detail, privacy: .public)")
+                note = "The rewrite failed, so the words are as heard. \(detail)"
             }
         }
 
-        // Deleted while it was being read, by the user or by the history's limit.
-        guard let modelContext, !dictation.isDeleted, dictation.modelContext != nil else { return nil }
+        // Deleted while it was being read, by the user or by the history's limit. Its new
+        // words have nowhere to go, and Recent Dictations says so.
+        guard let modelContext, !dictation.isDeleted, dictation.modelContext != nil else {
+            Log.dictation.notice("A dictation was deleted while it was transcribed again; its new words were not kept")
+            return .failed("The dictation was deleted before its new words were ready, so they were not kept.")
+        }
         dictation.text = text
         // The words heard, as `finishHistory` keeps them.
         dictation.rawText = transcript == text ? nil : transcript
@@ -1240,7 +1294,7 @@ final class RecordingCoordinator {
         modelContext.saveOrLog()
         let took = Int((ContinuousClock.now - started) / .milliseconds(1))
         Log.dictation.notice("Transcribed a dictation again in \(took, privacy: .public) ms")
-        return nil
+        return .replaced(note: note)
     }
 
     /// Say in the dictation panel how a dictation ended, or why it did not start.
