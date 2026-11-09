@@ -32,13 +32,15 @@ struct DictationHistoryView: View {
     /// changes, since the week and the days in a row depend on it.
     @State private var today = Calendar.current.startOfDay(for: .now)
 
-    /// What it takes to put a deleted dictation back as it was.
+    /// What it takes to put a deleted dictation back as it was. Its recording stays on
+    /// disk until Undo can no longer bring it back.
     private struct DeletedDictation {
         let text: String
         let rawText: String?
         let destination: String?
         let promptName: String?
         let spokenDuration: TimeInterval?
+        let recordingFileName: String?
         let createdAt: Date
     }
 
@@ -315,12 +317,16 @@ struct DictationHistoryView: View {
             selection = next?.persistentModelID
         }
 
+        // Undo puts back only the dictation deleted last, so the one before it is gone
+        // for good, and its recording with it.
+        DictationAudioStore.delete(fileNamed: lastDeleted?.recordingFileName)
         lastDeleted = DeletedDictation(
             text: dictation.text,
             rawText: dictation.rawText,
             destination: dictation.destination,
             promptName: dictation.promptName,
             spokenDuration: dictation.spokenDuration,
+            recordingFileName: dictation.recordingFileName,
             createdAt: dictation.createdAt
         )
         modelContext.delete(dictation)
@@ -330,11 +336,13 @@ struct DictationHistoryView: View {
         undoTimeout = Task {
             try? await Task.sleep(for: .seconds(8))
             guard !Task.isCancelled else { return }
+            DictationAudioStore.delete(fileNamed: lastDeleted?.recordingFileName)
             lastDeleted = nil
         }
     }
 
-    /// Put the dictation deleted last back where it was, by its own date.
+    /// Put the dictation deleted last back where it was, by its own date, with its
+    /// recording.
     private func undoDelete() {
         guard let deleted = lastDeleted else { return }
         modelContext.insert(Dictation(
@@ -343,6 +351,7 @@ struct DictationHistoryView: View {
             destination: deleted.destination,
             promptName: deleted.promptName,
             spokenDuration: deleted.spokenDuration,
+            recordingFileName: deleted.recordingFileName,
             createdAt: deleted.createdAt
         ))
         modelContext.saveOrLog()

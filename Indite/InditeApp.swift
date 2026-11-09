@@ -341,6 +341,10 @@ struct InditeApp: App {
             // The coordinator keeps finished dictations, which needs the open store.
             coordinator.modelContext = InditeApp.modelContainer.mainContext
 
+            // Before the key is armed, so no dictation is recording while its folder is
+            // put in order.
+            DictationHistory.tidyRecordings(settings: settings, in: InditeApp.modelContainer.mainContext)
+
             // A dictation that muted the Mac and never ended, because Indite crashed or
             // was force quit, left the sound off. Only a recent one is undone: after an
             // hour, the sound may since have been muted on purpose.

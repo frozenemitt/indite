@@ -203,11 +203,15 @@ final class TranscriptionEngine {
     /// - Parameter publishesSpectrum: whether anything is going to draw the band. The
     ///   Fourier transform behind it runs on every buffer, and running it for a panel
     ///   nobody has switched on is work spent on a picture that is never drawn.
+    /// - Parameter recording: Where to keep the audio the recognizer is fed, for a
+    ///   dictation kept in Recent Dictations. The caller closes it once this session
+    ///   has stopped.
     func startRecording(
         owner: SessionOwner = .dictation,
         vocabulary: [String] = [],
         inputDeviceUID: String = "default",
-        publishesSpectrum: Bool = false
+        publishesSpectrum: Bool = false,
+        keepingAudioIn recording: DictationAudioWriter? = nil
     ) async throws {
         // Thrown rather than returned: a caller that silently "succeeds" here goes on to
         // set up its own UI for a session that does not exist, and only finds out when
@@ -324,6 +328,10 @@ final class TranscriptionEngine {
                     spotter?.append(converted)
                     let input = AnalyzerInput(buffer: converted)
                     analyzerContinuation?.yield(input)
+                    // The very audio the recognizer hears, so Transcribe Again hears it
+                    // too. Written after the recognizer has it: the first write opens
+                    // the file, which took 7.8 ms.
+                    recording?.append(converted)
                 } catch {
                     Self.log.error("conversion failed on buffer #\(bufferCount, privacy: .public): \(error, privacy: .public)")
                 }

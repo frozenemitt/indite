@@ -351,7 +351,9 @@ enum HelpLibrary {
             were heard. "Clear All…" deletes every dictation.
 
             To keep more or fewer, open Indite's Settings, choose Dictation, and change \
-            "Keep the last" under "Recent Dictations".
+            "Keep the last" under "Recent Dictations". "Keep recordings for" sets how many \
+            days the recordings are kept, and "Keep forever" keeps them as long as their \
+            dictations.
             """,
         topic: .dictation
     )
@@ -933,9 +935,13 @@ enum HelpLibrary {
         body: """
             Indite saves everything you dictate in plain text on this Mac, as recent \
             dictations, so that a dictation which landed in the wrong window can be \
-            recovered. It keeps the last 100. To save no dictations at all, open Indite's \
-            Settings, choose Dictation, and turn off "Keep recent dictations". "Clear \
-            All…" in the Recent Dictations window deletes the ones already kept.
+            recovered. It keeps the last 100. With each one it keeps a recording of your \
+            voice for 14 days, so the dictation can be transcribed again. "Keep \
+            recordings for" in Settings, under Dictation, changes the number of days.
+
+            To save no dictations and no recordings at all, open Indite's Settings, \
+            choose Dictation, and turn off "Keep recent dictations". "Clear All…" in the \
+            Recent Dictations window deletes the ones already kept, with their recordings.
 
             Meetings keep their transcript, summary and recording. To keep no recordings, \
             turn off "Keep the recording after a meeting ends" in Settings, under \
