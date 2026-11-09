@@ -1068,7 +1068,9 @@ final class RecordingCoordinator {
                 lastDestination = appName
                 if let problem { report(.problem(problem)) }
                 // Not after Return: the message has gone, and there is nothing left to correct.
-                if let insertion = TextInsertionService.lastInsertion {
+                // Nor a dictation that held a snippet's saved text: the user wrote that
+                // text, so a name changed in it is an edit, not a mishearing.
+                if !keepsText, let insertion = TextInsertionService.lastInsertion {
                     CorrectionWatcher.shared.watch(insertion)
                 }
             case .copiedToClipboard:
