@@ -1323,9 +1323,9 @@ final class RecordingCoordinator {
         muteTask = Task {
             try? await Task.sleep(for: .seconds(wait))
             // Ended while waiting: `unmute()` has run, and nothing would put this back.
-            // A dictation that has warned about its microphone keeps the Mac's sound, so
-            // that its alarm is heard.
-            guard !Task.isCancelled, isRecording, !isDelivering, lastMicrophoneTrouble == nil else { return }
+            // A dictation keeps the Mac's sound while it warns about its microphone, so
+            // that its alarm is heard; the mute comes back when the warning clears.
+            guard !Task.isCancelled, isRecording, !isDelivering, microphoneTrouble == nil else { return }
             OutputMute.mute()
             hasMuted = true
         }
@@ -1453,6 +1453,10 @@ final class RecordingCoordinator {
             alarmTask = nil
             overlay.clearWarning()
             Log.dictation.notice("The microphone warning cleared")
+            // The microphone hears again, so the Mac goes quiet again, once an alarm
+            // still playing has played out. A warning used to keep the Mac's sound on
+            // for the rest of the dictation.
+            if settings.muteWhileDictating, !hasMuted { mute(after: Self.longestMuteWait) }
             return
         }
 
