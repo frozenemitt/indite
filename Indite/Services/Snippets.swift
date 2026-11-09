@@ -24,9 +24,12 @@ enum Snippets {
     ///
     /// A cue matches whole words, in any capitals, with any punctuation around it and
     /// the recognizer's marks for a pause between its words. The punctuation stays
-    /// where it is, except a full stop after a cue that ends the text. That full stop
-    /// ended the spoken sentence: a dictation of "My address." types the address and
-    /// nothing after it. A question mark stays.
+    /// where it is, with two exceptions for the mark the recognizer put right after a
+    /// cue. A full stop there that ends the text goes: it ended the spoken sentence, and
+    /// a dictation of "My address." types the address and nothing after it. And any
+    /// mark there goes when the saved text ends in punctuation, a space or a line break
+    /// of its own, so that "My closing line. Talk soon." types one full stop, not two.
+    /// What follows keeps the capital the recognizer gave it.
     static func expand(_ text: String, snippets: [Snippet]) -> (text: String, expanded: Int) {
         guard let cues = Cues(snippets) else { return (text, 0) }
         // The dictation's own spaces at either end go, as a paste fitted to the cursor
@@ -39,8 +42,15 @@ enum Snippets {
         var result = ""
         var position = 0
         for match in matches {
+            let saved = cues.savedTexts[cues.cue(of: match)]
             result += whole.substring(with: NSRange(location: position, length: match.range.location - position))
-            result += cues.savedTexts[cues.cue(of: match)]
+            result += saved
+            let markRange = match.range(at: cues.savedTexts.count + 1)
+            if markRange.location != NSNotFound {
+                let mark = whole.substring(with: markRange)
+                let endsDictation = NSMaxRange(markRange) == whole.length && mark.allSatisfy { ".…".contains($0) }
+                if !endsDictation, !endsInMark(saved) { result += mark }
+            }
             position = NSMaxRange(match.range)
         }
         return (result + whole.substring(from: position), matches.count)
@@ -54,6 +64,14 @@ enum Snippets {
         guard let cues = Cues(snippets) else { return true }
         let kept = cues.counts(in: answer)
         return cues.counts(in: said).allSatisfy { kept[$0.key, default: 0] >= $0.value }
+    }
+
+    /// Whether saved text ends where a mark after it would be one too many: in a full
+    /// stop, comma, semicolon, colon, question or exclamation mark, an ellipsis, a space
+    /// or a line break. Not a closing bracket or quote, which a full stop can follow.
+    private static func endsInMark(_ text: String) -> Bool {
+        guard let last = text.last else { return false }
+        return last.isWhitespace || ".,;:!?…".contains(last)
     }
 
     /// One form for the ways a cue can be written: lower case, single spaces and a
@@ -107,8 +125,10 @@ enum Snippets {
                         .joined(separator: "['\u{2019}]")
                 }.joined(separator: "[.,?!…]*\\s+") + ")")
             }
+            // The last group is the mark the recognizer put right after the cue, which
+            // `expand` keeps or drops.
             guard !alternatives.isEmpty, let pattern = try? NSRegularExpression(
-                pattern: "(?<![\\p{L}\\p{N}_])(?:\(alternatives.joined(separator: "|")))(?![\\p{L}\\p{N}_])([.…]+$)?",
+                pattern: "(?<![\\p{L}\\p{N}_])(?:\(alternatives.joined(separator: "|")))(?![\\p{L}\\p{N}_])([.…]+|[,?!])?",
                 options: [.caseInsensitive]
             ) else { return nil }
             self.pattern = pattern
