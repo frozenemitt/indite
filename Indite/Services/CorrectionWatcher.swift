@@ -48,7 +48,7 @@ final class CorrectionWatcher {
     /// The app's settings, whose Words list a name goes on. Set at launch.
     var settings: AppSettings?
 
-    /// The watch under way. The next dictation ends it.
+    /// The watch under way. The next dictation to deliver words ends it.
     private var current: FieldWatch?
 
     private init() {
@@ -81,8 +81,9 @@ final class CorrectionWatcher {
         watch.start()
     }
 
-    /// End the watch under way, because the next dictation has started. Its words may
-    /// land in the same field, so the last one's are judged as they stand now.
+    /// End the watch under way, because the next dictation's words are about to be
+    /// delivered. They may land in the same field, so the last one's are judged as they
+    /// stand now.
     func stopWatching() {
         current?.end(.nextDictation)
     }
@@ -270,7 +271,7 @@ final class FieldWatch: @unchecked Sendable {
         case wordsDeleted = "the words were deleted"
         case closed = "the field closed"
         case tooLong = "the field grew past 20,000 characters"
-        case nextDictation = "the next dictation started"
+        case nextDictation = "the next dictation's words arrived"
         case timeUp = "the minute was up"
     }
 

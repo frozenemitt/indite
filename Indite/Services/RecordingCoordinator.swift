@@ -430,8 +430,6 @@ final class RecordingCoordinator {
         }
 
         Log.dictation.notice("Recording started")
-        // The last dictation's field is judged before this one's words can land in it.
-        CorrectionWatcher.shared.stopWatching()
 
         // Accessibility work on the target app, after the sound and the panel and
         // outside the start the release waits for. Each call waits on the target app,
@@ -1009,6 +1007,11 @@ final class RecordingCoordinator {
     ///     snippet's saved text.
     private func deliver(_ text: String, problem: String? = nil, pressesReturn: Bool = false, keepsText: Bool = false) async {
         #if os(macOS)
+        // The last dictation's field is judged before this one's words can land in it.
+        // Not when this dictation started: a stray tap of the key starts one that
+        // delivers nothing, and that ended the watch for nothing.
+        CorrectionWatcher.shared.stopWatching()
+
         // Dismissed before insertion: the panel is borderless and non-activating, but
         // leaving it up while text lands is visual noise at the wrong moment.
         overlay.hide()
