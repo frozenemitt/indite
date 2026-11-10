@@ -56,6 +56,45 @@ struct SettingsView: View {
         }
         .frame(minWidth: 520, idealWidth: 640, maxWidth: .infinity,
                minHeight: 420, idealHeight: 520, maxHeight: .infinity)
+        .background(NoInitialFocus(tab: tab))
+    }
+}
+
+/// Opens Settings, and each of its tabs, with no control focused.
+///
+/// SwiftUI gives the first focusable control keyboard focus as the window opens. With
+/// keyboard navigation on in System Settings, that control draws its focus ring at
+/// once: Jonathan saw one around the Status row's arrow, which he had never clicked.
+/// With nothing focused, the ring appears only once Tab is pressed, which is when a
+/// keyboard user needs it. Hiding the ring instead would have hidden it from them too.
+private struct NoInitialFocus: NSViewRepresentable {
+    let tab: SettingsTab
+
+    func makeNSView(context: Context) -> NSView { Probe() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        // A tab switch puts the first control of the new tab in focus as well. Only a
+        // switch: any other redraw could land while the user is typing in a field.
+        guard let probe = view as? Probe, probe.shownTab != tab else { return }
+        probe.shownTab = tab
+        probe.clearFocusSoon()
+    }
+
+    final class Probe: NSView {
+        var shownTab: SettingsTab?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            clearFocusSoon()
+        }
+
+        /// One turn of the run loop later, after SwiftUI has placed its own focus.
+        func clearFocusSoon() {
+            DispatchQueue.main.async { [weak self] in
+                guard let window = self?.window, window.firstResponder !== window else { return }
+                window.makeFirstResponder(nil)
+            }
+        }
     }
 }
 
@@ -97,10 +136,6 @@ struct SetupStatusSection: View {
                 } label: {
                     StatusRow(mark: .good, title: "Everything Indite needs is in place.")
                 }
-                // With keyboard navigation on in System Settings, the first control in a
-                // window gets focus when it opens, and this arrow is the first. Its ring
-                // then sat around a row nobody had clicked.
-                .focusEffectDisabled()
             }
         }
         .onAppear {
