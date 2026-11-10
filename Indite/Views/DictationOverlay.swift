@@ -8,6 +8,9 @@ struct OverlayOutcome: Equatable {
     /// Shown dimmed under the headline: the words that were copied, the microphone
     /// that heard nothing, or why a microphone sends no sound.
     var detail = ""
+    /// Offers a button that opens Recent Dictations, where a dictation that failed or
+    /// went in as heard can be transcribed again.
+    var opensRecentDictations = false
 
     /// No text field had focus, so the words are on the clipboard.
     static func copied(_ text: String) -> OverlayOutcome {
@@ -38,11 +41,20 @@ struct OverlayOutcome: Equatable {
         OverlayOutcome(symbol: "mic.slash", headline: "No sound came from \(microphone)", detail: cause)
     }
 
+    /// Recognition failed before any words were heard, and the recording was kept, so
+    /// Transcribe Again in Recent Dictations can read it.
+    static func recognitionFailed(_ reason: String) -> OverlayOutcome {
+        OverlayOutcome(symbol: "exclamationmark.triangle", headline: "Recognition failed.",
+                       detail: reason, opensRecentDictations: true)
+    }
+
     /// Something went wrong. `copied` adds where the words went, when they went to the
-    /// clipboard.
-    static func problem(_ message: String, copied: Bool = false) -> OverlayOutcome {
+    /// clipboard. `opensRecentDictations` offers the way to the dictation, when one
+    /// was kept that Transcribe Again can mend.
+    static func problem(_ message: String, copied: Bool = false, opensRecentDictations: Bool = false) -> OverlayOutcome {
         OverlayOutcome(symbol: "exclamationmark.triangle", headline: message,
-                       detail: copied ? "The words are on the clipboard. Press ⌘V to paste." : "")
+                       detail: copied ? "The words are on the clipboard. Press ⌘V to paste." : "",
+                       opensRecentDictations: opensRecentDictations)
     }
 }
 
@@ -79,6 +91,8 @@ final class DictationOverlayController {
     static let width: CGFloat = 460
     static let bandHeight: CGFloat = 22
     static let contentSpacing: CGFloat = 10
+    /// The height of the Open Recent Dictations button under an outcome.
+    static let actionHeight: CGFloat = 24
     static let verticalPadding: CGFloat = 28
 
     /// Visible over full-screen apps and on every desktop: a call is usually
@@ -89,7 +103,13 @@ final class DictationOverlayController {
     init(settings: AppSettings) {
         self.settings = settings
         model.resizePanel = { [weak self] in self?.fitToText() }
+        model.openRecentDictations = { [weak self] in self?.openRecentDictations() }
     }
+
+    /// How long an outcome stays up once the pointer is off the panel.
+    private static let outcomeSeconds: Double = 3
+    /// How long an outcome with a button stays up, so there is time to reach it.
+    private static let outcomeWithActionSeconds: Double = 8
 
     // MARK: - Presentation
 
@@ -136,8 +156,9 @@ final class DictationOverlayController {
     /// report was a notification, which many people switch off, and which appears at
     /// the far corner of the screen from where the panel is being watched.
     ///
-    /// Up for three seconds, then gone. A dictation started meanwhile takes the panel
-    /// over at once.
+    /// Up for three seconds, then gone, or eight when it offers Open Recent Dictations,
+    /// and for as long as the pointer rests on the panel. A dictation started meanwhile
+    /// takes the panel over at once.
     func showOutcome(_ outcome: OverlayOutcome) {
         outcomeTask?.cancel()
         model.outcome = outcome
@@ -152,12 +173,33 @@ final class DictationOverlayController {
         // its own height only when that changes, and an outcome's one line of detail
         // is often as tall as the dictation before it.
         fitToText()
+        hideOutcome(after: outcome.opensRecentDictations ? Self.outcomeWithActionSeconds : Self.outcomeSeconds)
+    }
 
+    private func hideOutcome(after seconds: Double) {
+        outcomeTask?.cancel()
         outcomeTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
             self?.hide()
         }
+    }
+
+    /// Hold an outcome on the panel while the pointer rests on it, so it does not go
+    /// from under a click on its button.
+    private func pointerIsOver(_ inside: Bool) {
+        guard model.outcome != nil else { return }
+        if inside {
+            outcomeTask?.cancel()
+        } else {
+            hideOutcome(after: Self.outcomeSeconds)
+        }
+    }
+
+    /// Open Recent Dictations from the outcome's button, and take the panel away.
+    private func openRecentDictations() {
+        hide()
+        FamilyWindows.show(InditeApp.historyWindowID)
     }
 
     /// Put the panel on screen at one line's height, where the user left it.
@@ -343,7 +385,9 @@ final class DictationOverlayController {
     /// The room a headline takes above the text, an outcome's or a warning's, or none
     /// while dictating.
     private var headlineHeight: CGFloat {
-        model.headline == nil ? 0 : DictationOverlayView.lineHeight + Self.contentSpacing
+        let headline = model.headline == nil ? 0 : DictationOverlayView.lineHeight + Self.contentSpacing
+        let action = model.outcome?.opensRecentDictations == true ? Self.actionHeight + Self.contentSpacing : 0
+        return headline + action
     }
 
     /// The text room in the tallest panel the screen can hold.
@@ -405,8 +449,8 @@ final class DictationOverlayController {
 
         // The SwiftUI content swallows the mouse, so `isMovableByWindowBackground`
         // never sees a click and the panel could not be dragged at all. This view sits
-        // under the content, takes every hit, and drags the window itself. Safe
-        // because the panel is display-only: there is nothing in it to click.
+        // under the content, takes every hit, and drags the window itself, except for
+        // a click on the one button an outcome may show, which it passes on.
         let hosting = NSHostingView(rootView: DictationOverlayView(model: model))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         // The glass the panel is made of. AppKit's own view rather than SwiftUI's
@@ -422,6 +466,9 @@ final class DictationOverlayController {
         glass.cornerRadius = 26
 
         let container = DragHandleView()
+        container.actionFrame = { [weak self] in self?.model.actionFrame }
+        container.onAction = { [weak self] in self?.openRecentDictations() }
+        container.onHover = { [weak self] inside in self?.pointerIsOver(inside) }
         // Remembered only when the user drags it. Every programmatic move used to be
         // saved too, so placing the panel on the screen with the pointer pinned it to
         // that screen for good, and each resize nudged the saved spot upward.
@@ -533,18 +580,52 @@ final class DictationOverlayController {
     }
 }
 
-/// Drags the panel from anywhere inside it.
+/// Drags the panel from anywhere inside it, and clicks the button an outcome may show.
 ///
 /// `performDrag` hands the drag to the window server and returns before the panel has
 /// moved, so the end of the drag is left to `PanelDragWatcher`.
+///
+/// The button is found by its frame rather than handed the click: SwiftUI's button sits
+/// under this view, which takes every hit so the panel can be dragged. The panel never
+/// becomes key, so the click acts at once and focus stays in the app being dictated
+/// into.
 private final class DragHandleView: NSView {
+    /// The button's frame in the panel's content, from the top left, while one shows.
+    var actionFrame: () -> CGRect? = { nil }
+    var onAction: () -> Void = {}
+    /// Told when the pointer comes onto the panel and leaves it.
+    var onHover: (Bool) -> Void = { _ in }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         super.hitTest(point) == nil ? nil : self
     }
 
+    // A panel that never becomes key still takes the first click.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        // SwiftUI measures from the top left, and this view from the bottom left.
+        let fromTop = CGPoint(x: point.x, y: bounds.height - point.y)
+        if let frame = actionFrame(), frame.contains(fromTop) {
+            onAction()
+            return
+        }
         window?.performDrag(with: event)
     }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover(true) }
+    override func mouseExited(with event: NSEvent) { onHover(false) }
 }
 
 /// Text the overlay is showing.
@@ -567,6 +648,11 @@ final class OverlayModel {
     var rewrite = ""
     /// Loudness per frequency band, 0 to 1, low to high — one per bar.
     var spectrum: [Double] = []
+    /// Where the outcome's Open Recent Dictations button is, in the panel's content
+    /// from the top left, while it shows.
+    @ObservationIgnored var actionFrame: CGRect?
+    /// Handed in by the controller: opens Recent Dictations and takes the panel away.
+    @ObservationIgnored var openRecentDictations: () -> Void = {}
 
     /// How tall the text lays itself out in full, before the cap below clips it. It is
     /// what sizes the panel.
@@ -642,6 +728,23 @@ private struct DictationOverlayView: View {
                 // pushed the earlier ones up.
                 .fixedSize(horizontal: false, vertical: true)
                 .clipped()
+
+            if model.outcome?.opensRecentDictations == true {
+                // A pointer's click reaches it through `DragHandleView`, which lies
+                // over it; VoiceOver presses it directly.
+                Button(action: model.openRecentDictations) {
+                    Label("Open Recent Dictations", systemImage: "clock.arrow.circlepath")
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, 12)
+                        .frame(height: DictationOverlayController.actionHeight)
+                        .background(Capsule().fill(.quaternary))
+                }
+                .buttonStyle(.plain)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                    model.actionFrame = frame
+                }
+                .onDisappear { model.actionFrame = nil }
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, DictationOverlayController.verticalPadding / 2)
