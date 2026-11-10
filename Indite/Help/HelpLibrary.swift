@@ -64,7 +64,7 @@ enum HelpLibrary {
             Click the I to open Indite's menu. Its first line says whether Indite is \
             ready and which key starts a dictation. Below it are "Start Dictation", "Start \
             Meeting", the Rewrite and Microphone choices, "Meetings", "Recent Dictations", \
-            "Help", "Settings…" and "Check for Updates…".
+            "Type Again", "Help", "Settings…" and "Check for Updates…".
 
             The I changes shape with what Indite is doing. It is cut out of a filled square \
             while you dictate, becomes a brain while your words are rewritten, and becomes \
@@ -342,22 +342,26 @@ enum HelpLibrary {
         title: "Find an earlier dictation",
         body: """
             Indite keeps your last 100 dictations, so you can find an old one later. \
-            Click the I in the menu bar, open "Recent Dictations", and choose "Show All" \
-            to see them in a window you can search.
+            Click the I in the menu bar and choose "Recent Dictations" to see them in a \
+            window you can search, grouped by day. "Type Again" in the same menu lists the \
+            last five: click one to type it where the cursor is.
 
-            Select a dictation and click "Copy", or click the "Insert into" button, which \
-            names the app you came from, to type it where the cursor is in that app. When \
-            the words were rewritten, "Copy Original" in the More menu copies them as they \
-            were heard. "Clear All…" deletes every dictation.
+            Point to a dictation, or select it, and its buttons appear. "Insert" types it \
+            where the cursor is in the app you came from, and "Copy" copies it. When the \
+            words were rewritten, "As Heard" shows them as they were heard, and Insert and \
+            Copy then take that version; "AI Version" switches back. Return inserts the \
+            selected dictation, and the Delete key deletes it. "Clear All…" in the More \
+            menu deletes every dictation.
 
-            Indite also keeps the recording of each dictation for 14 days. Right-click a \
-            dictation and choose "Transcribe Again", or choose it in the More menu, and \
-            Indite hears the recording again with your Words and the rewriting you have \
-            chosen now. The new words take the place of the old ones, and nothing is typed \
-            until you insert or copy them. For a few seconds afterwards, Undo at the bottom \
-            of the window puts the old words back. When recognition fails before any \
-            words are heard, the dictation is still listed with its recording, so \
-            Transcribe Again can recover them.
+            Indite also keeps the recording of each dictation for 14 days. Click \
+            "Transcribe Again" on a dictation, and Indite hears the recording again with \
+            your Words and the rewriting you have chosen now. The new words take the place \
+            of the old ones, and nothing is typed until you insert or copy them. For a few \
+            seconds afterwards, Undo at the bottom of the window puts the old words back. \
+            When recognition fails before any words are heard, the dictation is still \
+            listed with its recording, so Transcribe Again can recover them. When a \
+            dictation fails, or goes in as heard because the rewrite failed, the \
+            dictation panel offers "Open Recent Dictations".
 
             To keep more or fewer, open Indite's Settings, choose Dictation, and change \
             "Keep the last" under "Recent Dictations". "Keep recordings for" sets how many \
