@@ -97,6 +97,10 @@ struct SetupStatusSection: View {
                 } label: {
                     StatusRow(mark: .good, title: "Everything Indite needs is in place.")
                 }
+                // With keyboard navigation on in System Settings, the first control in a
+                // window gets focus when it opens, and this arrow is the first. Its ring
+                // then sat around a row nobody had clicked.
+                .focusEffectDisabled()
             }
         }
         .onAppear {
