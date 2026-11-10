@@ -93,11 +93,17 @@ final class AudioInputList {
 /// Lists the microphones available to record from.
 enum AudioDeviceCatalog {
 
-    /// Every device that has at least one input channel, except private ones, in the
-    /// order the system lists them.
+    /// Every device that has at least one input channel, except private ones and
+    /// virtual ones, in the order the system lists them.
+    ///
+    /// A virtual device such as Microsoft Teams Audio carries an app's sound, not a
+    /// voice, and it is always connected, so ranked below the Mac's microphone it was
+    /// chosen whenever the lid was closed and nothing else could hear: the dictation
+    /// recorded silence and warned. Jonathan had them left out on 2026-11-10; the
+    /// Mac's own sound is recorded for meetings another way.
     static func inputDevices() -> [AudioInputDevice] {
         allDeviceIDs()
-            .filter { hasInputChannels($0) && !isPrivateAggregate($0) }
+            .filter { hasInputChannels($0) && !isPrivateAggregate($0) && !isVirtual($0) }
             .compactMap { id in
                 guard let uid = stringProperty(kAudioDevicePropertyDeviceUID, for: id),
                       let name = stringProperty(kAudioObjectPropertyName, for: id) else {
@@ -448,6 +454,11 @@ enum AudioDeviceCatalog {
     /// default speakers; the meeting input is another. Both were listed as
     /// microphones. Picking the first saved a device that is gone by the next launch,
     /// so recording quietly fell back to the system default.
+    /// Whether a device is virtual, such as one an app installs to share its sound.
+    static func isVirtual(_ deviceID: AudioDeviceID) -> Bool {
+        value(kAudioDevicePropertyTransportType, of: deviceID, startingFrom: UInt32(0)) == kAudioDeviceTransportTypeVirtual
+    }
+
     private static func isPrivateAggregate(_ deviceID: AudioDeviceID) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioAggregateDevicePropertyComposition,
