@@ -247,6 +247,22 @@ struct DictationHistoryView: View {
                             Text("Transcribing again\u{2026}")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                        } else if dictation.hasRecording,
+                                  dictation.recognitionFailed || selected?.persistentModelID == dictation.persistentModelID {
+                            // On the dictation itself, where it is seen. In the More menu
+                            // and on right-click alone, Jonathan could not find it. Shown
+                            // on the selected row only, so the list does not repeat it,
+                            // and always on a failed one, which exists for it.
+                            Spacer(minLength: 8)
+                            Button {
+                                transcribeAgain(dictation)
+                            } label: {
+                                Label("Transcribe Again", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                            .disabled(!coordinator.canTranscribeAgain)
+                            .help("Read this dictation's recording again with your current words and prompt")
                         }
                     }
 
