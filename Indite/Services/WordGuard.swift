@@ -48,11 +48,10 @@ enum WordGuard {
 
             case .changed(let said, let rewritten):
                 if !said.isEmpty, said.count == rewritten.count {
-                    // One-for-one swaps: the misheard words a correction exists to fix.
-                    // A swap that cannot be a mishearing goes back to what was said.
+                    // One-for-one swaps go back to what was said, unless the model only
+                    // wrote the same number another way.
                     for (s, r) in zip(said, rewritten) {
-                        let isName = looksLikeName(saidWords[s].text) || looksLikeName(rewriteWords[r].text)
-                        if couldBeMisheard(saidWords[s].key, as: rewriteWords[r].key, isName: isName) {
+                        if couldBeMisheard(saidWords[s].key, as: rewriteWords[r].key) {
                             output.append(rewriteWords[r])
                         } else {
                             output.append(transplanting(saidWords[s], into: rewriteWords[r]))
@@ -104,77 +103,19 @@ enum WordGuard {
 
     // MARK: - Mishearings
 
-    /// Whether the recognizer could have written `said` for a word that was really
-    /// `rewritten`, so that swapping one for the other corrects a mishearing.
+    /// Whether the model may put `rewritten` in place of `said`: only the same number
+    /// written another way, as "1st" and "first".
     ///
-    /// Any swap used to pass. In 100 dictations from November 2026 the model made ten,
-    /// and six were not corrections: "Justin" became "Scott" in a message, "2024"
-    /// became "2023", "spiritual development" became "spiritual growth". All six fail
-    /// here. The four that were, "pending doom" to "impending doom", "crack" to
-    /// "cracking" and "1st" to "first" twice, pass, and so do the mishearings Apple's
-    /// and Gemma's models put right in the clean-up test set: "There sound like" to
-    /// "They sound like", "Maine" to "main", "seraph fought" to "serif font".
-    ///
-    /// Three ways to pass: both name the same number; one word is the other with a
-    /// prefix or ending added; or the two sound alike, as their phonetic keys judge.
-    /// A name must sound exactly alike, so "Justin" cannot become "Jason".
-    ///
-    /// - Parameters:
-    ///   - said: The key of the word as the recognizer wrote it.
-    ///   - rewritten: The key of the word the model put in its place.
-    ///   - isName: Either word is written as a name.
-    static func couldBeMisheard(_ said: String, as rewritten: String, isName: Bool = false) -> Bool {
-        // A number changes only into the same number written another way. A model
-        // has no way to know the right one, so a different number is a guess.
-        // "for" and "four" are left to sound alike.
-        if said.contains(where: \.isNumber) || rewritten.contains(where: \.isNumber)
-            || (numberWords[said] != nil && numberWords[rewritten] != nil) {
-            guard let a = numberValue(said), let b = numberValue(rewritten) else { return false }
-            return a == b
-        }
-
-        // A word and its negation are opposites, not mishearings. On 2026-11-08 the
-        // model turned Jonathan's "an inelegant solution" into "an elegant solution",
-        // and both rules below let it through.
-        if flipsNegation(said, into: rewritten) { return false }
-
-        // "pending" heard for "impending", "crack" for "cracking". Not "in" for
-        // "within": the shorter word must be most of the longer one.
-        let (shorter, longer) = said.count <= rewritten.count ? (said, rewritten) : (rewritten, said)
-        if shorter.count >= 3, shorter.count * 5 >= longer.count * 3,
-           longer.hasPrefix(shorter) || longer.hasSuffix(shorter) {
-            return true
-        }
-
-        let a = soundKey(said), b = soundKey(rewritten)
-        guard !a.isEmpty, !b.isEmpty else { return false }
-        if a == b { return true }
-        // One sound apart, starting on the same sound: "there" and "they", "fought"
-        // and "font". Not "Monday" and "Sunday".
-        return !isName && a.first == b.first && editDistance(a, b) == 1
-    }
-
-    /// Whether `rewritten` is `said` with a negation added or taken away.
-    ///
-    /// Taking away a negating prefix is never a fix: the recognizer does not invent
-    /// the syllable "in" that turned "elegant" into "inelegant". Adding "in", "im", "il"
-    /// or "ir" can be one, because the recognizer drops an unstressed opening syllable,
-    /// as it did when "impending" came out as "pending". "un", "non" and "dis" are
-    /// stressed, so adding one is a change of meaning. "n't" flips a word either way:
-    /// "could" and "couldn't".
-    static func flipsNegation(_ said: String, into rewritten: String) -> Bool {
-        let dropped = ["un", "in", "im", "il", "ir", "non", "dis"]
-        if dropped.contains(where: { said == $0 + rewritten }) { return true }
-        if ["un", "non", "dis"].contains(where: { rewritten == $0 + said }) { return true }
-        let negations: Set<[String]> = [["can", "can't"], ["can", "cannot"], ["will", "won't"], ["shall", "shan't"]]
-        if negations.contains([said, rewritten]) || negations.contains([rewritten, said]) { return true }
-        return said == rewritten + "n't" || rewritten == said + "n't"
-    }
-
-    /// Written with a capital and not a word that takes one only to start a sentence.
-    private static func looksLikeName(_ text: String) -> Bool {
-        guard let first = text.first(where: \.isLetter), first.isUppercase else { return false }
-        return !commonWords.contains(text.lowercased().trimmingCharacters(in: .punctuationCharacters))
+    /// Swaps for misheard words used to pass when the two sounded alike or one was the
+    /// other with a prefix or ending added. On 96 dictations from November 2026 the model
+    /// made 11 swaps in one week and 1 was right; the version with the sound-alike rule
+    /// made 5 and 1 was right. Refusing every swap took wrong words from 47 to 43 and
+    /// left every other score as it was, so on 2026-11-10 Jonathan chose punctuation and
+    /// capitals only. Another word is a guess the model has no way to check: it once
+    /// turned "an inelegant solution" into "an elegant solution".
+    static func couldBeMisheard(_ said: String, as rewritten: String) -> Bool {
+        guard let a = numberValue(said), let b = numberValue(rewritten) else { return false }
+        return a == b
     }
 
     /// The said word, in the place and punctuation the model gave the word it swapped
@@ -224,102 +165,6 @@ enum WordGuard {
         "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10, "eleventh": 11,
         "twelfth": 12, "twentieth": 20, "thirtieth": 30
     ]
-
-    /// How an English word sounds, as consonants: Lawrence Philips' Metaphone, with
-    /// every opening vowel written "A" so "affect" and "effect" agree.
-    ///
-    /// "there" and "their" are both "0R", "Claude" and "cloud" both "KLT", "write"
-    /// and "right" both "RT". Letters outside a to z are left out.
-    static func soundKey(_ key: String) -> String {
-        var w = Array(key.folding(options: .diacriticInsensitive, locale: nil).lowercased().filter { $0 >= "a" && $0 <= "z" })
-        guard !w.isEmpty else { return "" }
-
-        // Silent or changed openings.
-        if w.count >= 2 {
-            let opening = String(w[0...1])
-            if ["ae", "gn", "kn", "pn", "wr"].contains(opening) { w.removeFirst() }
-            else if opening == "wh" { w.remove(at: 1) }
-        }
-        if w.first == "x" { w[0] = "s" }
-
-        let vowels: Set<Character> = ["a", "e", "i", "o", "u"]
-        func at(_ i: Int) -> Character? { i >= 0 && i < w.count ? w[i] : nil }
-        func isVowel(_ i: Int) -> Bool { at(i).map(vowels.contains) ?? false }
-
-        var out = ""
-        for i in w.indices {
-            let c = w[i]
-            // A doubled letter sounds once, except "cc" ("accept").
-            if i > 0, c == w[i - 1], c != "c" { continue }
-            let next = at(i + 1), afterNext = at(i + 2)
-            switch c {
-            case "a", "e", "i", "o", "u":
-                if i == 0 { out.append("A") }
-            case "b":
-                if !(i == w.count - 1 && at(i - 1) == "m") { out.append("B") }
-            case "c":
-                if next == "i", afterNext == "a" { out.append("X") }
-                else if next == "h" { out.append(at(i - 1) == "s" ? "K" : "X") }
-                else if let next, "iey".contains(next) {
-                    if at(i - 1) != "s" { out.append("S") }
-                } else { out.append("K") }
-            case "d":
-                if next == "g", let afterNext, "iey".contains(afterNext) { out.append("J") }
-                else { out.append("T") }
-            case "g":
-                if next == "h", !(i + 2 >= w.count || isVowel(i + 2)) { break }
-                if next == "n", i + 2 == w.count || (afterNext == "e" && at(i + 3) == "d" && i + 4 == w.count) { break }
-                if at(i - 1) == "d", let next, "iey".contains(next) { break }
-                if let next, "iey".contains(next), at(i - 1) != "g" { out.append("J") }
-                else { out.append("K") }
-            case "h":
-                if let previous = at(i - 1), "csptg".contains(previous) { break }
-                if isVowel(i - 1), !isVowel(i + 1) { break }
-                if isVowel(i + 1) || i == 0 { out.append("H") }
-            case "k":
-                if at(i - 1) != "c" { out.append("K") }
-            case "p":
-                out.append(next == "h" ? "F" : "P")
-            case "q":
-                out.append("K")
-            case "s":
-                if next == "h" { out.append("X") }
-                else if next == "i", let afterNext, "oa".contains(afterNext) { out.append("X") }
-                else { out.append("S") }
-            case "t":
-                if next == "i", let afterNext, "oa".contains(afterNext) { out.append("X") }
-                else if next == "h" { out.append("0") }
-                else if !(next == "c" && afterNext == "h") { out.append("T") }
-            case "v":
-                out.append("F")
-            case "w", "y":
-                if isVowel(i + 1) { out.append(c.uppercased()) }
-            case "x":
-                out.append("KS")
-            case "z":
-                out.append("S")
-            default:
-                out.append(c.uppercased())
-            }
-        }
-        return out
-    }
-
-    /// Insertions, deletions and substitutions that turn `a` into `b`.
-    static func editDistance(_ a: String, _ b: String) -> Int {
-        let a = Array(a), b = Array(b)
-        guard !a.isEmpty else { return b.count }
-        guard !b.isEmpty else { return a.count }
-        var previous = Array(0...b.count)
-        for i in 1...a.count {
-            var current = [i] + Array(repeating: 0, count: b.count)
-            for j in 1...b.count {
-                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1))
-            }
-            previous = current
-        }
-        return previous[b.count]
-    }
 
     // MARK: - Words
 
