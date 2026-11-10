@@ -28,7 +28,7 @@ struct MenuBarView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.modelContext) private var modelContext
 
-    /// The newest dictations, for the Recent Dictations submenu.
+    /// The newest dictations, for the Type Again submenu.
     @Query(MenuBarView.recentDictations) private var recent: [Dictation]
 
     private static var recentDictations: FetchDescriptor<Dictation> {
@@ -87,7 +87,11 @@ struct MenuBarView: View {
         Divider()
 
         Button("Meetings") { show(InditeApp.meetingsWindowID) }
-        recentMenu
+        // One click from the menu, as Meetings is. It used to be Show All at the foot
+        // of a submenu, three clicks deep, and Jonathan could not find the window.
+        // No ellipsis, as Meetings has none: it opens a window and asks for nothing.
+        Button("Recent Dictations") { show(InditeApp.historyWindowID) }
+        typeAgainMenu
 
         Divider()
 
@@ -318,7 +322,7 @@ struct MenuBarView: View {
         }
     }
 
-    // MARK: - Recent Dictations
+    // MARK: - Type Again
 
     /// The last five dictations. A click types one where the cursor is; with Option
     /// held, it is copied.
@@ -326,9 +330,13 @@ struct MenuBarView: View {
     /// Opening this menu does not take focus from the app in front, so the cursor is
     /// still where the user left it when the item is chosen. That is what makes the
     /// menu a way to put a dictation that went astray into the right place, where
-    /// before it took the History window, a search and a Copy.
-    private var recentMenu: some View {
-        Menu("Recent Dictations") {
+    /// before it took the History window, a search and a Copy. The window cannot do
+    /// that: opening it takes focus, so its Insert has to hand focus back first.
+    ///
+    /// Named for the type-again key, which types the newest of them, since the window
+    /// now has the name Recent Dictations to itself.
+    private var typeAgainMenu: some View {
+        Menu("Type Again") {
             if recent.isEmpty {
                 Text(settings.keepDictationHistory ? "No dictations yet" : "Recent dictations are not kept")
             }
@@ -353,10 +361,6 @@ struct MenuBarView: View {
                 Divider()
                 Text("Click to type at the cursor. ⌥-click to copy.")
             }
-
-            Divider()
-            // No ellipsis: it opens the list and asks for nothing.
-            Button("Show All") { show(InditeApp.historyWindowID) }
         }
     }
 
