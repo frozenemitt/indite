@@ -62,8 +62,9 @@ System shapes. The dictation panel's corner radius is 26; the meeting pill is a 
 - Native controls before custom ones. A custom control has to do something the native
   one cannot.
 - One name per thing: the dictation key, the dictation panel, the meeting pill,
-  speaker separation, rewriting, recent dictations (the menu, the window and the
-  setting; the window was Dictation History and the setting was History).
+  speaker separation, rewriting, recent dictations (the menu item, the window and the
+  setting; the window was Dictation History and the setting was History). The submenu
+  of the last five is Type Again, after the type-again key.
 - A caption under a setting stays only when it warns: recording other people, writing
   to disk, downloading. Mechanism and rationale go in a tooltip or go away.
 - A failure is said where the person is looking: in the dictation panel, in the pill,
@@ -455,3 +456,13 @@ as GitHub places it; a snapshot redraws the whole image and hides the stripes.
   the shadow. "The bands still exist as much as ever." Each ribbon layer now animates
   its own outline instead of a `<use>` of one, and the stripes are gone; the files grew
   from 205 KB to 506 KB (dark) and 672 KB (light).
+- 2026-11-10 Recent Dictations is a page to use, as Wispr Flow's history is. It is one
+  click from the menu, where it was Show All three clicks deep; the submenu of the last
+  five stays as Type Again, because it types without taking focus from the app in
+  front. The list is grouped under Today, Yesterday and dates. Each row shows its own
+  buttons under the pointer and when selected: Insert, Copy, Transcribe Again, and As
+  Heard or AI Version for a dictation the AI changed. They are white pills in light mode
+  and dark gray in dark mode, drawn by Indite, because the system's bordered button
+  vanished on the azure of a selected row. The toolbar keeps Delete and Clear All. The
+  dictation panel's problem lines for a failed or as-heard dictation carry Open Recent
+  Dictations.

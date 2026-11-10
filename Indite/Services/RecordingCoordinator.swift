@@ -658,7 +658,11 @@ final class RecordingCoordinator {
                     : engineError.localizedDescription
                 AudioFeedbackService.shared.playIfEnabled(.error, settings: settings)
                 NotificationService.shared.showErrorIfEnabled(detail, settings: settings)
-                report(.problem(detail))
+                // The panel's headline is one line, which cut the sentence about the
+                // recording off; its button now says where the recording is.
+                report(keptForRecording
+                       ? .recognitionFailed(engineError.localizedDescription)
+                       : .problem(detail))
                 Log.dictation.error("Recognition failed: \(engineError, privacy: .public)")
             } else if !engine.receivedAudio, (spokenDuration ?? 0) < 0.5 {
                 // Let go before the microphone's first buffer arrived, so nothing was
@@ -698,12 +702,16 @@ final class RecordingCoordinator {
         // back what it had. Delivered, and said: passing it off as complete hides that
         // the end is missing.
         var problem: String?
+        // Whether the panel offers Open Recent Dictations with the problem: the words
+        // went out short of what was said, and Transcribe Again can read the recording.
+        var opensRecentDictations = false
         if let engineError = engine.error {
             NotificationService.shared.showErrorIfEnabled(
                 "\(engineError.localizedDescription) Everything heard before that was delivered.",
                 settings: settings
             )
             problem = "Recognition stopped early."
+            opensRecentDictations = entry != nil
             Log.dictation.error("Delivering a transcript cut short: \(engineError, privacy: .public)")
         }
 
@@ -746,7 +754,8 @@ final class RecordingCoordinator {
             // Loaded at the start if rewriting was on then; switched off mid-recording
             // leaves it unused.
             aiProcessor.discardPrewarm()
-            await deliver(asHeard.text, problem: problem, pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0)
+            await deliver(asHeard.text, problem: problem, pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0,
+                          opensRecentDictations: opensRecentDictations)
             finishHistory(entry, text: asHeard.text, rawText: transcript, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showTranscriptionCompleteIfEnabled(
@@ -810,7 +819,8 @@ final class RecordingCoordinator {
             Log.dictation.error("AI failed, delivering raw transcript: \(detail, privacy: .public)")
 
             await deliver(asHeard.text, problem: "Delivered as heard. The rewrite failed.",
-                          pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0)
+                          pressesReturn: pressesReturn, keepsText: asHeard.expanded > 0,
+                          opensRecentDictations: entry != nil)
             finishHistory(entry, text: asHeard.text, rawText: transcript, promptName: nil)
             AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
             NotificationService.shared.showAIProcessingFailedIfEnabled(
@@ -833,7 +843,8 @@ final class RecordingCoordinator {
                 .compactMap { $0 }.joined(separator: " ")
         }
         let delivered = rewritten ?? asHeard
-        await deliver(delivered.text, problem: problem, pressesReturn: pressesReturn, keepsText: delivered.expanded > 0)
+        await deliver(delivered.text, problem: problem, pressesReturn: pressesReturn, keepsText: delivered.expanded > 0,
+                      opensRecentDictations: opensRecentDictations || (rewritten == nil && entry != nil))
         let promptName = rewritten != nil ? aiProcessor.promptConfiguration.prompt(withId: promptId)?.name : nil
         finishHistory(entry, text: delivered.text, rawText: transcript, promptName: promptName)
         AudioFeedbackService.shared.playIfEnabled(.processingComplete, settings: settings)
@@ -1037,7 +1048,11 @@ final class RecordingCoordinator {
     ///     dictation was aimed at.
     ///   - keepsText: Paste the text's own characters unchanged, because it holds a
     ///     snippet's saved text.
-    private func deliver(_ text: String, problem: String? = nil, pressesReturn: Bool = false, keepsText: Bool = false) async {
+    ///   - opensRecentDictations: The problem left the words as heard, and the
+    ///     dictation is kept, so the panel offers the way to it, where Transcribe
+    ///     Again can try the rewrite again.
+    private func deliver(_ text: String, problem: String? = nil, pressesReturn: Bool = false, keepsText: Bool = false,
+                         opensRecentDictations: Bool = false) async {
         #if os(macOS)
         // The last dictation's field is judged before this one's words can land in it.
         // Not when this dictation started: a stray tap of the key starts one that
@@ -1063,7 +1078,7 @@ final class RecordingCoordinator {
         if practiceIsInFront, let practiceReceiver {
             practiceReceiver(text)
             lastDestination = "Indite"
-            if let problem { report(.problem(problem)) }
+            if let problem { report(.problem(problem, opensRecentDictations: opensRecentDictations)) }
             return
         }
 
@@ -1082,7 +1097,7 @@ final class RecordingCoordinator {
             ClipboardService.copy(text)
             lastDestination = "Clipboard"
             // Copying is what was asked for here, so only a problem is worth the panel.
-            if let problem { report(.problem(problem)) }
+            if let problem { report(.problem(problem, opensRecentDictations: opensRecentDictations)) }
 
         case .smartInsert:
             let outcome = await TextInsertionService.deliver(
@@ -1098,7 +1113,7 @@ final class RecordingCoordinator {
             switch outcome {
             case .inserted(let appName):
                 lastDestination = appName
-                if let problem { report(.problem(problem)) }
+                if let problem { report(.problem(problem, opensRecentDictations: opensRecentDictations)) }
                 // Not after Return: the message has gone, and there is nothing left to correct.
                 // Nor a dictation that held a snippet's saved text: the user wrote that
                 // text, so a name changed in it is an edit, not a mishearing.
@@ -1109,10 +1124,10 @@ final class RecordingCoordinator {
                 lastDestination = "Clipboard"
                 // The setting says type, and the words were copied. That is the one
                 // ending the user cannot see for themselves.
-                report(problem.map { .problem($0, copied: true) } ?? .copied(text))
+                report(problem.map { .problem($0, copied: true, opensRecentDictations: opensRecentDictations) } ?? .copied(text))
             case .pastedUnconfirmed:
                 lastDestination = "Clipboard"
-                report(problem.map { .problem($0, copied: true) } ?? .unconfirmed)
+                report(problem.map { .problem($0, copied: true, opensRecentDictations: opensRecentDictations) } ?? .unconfirmed)
             }
         }
         #else
