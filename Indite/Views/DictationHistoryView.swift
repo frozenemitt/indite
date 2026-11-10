@@ -6,9 +6,11 @@ import SwiftData
 
 /// Recent dictations, so one that landed in the wrong window is recoverable.
 ///
-/// A list of rows, each the dictation itself. The commands are in the toolbar for
-/// the selected row, in its right-click menu and on a swipe, as a list's commands are
-/// in Notes and Mail. Every row used to carry a bar of four buttons in small type.
+/// A list of rows grouped by day, each the dictation itself. Each row carries its own
+/// buttons, shown under the pointer and on the selected row: Insert, Copy, Transcribe
+/// Again and the switch between the AI's version and the words as heard. They used to
+/// sit in the toolbar and act on the selected row, and Jonathan could not find them
+/// there. The toolbar keeps Delete and Clear All.
 struct DictationHistoryView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(RecordingCoordinator.self) private var coordinator
@@ -20,24 +22,25 @@ struct DictationHistoryView: View {
     @Query(sort: \Dictation.createdAt, order: .reverse) private var dictations: [Dictation]
 
     @State private var selection: PersistentIdentifier?
+    /// The row under the pointer, which shows its buttons.
+    @State private var hovered: PersistentIdentifier?
     @State private var searchText = ""
-    @State private var justCopied: CopiedKind?
+    /// The dictation copied last, so its Copy button alone shows the checkmark.
+    @State private var justCopied: PersistentIdentifier?
     @State private var isConfirmingClearAll = false
     /// The dictations shown in full. The rest stop at four lines.
     @State private var expanded: Set<PersistentIdentifier> = []
+    /// The dictations the AI changed that are shown as heard. Insert and Copy take
+    /// the version shown. Nothing in the store changes.
+    @State private var showingHeard: Set<PersistentIdentifier> = []
     /// The last change Undo can take back: a dictation deleted, or one transcribed again.
     @State private var undo = DictationUndo()
-    /// The start of today, for the line above the list. Set again whenever the day
-    /// changes, since the week and the days in a row depend on it.
+    /// The start of today, for the line above the list and the day headings. Set again
+    /// whenever the day changes, since "Today", the week and the days in a row depend
+    /// on it.
     @State private var today = Calendar.current.startOfDay(for: .now)
     /// Why the last Transcribe Again left its dictation as it was.
     @State private var transcribeAgainFailure: String?
-
-    /// Which copy last completed, so only that button's own symbol changes.
-    private enum CopiedKind: Equatable {
-        case cleaned(PersistentIdentifier)
-        case original(PersistentIdentifier)
-    }
 
     /// Matches the original transcript as well as the delivered text: the user
     /// remembers the words they said, which the AI may have rewritten.
@@ -53,6 +56,28 @@ struct DictationHistoryView: View {
     /// The selected dictation, when it is in the list as searched.
     private var selected: Dictation? {
         filtered.first { $0.persistentModelID == selection }
+    }
+
+    /// The dictations of one day, newest first.
+    private struct Day: Identifiable {
+        let start: Date
+        var dictations: [Dictation]
+        var id: Date { start }
+    }
+
+    /// The list as searched, split by the day each dictation was made. The list is
+    /// newest first, so each day's dictations are next to each other.
+    private var days: [Day] {
+        var days: [Day] = []
+        for dictation in filtered {
+            let start = Calendar.current.startOfDay(for: dictation.createdAt)
+            if days.last?.start == start {
+                days[days.count - 1].dictations.append(dictation)
+            } else {
+                days.append(Day(start: start, dictations: [dictation]))
+            }
+        }
+        return days
     }
 
     var body: some View {
@@ -127,27 +152,10 @@ struct DictationHistoryView: View {
         .navigationTitle("Recent Dictations")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search dictations")
         .toolbar {
-            // For the selected dictation. Insert first: it is the reason the window
-            // exists, so it carries its title.
-            ToolbarItemGroup {
-                Button {
-                    if let selected { insert(selected) }
-                } label: {
-                    Label(insertTitle, systemImage: "text.cursor")
-                        .labelStyle(.titleAndIcon)
-                }
-                // A dictation whose recognition failed has no words to type or copy.
-                .disabled(selected.map(\.recognitionFailed) ?? true)
-                .help("Type the selected dictation where the cursor is in the app you came from")
-
-                Button {
-                    if let selected { copy(selected.text, as: .cleaned(selected.persistentModelID)) }
-                } label: {
-                    Label("Copy", systemImage: copiedCleaned ? "checkmark" : "doc.on.doc")
-                }
-                .disabled(selected.map(\.recognitionFailed) ?? true)
-                .help("Copy the selected dictation")
-
+            // Insert, Copy, Transcribe Again and the switch to the words as heard are
+            // on the rows. Delete stays here as well as on the Delete key, since a
+            // button on every row would put it a click away from Insert.
+            ToolbarItem {
                 Button(role: .destructive) {
                     if let selected { delete(selected) }
                 } label: {
@@ -157,25 +165,10 @@ struct DictationHistoryView: View {
                 .help("Delete the selected dictation")
             }
 
-            // The rarer commands, behind the toolbar's own More menu as Notes keeps its
-            // own. Laid out as buttons they overflowed the toolbar at the window's
-            // usual width.
+            // Behind a menu, as Notes keeps its rarer commands, so a stray click on
+            // the toolbar never starts the one command that cannot be undone.
             ToolbarItem {
                 Menu {
-                    Button("Copy Original") {
-                        if let selected, let raw = selected.rawText {
-                            copy(raw, as: .original(selected.persistentModelID))
-                        }
-                    }
-                    .disabled(selected?.wasEditedByAI != true || selected?.rawText == nil)
-
-                    Button("Transcribe Again") {
-                        if let selected { transcribeAgain(selected) }
-                    }
-                    .disabled(selected?.hasRecording != true || !coordinator.canTranscribeAgain)
-
-                    Divider()
-
                     Button("Clear All\u{2026}", role: .destructive) {
                         isConfirmingClearAll = true
                     }
@@ -183,7 +176,7 @@ struct DictationHistoryView: View {
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
-                .help("Copy the words as they were heard, transcribe the dictation again from its recording, or clear the history")
+                .help("Clear the history")
                 .confirmationDialog(
                     dictations.count == 1 ? "Delete 1 dictation?" : "Delete all \(dictations.count) dictations?",
                     isPresented: $isConfirmingClearAll,
@@ -217,98 +210,238 @@ struct DictationHistoryView: View {
 
     private var list: some View {
         List(selection: $selection) {
-            ForEach(filtered) { dictation in
-                let isExpanded = expanded.contains(dictation.persistentModelID)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        timestamp(for: dictation)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-
-                        if let destination = dictation.destination {
-                            Text("→ \(destination)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if let prompt = dictation.promptName {
-                            Text(prompt)
-                                .font(.caption2)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                        }
-
-                        if coordinator.transcribingAgain == dictation.persistentModelID {
-                            ProgressView()
-                                .controlSize(.mini)
-                            Text("Transcribing again\u{2026}")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    // Not selectable as text: a click on the words selects the row,
-                    // and Copy is a command.
-                    if dictation.recognitionFailed {
-                        // Kept for its recording alone, which may still hold the words.
-                        Text(dictation.hasRecording
-                             ? "Recognition failed, and no words were heard. Transcribe Again can read the recording."
-                             : "Recognition failed, and no words were heard.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(dictation.text)
-                            .lineLimit(isExpanded ? nil : 4)
-                    }
-
-                    // A long dictation stopped at four lines with no way to read on.
-                    // In gray, not the link blue: blue all but vanished on the azure
-                    // of a selected row, where gray turns white with the rest.
-                    if Self.isLong(dictation.text) {
-                        Button(isExpanded ? "Show less" : "Show all") {
-                            if isExpanded {
-                                expanded.remove(dictation.persistentModelID)
-                            } else {
-                                expanded.insert(dictation.persistentModelID)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            ForEach(days) { day in
+                Section(heading(for: day.start)) {
+                    ForEach(day.dictations) { dictation in
+                        row(for: dictation)
                     }
                 }
-                .padding(.vertical, 4)
-                .tag(dictation.persistentModelID)
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) {
-                        delete(dictation)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
-                .contextMenu {
-                    if !dictation.recognitionFailed {
-                        Button(insertTitle) { insert(dictation) }
-                        Button("Copy") { copy(dictation.text, as: .cleaned(dictation.persistentModelID)) }
-                    }
-                    if dictation.wasEditedByAI, let raw = dictation.rawText {
-                        Button("Copy Original") { copy(raw, as: .original(dictation.persistentModelID)) }
-                    }
-                    if dictation.hasRecording {
-                        Button("Transcribe Again") { transcribeAgain(dictation) }
-                            .disabled(!coordinator.canTranscribeAgain)
-                    }
-                    Divider()
-                    Button("Delete", role: .destructive) { delete(dictation) }
-                }
+            }
+        }
+        // Return inserts the selected dictation, and so does a double click, as
+        // Return opens the selected file in the Finder.
+        .contextMenu(forSelectionType: PersistentIdentifier.self) { ids in
+            if let id = ids.first, let dictation = filtered.first(where: { $0.persistentModelID == id }) {
+                menu(for: dictation)
+            }
+        } primaryAction: { ids in
+            if let id = ids.first, let dictation = filtered.first(where: { $0.persistentModelID == id }),
+               !dictation.recognitionFailed {
+                insert(dictation)
             }
         }
         // The Delete key.
         .onDeleteCommand {
             if let selected { delete(selected) }
         }
+    }
+
+    /// "Today", "Yesterday", then the day's date: "Saturday, November 8", with the
+    /// year when it is not this one.
+    private func heading(for day: Date) -> String {
+        if day == today { return "Today" }
+        if let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today), day == yesterday {
+            return "Yesterday"
+        }
+        var style = Date.FormatStyle.dateTime.weekday(.wide).month(.wide).day()
+        if !Calendar.current.isDate(day, equalTo: today, toGranularity: .year) {
+            style = style.year()
+        }
+        return day.formatted(style)
+    }
+
+    // MARK: - Row
+
+    private func row(for dictation: Dictation) -> some View {
+        let id = dictation.persistentModelID
+        let isExpanded = expanded.contains(id)
+        let text = shownText(of: dictation)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                // The day is in the heading above.
+                Text(dictation.createdAt, style: .time)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                if let destination = dictation.destination {
+                    Text("→ \(destination)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                // Which version the row shows, while it shows the words as heard: the
+                // prompt's name would claim the AI's version.
+                if let version = showingHeard.contains(id) ? "As heard" : dictation.promptName {
+                    Text(version)
+                        .font(.caption2)
+                        .lineLimit(1)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                }
+
+                if coordinator.transcribingAgain == id {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("Transcribing again\u{2026}")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                buttons(for: dictation)
+            }
+
+            // Not selectable as text: a click on the words selects the row,
+            // and Copy is a command.
+            if dictation.recognitionFailed {
+                // Kept for its recording alone, which may still hold the words.
+                Text(dictation.hasRecording
+                     ? "Recognition failed, and no words were heard. Transcribe Again can read the recording."
+                     : "Recognition failed, and no words were heard.")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(text)
+                    .lineLimit(isExpanded ? nil : 4)
+            }
+
+            // A long dictation stopped at four lines with no way to read on.
+            // In gray, not the link blue: blue all but vanished on the azure
+            // of a selected row, where gray turns white with the rest.
+            if Self.isLong(text) {
+                Button(isExpanded ? "Show less" : "Show all") {
+                    if isExpanded {
+                        expanded.remove(id)
+                    } else {
+                        expanded.insert(id)
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+        // The whole row, gaps included, so the buttons do not blink out on the way
+        // from the words to them.
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside {
+                hovered = id
+            } else if hovered == id {
+                hovered = nil
+            }
+        }
+        .tag(id)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                delete(dictation)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    /// The row's own buttons, shown under the pointer and on the selected row.
+    ///
+    /// Always laid out and only hidden, so a row keeps its height when the pointer
+    /// crosses it. A failed row always shows Transcribe Again, the one thing it is
+    /// kept for.
+    private func buttons(for dictation: Dictation) -> some View {
+        let id = dictation.persistentModelID
+        let isShown = hovered == id || selection == id
+        let isHeard = showingHeard.contains(id)
+
+        return HStack(spacing: 6) {
+            if !dictation.recognitionFailed {
+                Button {
+                    insert(dictation)
+                } label: {
+                    Label("Insert", systemImage: "text.cursor")
+                }
+                .help(insertHelp)
+                .opacity(isShown ? 1 : 0)
+
+                Button {
+                    copy(dictation)
+                } label: {
+                    Label("Copy", systemImage: justCopied == id ? "checkmark" : "doc.on.doc")
+                }
+                .help(isHeard ? "Copy the words as heard" : "Copy the dictation")
+                .opacity(isShown ? 1 : 0)
+            }
+
+            // Wispr Flow calls this "Undo AI edit". A switch, so the AI's version is
+            // one click away again.
+            if dictation.wasEditedByAI {
+                Button {
+                    if isHeard {
+                        showingHeard.remove(id)
+                    } else {
+                        showingHeard.insert(id)
+                    }
+                } label: {
+                    Label(isHeard ? "AI Version" : "As Heard", systemImage: isHeard ? "sparkles" : "waveform")
+                }
+                .help(isHeard ? "Show the AI\u{2019}s version" : "Show the words as they were heard, before the AI changed them")
+                .opacity(isShown ? 1 : 0)
+            }
+
+            if dictation.hasRecording {
+                Button {
+                    transcribeAgain(dictation)
+                } label: {
+                    Label("Transcribe Again", systemImage: "arrow.clockwise")
+                }
+                .disabled(!coordinator.canTranscribeAgain)
+                .help("Read this dictation\u{2019}s recording again with your current words and prompt")
+                .opacity(isShown || dictation.recognitionFailed ? 1 : 0)
+            }
+        }
+        .buttonStyle(RowButtonStyle())
+        // The style draws its own ring; see `RowButtonStyle`.
+        .focusEffectDisabled()
+        // Hidden buttons take no clicks, and VoiceOver reaches the same commands in
+        // the row's menu.
+        .allowsHitTesting(isShown || dictation.recognitionFailed)
+        .accessibilityHidden(!isShown && !dictation.recognitionFailed)
+    }
+
+    /// The row's right-click menu: the row's buttons, and Delete.
+    @ViewBuilder
+    private func menu(for dictation: Dictation) -> some View {
+        let id = dictation.persistentModelID
+        if !dictation.recognitionFailed {
+            Button(insertTitle) { insert(dictation) }
+            Button("Copy") { copy(dictation) }
+        }
+        if dictation.wasEditedByAI {
+            if showingHeard.contains(id) {
+                Button("Show AI Version") { showingHeard.remove(id) }
+            } else {
+                Button("Show as Heard") { showingHeard.insert(id) }
+            }
+        }
+        if dictation.hasRecording {
+            Button("Transcribe Again") { transcribeAgain(dictation) }
+                .disabled(!coordinator.canTranscribeAgain)
+        }
+        Divider()
+        Button("Delete", role: .destructive) { delete(dictation) }
+    }
+
+    /// The version the row shows: the AI's, or the words as heard when the user
+    /// switched to them.
+    private func shownText(of dictation: Dictation) -> String {
+        if showingHeard.contains(dictation.persistentModelID), let raw = dictation.rawText {
+            return raw
+        }
+        return dictation.text
     }
 
     /// Whether a dictation is likely to run past four lines: by its length, or by its
@@ -325,18 +458,19 @@ struct DictationHistoryView: View {
         return "Insert into \(name)"
     }
 
-    /// Whether the selected dictation was just copied, one way or the other.
-    private var copiedCleaned: Bool {
-        selected.map { justCopied == .cleaned($0.persistentModelID) } ?? false
+    /// The row's Insert button is too narrow for the app's name, so its tooltip says it.
+    private var insertHelp: String {
+        _ = appearsActive
+        guard let name = coordinator.appInFront?.localizedName else {
+            return "Type this dictation where the cursor is in the app you came from"
+        }
+        return "Type this dictation where the cursor is in \(name)"
     }
 
-    private var copiedOriginal: Bool {
-        selected.map { justCopied == .original($0.persistentModelID) } ?? false
-    }
-
-    private func copy(_ text: String, as kind: CopiedKind) {
-        ClipboardService.copy(text)
-        confirmCopy(kind)
+    /// Copy the version the row shows, and show the checkmark on its button.
+    private func copy(_ dictation: Dictation) {
+        ClipboardService.copy(shownText(of: dictation))
+        confirmCopy(dictation.persistentModelID)
     }
 
     /// Take the dictation out at once, and select the one below it, or the one above
@@ -359,6 +493,8 @@ struct DictationHistoryView: View {
     /// worse than the first, and the first is otherwise lost.
     private func transcribeAgain(_ dictation: Dictation) {
         let earlier = DictationUndo.EarlierWords(of: dictation)
+        // New words replace both versions, so the row shows the new AI version.
+        showingHeard.remove(dictation.persistentModelID)
         Task {
             switch await coordinator.transcribeAgain(dictation) {
             case .replaced(let note):
@@ -369,47 +505,40 @@ struct DictationHistoryView: View {
         }
     }
 
-    /// The time alone for something dictated today; the date and time otherwise, so
-    /// a week-old entry does not read as though it just happened.
-    private func timestamp(for dictation: Dictation) -> Text {
-        if Calendar.current.isDateInToday(dictation.createdAt) {
-            return Text(dictation.createdAt, style: .time)
-        }
-        return Text(dictation.createdAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-    }
-
     /// Show the checkmark, then take it back.
     ///
-    /// Nothing else in the toolbar ever clears it, so a button left showing the
-    /// checkmark would still claim a copy that happened an hour ago.
-    private func confirmCopy(_ kind: CopiedKind) {
-        justCopied = kind
+    /// Nothing else ever clears it, so a button left showing the checkmark would still
+    /// claim a copy that happened an hour ago.
+    private func confirmCopy(_ id: PersistentIdentifier) {
+        justCopied = id
         Task {
             try? await Task.sleep(for: .seconds(2))
-            if justCopied == kind {
+            if justCopied == id {
                 justCopied = nil
             }
         }
     }
 
-    /// Send it to the app the user was in before coming to this window.
+    /// Send the version the row shows to the app the user was in before coming to this
+    /// window.
     ///
     /// Deliberately not the app it originally went to: the point is usually that the
     /// first destination was wrong. Not the frontmost app either, which is Indite
     /// itself, whose focused field is this window's search box.
     private func insert(_ dictation: Dictation) {
+        let text = shownText(of: dictation)
         Task {
             // deliver brings the target in front of this window and waits until it is
             // there. Hiding Indite first, as this used to, also hid the meeting
             // indicator and guessed at how long the next app took to come forward.
             let outcome = await TextInsertionService.deliver(
-                dictation.text,
+                text,
                 targetApp: coordinator.appInFront,
                 restoreClipboard: settings.restoreClipboardAfterPaste,
                 autoSubmit: false,
                 // A snippet's saved text goes in as it was written, as it did the
                 // first time.
-                keepsText: Snippets.holdsSavedText(dictation.text, snippets: settings.snippets),
+                keepsText: Snippets.holdsSavedText(text, snippets: settings.snippets),
                 names: settings.vocabularyHints
             )
 
@@ -422,10 +551,64 @@ struct DictationHistoryView: View {
             case .copiedToClipboard, .pastedUnconfirmed: "Clipboard"
             }
             NotificationService.shared.showTranscriptionCompleteIfEnabled(
-                characterCount: dictation.text.count,
+                characterCount: text.count,
                 destination: destination,
                 settings: settings
             )
+        }
+    }
+}
+
+/// The look of a row's buttons: a solid pill in the window's own colors.
+///
+/// Drawn here because the system's bordered button all but vanished on a selected row.
+/// A selected row is azure at full strength, and the bordered button's translucent gray
+/// and its text turned white with the row, so Transcribe Again was "practically
+/// invisible". This pill keeps its own fill and text whatever the row behind it is: white
+/// with dark text in light mode, dark gray with white text in dark mode.
+///
+/// The keyboard focus ring is drawn in the text's color for the same reason: the
+/// system's ring is the accent color, which is the selected row's own azure.
+private struct RowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        RowButtonBody(configuration: configuration)
+    }
+
+    /// The pill's fill: white in light mode; in dark mode, a gray a step lighter than
+    /// the list, as a pop-up button's, so an unselected row's pill stands off it.
+    private static let fill = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(white: 0.25, alpha: 1) : .white
+    })
+
+    private struct RowButtonBody: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.isFocused) private var isFocused
+
+        var body: some View {
+            configuration.label
+                .labelStyle(.titleAndIcon)
+                .font(.caption)
+                .lineLimit(1)
+                .fixedSize()
+                .foregroundStyle(Color(nsColor: .controlTextColor))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background {
+                    Capsule().fill(RowButtonStyle.fill)
+                    if configuration.isPressed {
+                        Capsule().fill(Color(nsColor: .labelColor).opacity(0.12))
+                    }
+                }
+                .overlay {
+                    if isFocused {
+                        Capsule().strokeBorder(Color(nsColor: .controlTextColor), lineWidth: 2)
+                    } else {
+                        Capsule().strokeBorder(Color(nsColor: .separatorColor))
+                    }
+                }
+                .opacity(isEnabled ? 1 : 0.5)
+                .contentShape(Capsule())
         }
     }
 }

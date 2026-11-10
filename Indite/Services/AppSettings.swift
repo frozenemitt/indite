@@ -382,7 +382,11 @@ final class AppSettings {
         self.snippets = (UserDefaults.standard.array(forKey: "snippets") as? [[String: String]] ?? [])
             .map { Snippet(cue: $0["cue"] ?? "", text: $0["text"] ?? "") }
         // The single microphone choice becomes the ranked list the first time.
+        // A virtual device remembered before they were left out goes now.
         self.microphoneOrder = MicrophoneOrder.stored(in: .standard, connected: Self.connectedMicrophones())
+            .filter { microphone in
+                AudioDeviceCatalog.resolveDeviceID(uid: microphone.uid).map(AudioDeviceCatalog.isVirtual) != true
+            }
         self.muteWhileDictating = UserDefaults.standard.object(forKey: "muteWhileDictating") as? Bool ?? false
         self.captureSystemAudioInMeetings = UserDefaults.standard.object(forKey: "captureSystemAudioInMeetings") as? Bool ?? false
         self.keepMeetingAudio = UserDefaults.standard.object(forKey: "keepMeetingAudio") as? Bool ?? true
