@@ -11,7 +11,7 @@ enum TextProcessor {
     /// Pause marks go first, so an ellipsis or full stop a replacement puts in on
     /// purpose is kept.
     static func process(_ text: String, replacements: [String: String]) -> String {
-        let mended = removingPauseMarks(from: text)
+        let mended = joiningCutClauses(in: removingPauseMarks(from: text))
         guard !replacements.isEmpty else { return mended }
         return applyReplacements(replacements, to: mended)
     }
@@ -58,6 +58,31 @@ enum TextProcessor {
     private static let abbreviation = try! NSRegularExpression(
         pattern: "^(?:\\p{L}\\.){2,}$|^(?:Mr|Mrs|Ms|Dr|St|vs|etc|Jr|Sr)\\.$",
         options: [.caseInsensitive]
+    )
+
+    /// Join a full stop before "Because", "Especially", "Whereas" or "Which" with a
+    /// comma: "I'm feeling a three. Because I've been tired." becomes "I'm feeling a
+    /// three, because I've been tired."
+    ///
+    /// The recognizer ends a sentence at a pause, and these four words rarely start a
+    /// sentence of their own in speech. Apple's model copies such breaks rather than
+    /// judging them. On the November 2026 grammar set this mended 5 of the 38 cut
+    /// sentences and joined none of the 184 real breaks; on the September recordings it
+    /// mended 10 and wrongly joined 1 ("Because we're not successful, there is…"). A
+    /// question is left alone: "Which one? Which is better?"
+    static func joiningCutClauses(in text: String) -> String {
+        let whole = text as NSString
+        var result = whole
+        for match in cutClause.matches(in: text, range: NSRange(location: 0, length: whole.length)).reversed() {
+            let word = whole.substring(with: match.range(at: 1))
+            result = result.replacingCharacters(in: match.range, with: ", " + word.lowercased()) as NSString
+        }
+        return result as String
+    }
+
+    /// A full stop after a word, then one of the four words with a capital.
+    private static let cutClause = try! NSRegularExpression(
+        pattern: "(?<=\\p{L}|\\p{N})\\. +(Because|Especially|Whereas|Which)(?!\\p{L})(?![^.?!…]*\\?)"
     )
 
     // MARK: - Press Enter
