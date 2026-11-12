@@ -110,7 +110,7 @@ struct DictationHistoryView: View {
                     ContentUnavailableView {
                         Label("Dictations Are Not Kept", systemImage: "clock.arrow.circlepath")
                     } description: {
-                        Text("Turn on \u{201C}Keep recent dictations\u{201D} in Settings.")
+                        Text("Turn on \u{201C}Keep a list of recent dictations\u{201D} in Settings.")
                     } actions: {
                         SettingsLink {
                             Text("Open Settings\u{2026}")

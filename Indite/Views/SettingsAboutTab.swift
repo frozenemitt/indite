@@ -131,7 +131,7 @@ struct AboutSettingsView: View {
                     .foregroundStyle(.secondary)
 
                 // The welcome window asks this first; here it can be changed.
-                Toggle("Update automatically", isOn: Binding(
+                Toggle("Update Indite automatically", isOn: Binding(
                     get: { updater.updatesAutomatically },
                     set: { updater.setUpdatesAutomatically($0) }
                 ))
@@ -165,8 +165,8 @@ struct AboutSettingsView: View {
                     .frame(width: 200)
 
                 VStack(spacing: 8) {
-                    Text("Uses on-device AI for transcription and text processing.")
-                    Text("Your voice data never leaves your device.")
+                    Text("Indite turns your speech into text, and rewrites it, on this Mac.")
+                    Text("What you say never leaves this Mac.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -176,14 +176,14 @@ struct AboutSettingsView: View {
                     isConfirmingReset = true
                 }
                 .confirmationDialog(
-                    "Reset settings to their defaults?",
+                    "Reset settings to how they started?",
                     isPresented: $isConfirmingReset,
                     titleVisibility: .visible
                 ) {
                     Button("Reset", role: .destructive) { resetToDefaults() }
                     Button("Cancel", role: .cancel) { }
                 } message: {
-                    Text("This also clears your word replacements, vocabulary, per-app settings and recorded key combinations. Your prompts and their settings are kept, and so is how long recordings of your dictations are kept. It cannot be undone.")
+                    Text("This also erases your vocabulary, word replacements, app settings and key combinations. Your prompts are kept, and so is your choice of how long to keep recordings. This cannot be undone.")
                 }
             }
             .padding(40)

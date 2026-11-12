@@ -27,7 +27,7 @@ struct MeetingsSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Toggle("Record system audio, for the other side of a call", isOn: $settings.captureSystemAudioInMeetings)
+                Toggle("Also record the other people on a call", isOn: $settings.captureSystemAudioInMeetings)
 
                 if settings.captureSystemAudioInMeetings {
                     // Nothing here tests the permission. The only test creates a tap, and
@@ -41,20 +41,20 @@ struct MeetingsSettingsView: View {
                     }
                     .buttonStyle(.link)
 
-                    Text("This records everyone audible on the call, not only you. Check that the people you are meeting with are content to be recorded.")
+                    Text("Records the sound that comes out of your Mac, so everyone you can hear on the call is recorded, and not only you. Ask the people you are meeting whether they agree to be recorded.")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
             }
 
             Section("During a Meeting") {
-                Toggle("Show the meeting pill", isOn: $settings.showMeetingIndicator)
-                    .help("A small floating panel with the ribbon, the clock, Pause and Stop.")
+                Toggle("Show the floating meeting controls", isOn: $settings.showMeetingIndicator)
+                    .help("A small floating bar that shows the meeting is being recorded, with a clock and Pause and Stop buttons.")
             }
 
             Section("When a Meeting Ends") {
                 Toggle("Write a title and a summary", isOn: $settings.summarizeMeetingsAtEnd)
-                    .help("Written on this Mac by Apple’s on-device model.")
+                    .help("Written on this Mac by Apple Intelligence.")
             }
 
             DiarizationModelsSection()
@@ -90,7 +90,7 @@ struct DiarizationModelsSection: View {
     }
 
     var body: some View {
-        Section("Speaker Separation") {
+        Section("Speaker Names") {
             status
                 .onAppear(perform: refresh)
 
@@ -116,7 +116,7 @@ struct DiarizationModelsSection: View {
                     } else {
                         // Always reachable: a check that reports a problem must leave
                         // the user something to press.
-                        Button(isUpdating ? "Downloading…" : "Re-download Models") { update() }
+                        Button(isUpdating ? "Downloading…" : "Download Again") { update() }
                             .disabled(isChecking || isUpdating)
                     }
                 }
@@ -125,12 +125,12 @@ struct DiarizationModelsSection: View {
                     resultLabel(checkResult)
                 }
 
-                Text("Checking and downloading contact HuggingFace. No audio or transcript leaves this Mac.")
+                Text("Checking and downloading connect to HuggingFace, the website that hosts these files. Nothing you say or record leaves this Mac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .help("Checking compares every installed file with the content hash HuggingFace publishes: SHA-256 for model weights, git blob hashes for the rest. Re-downloading replaces the local copies; if the download fails, the current copies stay.")
+                    .help("Checking compares the files on this Mac with the ones HuggingFace publishes. Downloading again replaces them. If the download fails, the files you have stay.")
             } else {
-                Button(isInstalling ? "Installing…" : "Install Models") { install() }
+                Button(isInstalling ? "Installing…" : "Download and Install") { install() }
                     .disabled(isInstalling)
 
                 if let installError {
@@ -158,7 +158,7 @@ struct DiarizationModelsSection: View {
                 }
             }
         } else {
-            Label("The speaker models are not installed. Installing them adds speaker names to meetings, and downloads about 21 MB from HuggingFace.",
+            Label("Indite can show who said what in a meeting. This needs an extra download of about 21 MB from HuggingFace, a website that hosts these files.",
                   systemImage: "arrow.down.circle")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -170,8 +170,8 @@ struct DiarizationModelsSection: View {
         switch result {
         case .upToDate(let date):
             Label {
-                Text(date.map { "Verified — contents match the models published \($0.formatted(date: .abbreviated, time: .omitted))" }
-                    ?? "Verified — contents match the published models")
+                Text(date.map { "Checked. The files match the ones published on \($0.formatted(date: .abbreviated, time: .omitted))." }
+                    ?? "Checked. The files match the published ones.")
             } icon: {
                 Image(systemName: "checkmark.seal.fill")
                     .foregroundStyle(.green)

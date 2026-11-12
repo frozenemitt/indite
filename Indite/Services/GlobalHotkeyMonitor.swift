@@ -20,8 +20,8 @@ enum HotkeyActivationMode: String, CaseIterable, Identifiable, Sendable {
 
     var displayName: String {
         switch self {
-        case .pushToTalk: "Hold to talk, double-tap to keep listening"
-        case .toggle: "Press to start, press to stop"
+        case .pushToTalk: "Hold the key while you talk"
+        case .toggle: "Press once to start, once to stop"
         }
     }
 }
@@ -76,8 +76,8 @@ enum MouseButton: String, CaseIterable, Identifiable, Sendable {
 
     var displayName: String {
         switch self {
-        case .back: "Back (button 4)"
-        case .forward: "Forward (button 5)"
+        case .back: "Back button"
+        case .forward: "Forward button"
         }
     }
 

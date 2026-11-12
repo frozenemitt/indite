@@ -26,12 +26,12 @@ struct AppProfilesSettingsView: View {
                     .font(.headline)
                     .onChange(of: profile.isEnabled) { _, _ in commit() }
 
-                    Picker("Prompt", selection: Binding(
+                    Picker("Rewrite with", selection: Binding(
                         get: { profile.promptId },
                         set: { profile.promptId = $0; commit() }
                     )) {
-                        Text("Use the default").tag(nil as UUID?)
-                        Text("Off").tag(PromptConfiguration.rawPromptId as UUID?)
+                        Text("Same as other apps").tag(nil as UUID?)
+                        Text("No rewriting").tag(PromptConfiguration.rawPromptId as UUID?)
                         // Every prompt, not just the visible ones: hidden means hidden
                         // from the menu bar dropdown, and a profile already pointing at
                         // one would otherwise show an empty picker.
@@ -41,11 +41,11 @@ struct AppProfilesSettingsView: View {
                     }
                     .disabled(!profile.isEnabled)
 
-                    Picker("Output", selection: Binding(
+                    Picker("When you stop talking", selection: Binding(
                         get: { profile.outputModeRaw },
                         set: { profile.outputModeRaw = $0; commit() }
                     )) {
-                        Text("Use the default").tag(nil as String?)
+                        Text("Same as other apps").tag(nil as String?)
                         ForEach(OutputMode.allCases) { mode in
                             Text(mode.displayName).tag(mode.rawValue as String?)
                         }
@@ -56,13 +56,13 @@ struct AppProfilesSettingsView: View {
                         get: { profile.autoSubmit },
                         set: { profile.autoSubmit = $0; commit() }
                     )) {
-                        Text("Use the default").tag(nil as Bool?)
+                        Text("Same as other apps").tag(nil as Bool?)
                         Text("Yes").tag(true as Bool?)
                         Text("No").tag(false as Bool?)
                     }
                     .disabled(!profile.isEnabled)
 
-                    Button("Remove Profile", role: .destructive) {
+                    Button("Remove App", role: .destructive) {
                         profiles.removeAll { $0.id == profile.id }
                         commit()
                     }
@@ -76,7 +76,7 @@ struct AppProfilesSettingsView: View {
                 }
                 .buttonStyle(.borderless)
             } footer: {
-                Text("A profile overrides the prompt or output for one app. The app you start talking in picks the prompt. The app in front when the text is ready decides how it arrives.")
+                Text("Give one app its own settings. The prompt comes from the app you are in when you start talking. Typing, copying and Return follow the app that is in front when your words are ready.")
             }
         }
         .formStyle(.grouped)

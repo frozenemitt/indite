@@ -552,8 +552,8 @@ enum OutputMode: String, CaseIterable, Identifiable, Sendable {
 
     var displayName: String {
         switch self {
-        case .smartInsert: "Type into the focused field, otherwise copy"
-        case .clipboardOnly: "Always copy to the clipboard"
+        case .smartInsert: "Type the words where the cursor is"
+        case .clipboardOnly: "Copy the words, ready to paste"
         }
     }
 }

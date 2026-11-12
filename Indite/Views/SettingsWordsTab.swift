@@ -32,7 +32,7 @@ struct WordsSettingsView: View {
     var body: some View {
         Form {
             Section("Vocabulary") {
-                Text("Names and jargon you use, one per line. Indite prefers these when it is unsure, and spells them the way you write them here.")
+                Text("Names and unusual words you use, one per line. When Indite is unsure what it heard, it chooses these, and spells them the way you write them here.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -62,13 +62,13 @@ struct WordsSettingsView: View {
             }
 
             Section("Word Replacements") {
-                Text("Whole words only, ignoring case. Leave the written word empty to delete the heard one.")
+                Text("When Indite hears the word on the left, it writes the word on the right. Capital letters make no difference, and only whole words are replaced. Leave the right side empty to remove the word.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 if hasDuplicateReplacements {
                     Label {
-                        Text("Two rows have the same heard word. Only one of them will be applied.")
+                        Text("Two rows start from the same word. Indite will use only one of them.")
                     } icon: {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
@@ -111,13 +111,13 @@ struct WordsSettingsView: View {
             }
 
             Section("Snippets") {
-                Text("Say the cue in a dictation, and Indite types the text exactly as you wrote it.")
+                Text("Text you use often, such as an address or a link. Say its words in a dictation, and Indite types the saved text exactly as you wrote it here.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 if hasDuplicateCues {
                     Label {
-                        Text("Two snippets have the same cue. Only the first of them is typed.")
+                        Text("Two snippets are called up by the same words. Indite types only the first.")
                     } icon: {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
@@ -131,7 +131,7 @@ struct WordsSettingsView: View {
             // address or a signature does. In the editor, Return starts a new line.
             ForEach($snippets) { $snippet in
                 Section {
-                    TextField("Cue", text: $snippet.cue, prompt: Text("my calendar link"))
+                    TextField("What you say", text: $snippet.cue, prompt: Text("my calendar link"))
 
                     TextEditor(text: $snippet.text)
                         .font(.body)
