@@ -2,8 +2,8 @@ import SwiftUI
 
 // MARK: - Words Settings
 
-/// The words Indite should know, the ones it should always write differently, and the
-/// saved text a spoken cue stands for.
+/// The words Indite should know, each with an optional replacement, and the saved
+/// text a spoken cue stands for.
 ///
 /// Each list is one row here, with a count and an Edit button that opens it in a
 /// sheet, as System Settings keeps its Text Replacements under Keyboard. In the tab
@@ -13,26 +13,29 @@ struct WordsSettingsView: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var vocabulary: [WordRow] = []
-    @State private var replacements: [ReplacementRow] = []
     @State private var snippets: [SnippetRow] = []
     @State private var editing: List?
 
     enum List: String, Identifiable {
-        case vocabulary, replacements, snippets
+        case vocabulary, snippets
         var id: String { rawValue }
     }
 
     /// One editable row. Each carries its own identity so SwiftUI does not reshuffle
     /// text fields as the user types a key that collides with another row.
+    /// A word, and what to write instead when it is heard. With no replacement it is
+    /// a Vocabulary word; with one, a word replacement. The two are still stored apart,
+    /// because they act at different points: a Vocabulary word steers what the
+    /// recognizer hears, and a replacement changes the words once heard.
     struct WordRow: Identifiable, Equatable {
         let id = UUID()
         var word: String
-    }
+        var replacement = ""
+        /// A replacement stored with nothing to write, which deletes the word. The
+        /// editor no longer makes these, but one stored before keeps working.
+        var removes = false
 
-    struct ReplacementRow: Identifiable, Equatable {
-        let id = UUID()
-        var spoken: String
-        var written: String
+        var isReplacement: Bool { removes || !replacement.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
     struct SnippetRow: Identifiable, Equatable {
@@ -46,12 +49,8 @@ struct WordsSettingsView: View {
             Section {
                 listRow(.vocabulary,
                         title: "Vocabulary",
-                        detail: "Names and words Indite should know and spell your way.",
-                        count: settings.vocabularyHints.count, noun: "word")
-                listRow(.replacements,
-                        title: "Word Replacements",
-                        detail: "Words Indite should always write another way.",
-                        count: settings.wordReplacements.count, noun: "replacement")
+                        detail: "Names and words Indite should know, and words to write another way.",
+                        count: settings.vocabularyHints.count + settings.wordReplacements.count, noun: "word")
                 listRow(.snippets,
                         title: "Snippets",
                         detail: "Say a few words, and Indite types saved text.",
@@ -61,7 +60,6 @@ struct WordsSettingsView: View {
         .formStyle(.grouped)
         .onAppear(perform: load)
         .onChange(of: vocabulary) { _, _ in commitVocabulary() }
-        .onChange(of: replacements) { _, _ in commitReplacements() }
         .onChange(of: snippets) { _, _ in commitSnippets() }
         // A word learned from a correction joins the list at once, open or not.
         // Without this, the next edit wrote the old list back, and the learned word
@@ -72,13 +70,12 @@ struct WordsSettingsView: View {
             if hints.count > listed.count, hints.starts(with: listed) {
                 vocabulary += hints.dropFirst(listed.count).map { WordRow(word: $0) }
             } else {
-                vocabulary = hints.map { WordRow(word: $0) }
+                vocabulary = hints.map { WordRow(word: $0) } + vocabulary.filter(\.isReplacement)
             }
         }
         .sheet(item: $editing) { list in
             switch list {
             case .vocabulary: VocabularySheet(rows: $vocabulary)
-            case .replacements: ReplacementsSheet(rows: $replacements)
             case .snippets: SnippetsSheet(rows: $snippets)
             }
         }
@@ -102,36 +99,33 @@ struct WordsSettingsView: View {
 
     private func load() {
         vocabulary = settings.vocabularyHints.map { WordRow(word: $0) }
-        replacements = settings.wordReplacements
-            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
-            .map { ReplacementRow(spoken: $0.key, written: $0.value) }
+            + settings.wordReplacements
+                .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+                .map { WordRow(word: $0.key, replacement: $0.value, removes: $0.value.isEmpty) }
         // In the order they were added, as they were left.
         snippets = settings.snippets.map { SnippetRow(cue: $0.cue, text: $0.text) }
     }
 
-    /// The Words list as the rows hold it, blank rows left out.
+    /// The Vocabulary words as the rows hold them: rows with no replacement, blank
+    /// ones left out.
     private static func words(_ rows: [WordRow]) -> [String] {
-        rows.map { $0.word.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        rows.filter { !$0.isReplacement }
+            .map { $0.word.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
+    /// Store the rows apart again: words with no replacement as Vocabulary, the rest as
+    /// word replacements. A replacement with nothing to write deletes the word, as
+    /// TextProcessor treats it.
     private func commitVocabulary() {
         let words = Self.words(vocabulary)
         if words != settings.vocabularyHints { settings.vocabularyHints = words }
-    }
-
-    /// Rebuild the stored dictionary from the rows, dropping only rows with no
-    /// heard word to match. A blank written word is kept rather than dropped: it
-    /// means "delete this word" rather than "do nothing", and TextProcessor
-    /// already treats an empty replacement that way.
-    private func commitReplacements() {
-        var result: [String: String] = [:]
-        for row in replacements {
-            let spoken = row.spoken.trimmingCharacters(in: .whitespaces)
-            let written = row.written.trimmingCharacters(in: .whitespaces)
-            guard !spoken.isEmpty else { continue }
-            result[spoken] = written
+        var replacements: [String: String] = [:]
+        for row in vocabulary where row.isReplacement {
+            let word = row.word.trimmingCharacters(in: .whitespaces)
+            guard !word.isEmpty else { continue }
+            replacements[word] = row.replacement.trimmingCharacters(in: .whitespaces)
         }
-        settings.wordReplacements = result
+        if replacements != settings.wordReplacements { settings.wordReplacements = replacements }
     }
 
     /// Store every row as it stands, in order. A row is typed once it has a cue and some
@@ -227,33 +221,52 @@ private func emptyNote(_ text: String) -> some View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
 }
 
+/// Words Indite should know, each with an optional replacement, as Wispr Flow keeps
+/// both in one Dictionary. A word alone helps Indite hear it and spell it your way; a
+/// word with a replacement is written as the replacement whenever it is heard. They
+/// were two lists side by side, and nobody could say how a replacement differed from
+/// a snippet.
 private struct VocabularySheet: View {
     @Binding var rows: [WordsSettingsView.WordRow]
     @State private var search = ""
     @State private var newWord = ""
-    @FocusState private var addFocused: Bool
+    @State private var newReplacement = ""
+    @FocusState private var focus: Field?
+
+    private enum Field { case word, replacement }
 
     var body: some View {
         ListSheet(
             title: "Vocabulary",
-            detail: "Names and words Indite should know. It spells them the way you type them here.",
-            search: $search
+            detail: "Names and words Indite should know, spelled your way. Give a word a replacement, and Indite writes that instead whenever it hears the word.",
+            search: $search,
+            warning: hasDuplicates ? "A word has two replacements. Only one will be used." : nil
         ) {
             HStack {
-                TextField("New word", text: $newWord, prompt: Text("Add a word"))
+                TextField("Word", text: $newWord, prompt: Text("Add a word"))
                     .textFieldStyle(.roundedBorder)
-                    .focused($addFocused)
+                    .focused($focus, equals: .word)
+                    .onSubmit(add)
+                Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                TextField("Replace with", text: $newReplacement, prompt: Text("Replace with (optional)"))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focus, equals: .replacement)
                     .onSubmit(add)
                 Button("Add", action: add)
                     .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         } content: {
             ScrollViewReader { proxy in
-                let shown = rows.filter { matches(search, $0.word) }
+                let shown = rows.filter { matches(search, $0.word, $0.replacement) }
                 List {
                     ForEach(shown) { row in
                         HStack {
-                            TextField("Word", text: binding(row.id))
+                            TextField("Word", text: binding(row.id, \.word))
+                                .textFieldStyle(.plain)
+                            Image(systemName: "arrow.right")
+                                .foregroundStyle(row.isReplacement ? .secondary : .quaternary)
+                            TextField("Replace with", text: binding(row.id, \.replacement),
+                                      prompt: Text(row.removes ? "(removed)" : ""))
                                 .textFieldStyle(.plain)
                             deleteButton { rows.removeAll { $0.id == row.id } }
                         }
@@ -266,106 +279,35 @@ private struct VocabularySheet: View {
                 }
             }
         }
-        .onAppear { addFocused = true }
+        .onAppear { focus = .word }
     }
 
     private func add() {
         let word = newWord.trimmingCharacters(in: .whitespaces)
         guard !word.isEmpty else { return }
+        let replacement = newReplacement.trimmingCharacters(in: .whitespaces)
         search = ""
-        if !rows.contains(where: { $0.word.caseInsensitiveCompare(word) == .orderedSame }) {
-            rows.insert(WordsSettingsView.WordRow(word: word), at: 0)
+        let duplicate = replacement.isEmpty
+            && rows.contains { !$0.isReplacement && $0.word.caseInsensitiveCompare(word) == .orderedSame }
+        if !duplicate {
+            rows.insert(WordsSettingsView.WordRow(word: word, replacement: replacement), at: 0)
         }
         newWord = ""
-        addFocused = true
+        newReplacement = ""
+        focus = .word
     }
 
-    private func binding(_ id: WordsSettingsView.WordRow.ID) -> Binding<String> {
-        Binding(
-            get: { rows.first { $0.id == id }?.word ?? "" },
-            set: { value in
-                if let index = rows.firstIndex(where: { $0.id == id }) { rows[index].word = value }
-            }
-        )
-    }
-}
-
-private struct ReplacementsSheet: View {
-    @Binding var rows: [WordsSettingsView.ReplacementRow]
-    @State private var search = ""
-    @State private var heard = ""
-    @State private var written = ""
-    @FocusState private var focus: Field?
-
-    private enum Field { case heard, written }
-
-    var body: some View {
-        ListSheet(
-            title: "Word Replacements",
-            detail: "When Indite hears the first word, it writes the second. Leave the second empty to drop the word.",
-            search: $search,
-            warning: hasDuplicates ? "A word is listed twice. Only one will be used." : nil
-        ) {
-            HStack {
-                TextField("Indite hears", text: $heard, prompt: Text("Heard"))
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focus, equals: .heard)
-                    .onSubmit { focus = .written }
-                Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                TextField("Indite writes", text: $written, prompt: Text("Replace with"))
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focus, equals: .written)
-                    .onSubmit(add)
-                Button("Add", action: add)
-                    .disabled(heard.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        } content: {
-            ScrollViewReader { proxy in
-                let shown = rows.filter { matches(search, $0.spoken, $0.written) }
-                List {
-                    ForEach(shown) { row in
-                        HStack {
-                            TextField("Heard", text: binding(row.id, \.spoken))
-                                .textFieldStyle(.plain)
-                            Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-                            TextField("Replace with", text: binding(row.id, \.written), prompt: Text("(drop it)"))
-                                .textFieldStyle(.plain)
-                            deleteButton { rows.removeAll { $0.id == row.id } }
-                        }
-                        .id(row.id)
-                    }
-                }
-                .overlay { if shown.isEmpty { emptyNote(rows.isEmpty ? "No replacements yet." : "No replacements match.") } }
-                .onChange(of: rows.first?.id) { _, id in
-                    if let id { withAnimation { proxy.scrollTo(id, anchor: .top) } }
-                }
-            }
-        }
-        .onAppear { focus = .heard }
-    }
-
-    private func add() {
-        let spoken = heard.trimmingCharacters(in: .whitespaces)
-        guard !spoken.isEmpty else { return }
-        search = ""
-        rows.insert(WordsSettingsView.ReplacementRow(spoken: spoken, written: written.trimmingCharacters(in: .whitespaces)), at: 0)
-        heard = ""
-        written = ""
-        focus = .heard
-    }
-
-    /// Whether two rows share a heard word, ignoring case the way matching itself does.
-    /// The stored list keeps one value per word, so the other row is not saved, and
-    /// nothing else says so.
+    /// Whether two replacements start from the same word, ignoring case the way
+    /// matching does. The stored list keeps one per word, so the other is not saved.
     private var hasDuplicates: Bool {
-        let words = rows
-            .map { $0.spoken.trimmingCharacters(in: .whitespaces).lowercased() }
+        let words = rows.filter(\.isReplacement)
+            .map { $0.word.trimmingCharacters(in: .whitespaces).lowercased() }
             .filter { !$0.isEmpty }
         return Set(words).count != words.count
     }
 
-    private func binding(_ id: WordsSettingsView.ReplacementRow.ID,
-                         _ field: WritableKeyPath<WordsSettingsView.ReplacementRow, String>) -> Binding<String> {
+    private func binding(_ id: WordsSettingsView.WordRow.ID,
+                         _ field: WritableKeyPath<WordsSettingsView.WordRow, String>) -> Binding<String> {
         Binding(
             get: { rows.first { $0.id == id }?[keyPath: field] ?? "" },
             set: { value in

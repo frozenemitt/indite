@@ -660,8 +660,8 @@ enum HelpLibrary {
             Click Undo in the notification to take it off again. Indite adds a name only \
             when its notifications can be seen, so that you can always undo it.
 
-            For a word Indite gets wrong every time, add a rule under "Word Replacements" \
-            on the same tab.
+            For a word Indite gets wrong every time, type what it writes, and what you \
+            want instead under "Replace with", in the same list.
             """,
         topic: .words,
         action: .inditeSettings(.words)
@@ -671,16 +671,15 @@ enum HelpLibrary {
         id: "word-replacements",
         title: "Fix a word Indite always gets wrong",
         body: """
-            A word replacement makes Indite write one word as another every time you say \
-            it. Open Indite's Settings, choose Words, click "Edit…" beside \
-            "Word Replacements". In the two fields at the top, type what Indite hears, \
-            such as "gonna", under Heard, and what you want, such as "going to", under \
-            Replace with, and press Return. Every dictation \
-            is then corrected before it is rewritten or typed.
+            A word with a replacement makes Indite write one word as another every time \
+            you say it. Open Indite's Settings, choose Words, and click "Edit…" beside \
+            Vocabulary. Type what Indite hears, such as "gonna", in the first field at the \
+            top, what you want, such as "going to", under "Replace with", and press \
+            Return. Every dictation is then corrected before it is rewritten or typed.
 
             Replacements match whole words only and ignore capitals, so a rule for "vox" \
-            leaves "voxel" alone. Leave the right side empty to delete the heard word wherever it \
-            appears. To remove a rule, click the minus button at the end of its row.
+            leaves "voxel" alone. To remove one, click the minus button at the end of its \
+            row. A word with no replacement is an ordinary Vocabulary word.
             """,
         topic: .words,
         action: .inditeSettings(.words)
