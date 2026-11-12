@@ -263,8 +263,11 @@ private struct VocabularySheet: View {
                         HStack {
                             TextField("Word", text: binding(row.id, \.word))
                                 .textFieldStyle(.plain)
+                            // Only on a replacement: on every plain word it read as a
+                            // replacement waiting to be filled in.
                             Image(systemName: "arrow.right")
-                                .foregroundStyle(row.isReplacement ? .secondary : .quaternary)
+                                .foregroundStyle(.secondary)
+                                .opacity(row.isReplacement ? 1 : 0)
                             TextField("Replace with", text: binding(row.id, \.replacement),
                                       prompt: Text(row.removes ? "(removed)" : ""))
                                 .textFieldStyle(.plain)
