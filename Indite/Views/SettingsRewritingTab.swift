@@ -200,19 +200,18 @@ private struct RewritingOptionsView: View {
                 // Nil and the default's own id both mean Clean Up. The menu stores the
                 // id when Clean Up is picked there, which a separate row for nil could
                 // not show, so the picker went blank.
-                Picker("Using the prompt", selection: Binding(
+                Picker(selection: Binding(
                     get: { settings.selectedPromptId ?? PromptConfiguration.defaultPromptId },
                     set: { settings.selectedPromptId = $0 }
                 )) {
                     ForEach(promptConfig.rewritingPrompts) { prompt in
                         Text(prompt.name).tag(prompt.id)
                     }
+                } label: {
+                    Text("Using the prompt")
+                    Text("A prompt tells the AI what to do, such as Clean Up or Make Formal. It runs on this Mac, and nothing is sent anywhere.")
                 }
                 .disabled(!settings.aiEnabled)
-
-                Text("A prompt is a set of instructions for the AI, such as Clean Up or Make Formal. The rewriting is done on this Mac by Apple Intelligence. Nothing is sent anywhere.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section {
@@ -313,7 +312,8 @@ struct PromptDetailView: View {
     var body: some View {
         Form {
             // A built-in prompt changes only through a copy, so the way to one comes
-            // first rather than below every field it cannot edit.
+            // first rather than below every field it cannot edit. Your own prompts
+            // need no copy: they are edited in place.
             if !canEdit {
                 duplicateSection
             }
@@ -339,14 +339,13 @@ struct PromptDetailView: View {
             }
 
             Section {
-                Toggle("Keep my words", isOn: $keepsWords)
-                    .disabled(!canEdit)
-
-                // Said under the switch, not in a tooltip: nobody could tell what it did
-                // from its name, and a tooltip shows only to someone already hovering.
-                Text("The AI may fix only punctuation, capital letters, a word said twice, or a word Indite misheard. If it changes or drops any other word, Indite puts your word back. Turn this off for a prompt that is meant to reword you, such as Make Formal.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // Said under the switch's name, not in a tooltip: nobody could tell what
+                // it did from its name, and a tooltip shows only to someone hovering.
+                Toggle(isOn: $keepsWords) {
+                    Text("Keep my words")
+                    Text("The AI may fix punctuation, capitals, a word said twice or a misheard word. Any other word it changes goes back to yours. Turn this off for a prompt that rewords you, such as Make Formal.")
+                }
+                .disabled(!canEdit)
             }
 
             // How the model picks its words. Editable for built-in prompts too, and
@@ -428,9 +427,6 @@ struct PromptDetailView: View {
                 }
             }
 
-            if canEdit {
-                duplicateSection
-            }
         }
         .formStyle(.grouped)
         .onChange(of: name) { persist() }
