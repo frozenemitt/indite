@@ -134,6 +134,11 @@ private enum HotkeyAction: Sendable {
     /// The Option key turned out to be a modifier for another key or a click, so the
     /// recording it started was never meant. Cancelled without the stop sound.
     case abandon
+    /// The release of a press that was used with another key or a click after the
+    /// recording had shown. Delivered if words were heard, dropped quietly if not:
+    /// ⌘Tab in the middle of a sentence keeps the sentence, and an Option-click on a
+    /// menu bar icon makes no dictation.
+    case finishIfHeard
     /// The settings screen is waiting for a new binding, and this was the keystroke.
     case capture(keyCode: CGKeyCode, modifiers: CGEventFlags)
 }
@@ -160,6 +165,9 @@ private struct TapState: Sendable {
     /// Whether this press started a recording rather than stopped one. Only a start
     /// can be taken back when the press turns out to be a modifier.
     var pressStartedRecording = false
+    /// Another key or a click came after this press's recording had shown. Its
+    /// release asks whether anything was said; see `finishIfHeard`.
+    var usedAfterConfirm = false
 
     // Hold to talk, with double-tap to lock.
 
@@ -194,6 +202,7 @@ private struct TapState: Sendable {
         }
         pressedAt = now
         pressStartedRecording = true
+        usedAfterConfirm = false
         if isLocked {
             isLocked = false
             pressEndsLock = true
@@ -232,6 +241,11 @@ private struct TapState: Sendable {
             pressEndsOtherRecording = false
             return .deactivate
         }
+        if usedAfterConfirm {
+            usedAfterConfirm = false
+            isSecondTap = false
+            return .finishIfHeard
+        }
         let wasTap = pressedAt.map { now - $0 < Self.tapLength } ?? false
         if isSecondTap {
             isSecondTap = false
@@ -260,6 +274,7 @@ private struct TapState: Sendable {
     mutating func useAsModifier(at now: ContinuousClock.Instant) -> HotkeyAction? {
         guard !optionUsedAsModifier else { return nil }
         if pressStartedRecording, let pressedAt, now - pressedAt >= Self.tapLength {
+            usedAfterConfirm = true
             return nil
         }
         optionUsedAsModifier = true
@@ -402,6 +417,9 @@ final class GlobalHotkeyMonitor {
     /// A recording started by the Option key should be dropped quietly: the key was
     /// being used as a modifier.
     var onAbandon: (() -> Void)?
+    /// The release of a press used with another key or a click after its recording
+    /// showed: deliver the words if there are any, otherwise drop it quietly.
+    var onFinishIfHeard: (() -> Void)?
     /// A keystroke arrived while the settings screen was recording a new binding.
     var onCapture: ((CGKeyCode, CGEventFlags) -> Void)?
 
@@ -795,6 +813,9 @@ final class GlobalHotkeyMonitor {
 
         case .cancel: onCancel?()
         case .abandon: onAbandon?()
+        case .finishIfHeard:
+            lastRelease = .now
+            onFinishIfHeard?()
         case .undo: onUndo?()
         case .retype: onRetype?()
         case let .capture(keyCode, modifiers): onCapture?(keyCode, modifiers)
