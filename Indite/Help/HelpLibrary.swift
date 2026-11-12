@@ -146,7 +146,8 @@ enum HelpLibrary {
             or holding it while you click or drag throws the recording away without a \
             sound, and the keystroke or click reaches the app as usual. Once the start \
             sound has played, other keys and clicks no longer end the dictation: you can \
-            switch apps with ⌘Tab while you talk, and letting go of Option finishes it.
+            switch apps with ⌘Tab while you talk, and letting go of Option finishes it. \
+            If you had said nothing, letting go drops it quietly instead.
 
             The first line of Indite's menu names the key in use.
             """,

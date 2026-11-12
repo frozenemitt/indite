@@ -406,6 +406,9 @@ struct InditeApp: App {
             hotkeyMonitor.onAbandon = {
                 Task { @MainActor in await coordinator.cancel(quietly: true) }
             }
+            hotkeyMonitor.onFinishIfHeard = {
+                Task { @MainActor in await coordinator.finishIfHeard() }
+            }
             // Dictation only. The tap swallows Escape while this is true, so reporting a
             // meeting here would eat the key in whatever app the user is actually using,
             // for the whole length of the meeting — and cancel the meeting with it.

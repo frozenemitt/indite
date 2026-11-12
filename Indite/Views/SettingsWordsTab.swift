@@ -70,8 +70,16 @@ struct WordsSettingsView: View {
             if hints.count > listed.count, hints.starts(with: listed) {
                 vocabulary += hints.dropFirst(listed.count).map { WordRow(word: $0) }
             } else {
-                vocabulary = hints.map { WordRow(word: $0) } + vocabulary.filter(\.isReplacement)
+                load()
             }
+        }
+        // Changed elsewhere, as Reset All Settings changes them: read again, or the
+        // next edit here would write the old lists back.
+        .onChange(of: settings.wordReplacements) { _, stored in
+            if stored != storedReplacements(vocabulary) { load() }
+        }
+        .onChange(of: settings.snippets) { _, stored in
+            if stored != snippets.map({ Snippet(cue: $0.cue, text: $0.text) }) { load() }
         }
         .sheet(item: $editing) { list in
             switch list {
@@ -119,13 +127,19 @@ struct WordsSettingsView: View {
     private func commitVocabulary() {
         let words = Self.words(vocabulary)
         if words != settings.vocabularyHints { settings.vocabularyHints = words }
+        let replacements = storedReplacements(vocabulary)
+        if replacements != settings.wordReplacements { settings.wordReplacements = replacements }
+    }
+
+    /// The word replacements as the rows hold them.
+    private func storedReplacements(_ rows: [WordRow]) -> [String: String] {
         var replacements: [String: String] = [:]
-        for row in vocabulary where row.isReplacement {
+        for row in rows where row.isReplacement {
             let word = row.word.trimmingCharacters(in: .whitespaces)
             guard !word.isEmpty else { continue }
             replacements[word] = row.replacement.trimmingCharacters(in: .whitespaces)
         }
-        if replacements != settings.wordReplacements { settings.wordReplacements = replacements }
+        return replacements
     }
 
     /// Store every row as it stands, in order. A row is typed once it has a cue and some

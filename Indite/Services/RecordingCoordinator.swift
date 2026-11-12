@@ -937,6 +937,20 @@ final class RecordingCoordinator {
     /// - Parameter quietly: Skip the stop sound, for a recording the user never meant
     ///   to start, such as one begun by Globe pressed as part of Fn+Delete, or by a
     ///   tap too short to hold any words.
+    /// End a dictation whose key was used with another key or a click after it had
+    /// shown: deliver it when words were heard, and drop it without a sound when none
+    /// were, as an Option-click on a menu bar icon would leave it.
+    func finishIfHeard() async {
+        let heard = (engine.currentTranscript + engine.volatileText)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if heard.isEmpty {
+            Log.dictation.notice("Option was used with another key or a click and nothing was heard; dropping the recording")
+            await cancel(quietly: true)
+        } else {
+            await stopAndProcess()
+        }
+    }
+
     func cancel(quietly: Bool = false) async {
         if let startTask { await startTask.value }
         // Not while a stop is delivering: its words are already on their way.
