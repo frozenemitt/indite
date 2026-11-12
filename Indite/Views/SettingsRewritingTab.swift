@@ -48,7 +48,7 @@ struct RewritingSettingsView: View {
                                 deletePrompts(at: indexSet)
                             }
                         } header: {
-                            promptsHeader("Custom Prompts")
+                            promptsHeader("Your Prompts")
                         }
                     }
                 }
@@ -185,7 +185,7 @@ private struct RewritingOptionsView: View {
 
         Form {
             Section {
-                Toggle("Rewrite dictations", isOn: $settings.aiEnabled)
+                Toggle("Rewrite my words with AI", isOn: $settings.aiEnabled)
 
                 if let reason = AIProcessor.unavailabilityReason {
                     Label {
@@ -200,7 +200,7 @@ private struct RewritingOptionsView: View {
                 // Nil and the default's own id both mean Clean Up. The menu stores the
                 // id when Clean Up is picked there, which a separate row for nil could
                 // not show, so the picker went blank.
-                Picker("With", selection: Binding(
+                Picker("Using the prompt", selection: Binding(
                     get: { settings.selectedPromptId ?? PromptConfiguration.defaultPromptId },
                     set: { settings.selectedPromptId = $0 }
                 )) {
@@ -210,15 +210,15 @@ private struct RewritingOptionsView: View {
                 }
                 .disabled(!settings.aiEnabled)
 
-                Text("Rewriting uses Apple’s on-device model. Nothing leaves this Mac.")
+                Text("A prompt is a set of instructions for the AI, such as Clean Up or Make Formal. The rewriting is done on this Mac by Apple Intelligence. Nothing is sent anywhere.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Section {
-                Toggle("Let the AI see what is already in the field", isOn: $settings.useSurroundingContext)
+                Toggle("Let the AI read the text around the cursor", isOn: $settings.useSurroundingContext)
                     .disabled(!settings.aiEnabled)
-                    .help("Reads the text around your cursor, so a dictated reply matches the thread it belongs to.")
+                    .help("The AI reads what is already written where you are typing, so a reply you dictate fits the conversation.")
             }
         }
         .formStyle(.grouped)
@@ -243,7 +243,7 @@ struct PromptRow: View {
 
             Spacer()
 
-            Toggle("Show in Menu", isOn: Binding(
+            Toggle("Show in Indite's menu", isOn: Binding(
                 get: { prompt.isVisible },
                 set: { _ in onToggleVisibility() }
             ))
@@ -325,20 +325,15 @@ struct PromptDetailView: View {
 
             // Instructions to a model are prose, set in the system font as Shortcuts
             // sets them. Monospaced, they read as code.
-            Section("System Prompt") {
-                TextEditor(text: $systemPrompt)
-                    .font(.body)
-                    .frame(minHeight: 80)
-                    .disabled(!canEdit)
-            }
-
-            Section("User Template") {
+            // The user template holds a prompt's instructions; the system prompt is a
+            // line saying who the AI is, so it waits under Advanced.
+            Section("Instructions for the AI") {
                 TextEditor(text: $userTemplate)
                     .font(.body)
                     .frame(minHeight: 80)
                     .disabled(!canEdit)
 
-                Text("Your dictation is added after these instructions.")
+                Text("Tell the AI what to do with your words, in ordinary language. Your dictation is added right after these instructions.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -349,7 +344,7 @@ struct PromptDetailView: View {
 
                 // Said under the switch, not in a tooltip: nobody could tell what it did
                 // from its name, and a tooltip shows only to someone already hovering.
-                Text("The AI may fix punctuation, capitals, a word said twice, or a word that was misheard. Any other word it drops or changes goes back to what you said. Turn this off for a prompt meant to reword you, such as Make Formal.")
+                Text("The AI may fix only punctuation, capital letters, a word said twice, or a word Indite misheard. If it changes or drops any other word, Indite puts your word back. Turn this off for a prompt that is meant to reword you, such as Make Formal.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -359,30 +354,48 @@ struct PromptDetailView: View {
             // sampling dials read as things every prompt has to set.
             Section {
                 DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
+                    Text("Fine-tuning for how the AI chooses its words. Most people never change these.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Who the AI should be")
+                        TextEditor(text: $systemPrompt)
+                            .font(.body)
+                            .frame(minHeight: 44)
+                            .disabled(!canEdit)
+                        Text("One sentence the AI reads before anything else, such as \u{201C}You are a careful editor.\u{201D}")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .help("Sets the AI\u{2019}s role. The instructions above say what it should do.")
+
                     // Greedy sampling always takes the likeliest word, so temperature
                     // has nothing to act on.
                     if samplingModeTag != "greedy" {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text("Temperature")
+                                Text("Variety in wording")
                                 Spacer()
                                 Text(String(format: "%.1f", temperature))
                                     .foregroundStyle(.secondary)
                                     .monospacedDigit()
                             }
                             Slider(value: $temperature, in: 0.0...1.0, step: 0.1)
+                                .help("How freely the AI chooses its words. Low: it stays with the most likely wording and gives nearly the same result each time. High: the wording varies more, and may move further from what you said. Also called temperature.")
                             Text(temperatureHint)
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
                     }
 
-                    Picker("Sampling", selection: $samplingModeTag) {
+                    Picker("Word choice", selection: $samplingModeTag) {
                         Text("Automatic").tag("automatic")
-                        Text("Greedy").tag("greedy")
-                        Text("Top-P").tag("topP")
-                        Text("Top-K").tag("topK")
+                        Text("Always the most likely word").tag("greedy")
+                        Text("Only from the likely words").tag("topP")
+                        Text("Only from the top few words").tag("topK")
                     }
+                    .help("How the AI picks each next word. Leave this on Automatic unless you are experimenting.")
 
                     Text(samplingHint)
                         .font(.caption2)
@@ -391,18 +404,26 @@ struct PromptDetailView: View {
                     if samplingModeTag == "topP" {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text("Probability Threshold")
+                                Text("Words considered")
                                 Spacer()
                                 Text(String(format: "%.2f", topPThreshold))
                                     .foregroundStyle(.secondary)
                                     .monospacedDigit()
                             }
-                            Slider(value: $topPThreshold, in: 0.1...1.0, step: 0.05)
+                            Slider(value: $topPThreshold, in: 0.1...1.0, step: 0.05) {
+                                EmptyView()
+                            } minimumValueLabel: {
+                                Text("Fewer").font(.caption2)
+                            } maximumValueLabel: {
+                                Text("More").font(.caption2)
+                            }
+                            .help("Fewer: the AI picks among only the most likely words, so results stay close to what is expected. More: it also considers less likely words, so results vary more.")
                         }
                     }
 
                     if samplingModeTag == "topK" {
-                        Stepper("Top K: \(topKValue)", value: $topKValue, in: 1...100)
+                        Stepper("Words considered: \(topKValue)", value: $topKValue, in: 1...100)
+                            .help("The AI picks each word from this many of the most likely ones. At 1 it always takes the most likely word. A higher number gives more varied wording.")
                     }
                 }
             }
@@ -434,7 +455,7 @@ struct PromptDetailView: View {
                 )
                 onDuplicate(duplicate)
             } label: {
-                Label("Duplicate as Custom Prompt", systemImage: "doc.on.doc")
+                Label("Copy to Your Prompts", systemImage: "doc.on.doc")
             }
         }
     }
@@ -475,17 +496,17 @@ struct PromptDetailView: View {
     }
 
     private var temperatureHint: String {
-        if temperature < 0.3 { return "Very predictable" }
+        if temperature < 0.3 { return "Nearly the same every time" }
         if temperature < 0.7 { return "Balanced" }
-        return "Creative"
+        return "More varied"
     }
 
     private var samplingHint: String {
         switch samplingModeTag {
-        case "greedy": return "Always picks the most likely word. Same input = same output."
-        case "topP": return "Samples from the smallest set of words whose probabilities add up to the threshold."
-        case "topK": return "Samples from the K most likely words. Lower K = more focused output."
-        default: return "Default random sampling with temperature-based variation."
+        case "greedy": return "The AI always takes the single most likely next word. The same dictation gives the same result every time."
+        case "topP": return "The AI picks among the likely words and ignores the unlikely ones. The slider below sets where that line is drawn. Also called Top-P."
+        case "topK": return "The AI picks among a set number of the most likely words. You choose the number below. Also called Top-K."
+        default: return "Apple\u{2019}s standard way of picking words. Variety in wording decides how much the result changes from one time to the next."
         }
     }
 }

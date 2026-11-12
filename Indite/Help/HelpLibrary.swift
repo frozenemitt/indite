@@ -124,7 +124,7 @@ enum HelpLibrary {
 
             To check at once, choose "Check for Updates…" from the menu. To stop the daily \
             check and download, open Indite's Settings, choose About, and turn off \
-            "Update automatically".
+            "Update Indite automatically".
 
             Indite checks each update's signature before installing it. Updates keep your \
             permissions, and macOS does not show its malware warning again.
@@ -156,18 +156,20 @@ enum HelpLibrary {
         id: "hands-free",
         title: "Dictate without holding the key down",
         body: """
-            Open Indite's Settings, choose Dictation, and under "Pressing it" choose \
-            "Press to start, press to stop". Press the dictation key once to start, talk \
-            with your hands free, and press it again to stop.
+            Open Indite's Settings, choose Dictation, and under "To dictate" choose \
+            "Press once to start, once to stop". Press the dictation key once to start, \
+            talk with your hands free, and press it again to stop.
 
-            "Hold to talk", the default, listens while you hold the key down and stops \
+            "Hold the key while you talk", the default, listens while you hold the key \
+            down and stops \
             when you let go. To talk hands-free in this mode too, tap the key twice \
             quickly: Indite keeps listening after you let go, until you press the key \
             once more. A short sound says it has locked, and a lock shows in the \
             dictation panel for as long as it listens.
 
             A mouse side button can start and stop a dictation too. In the same \
-            settings, pick the back or forward button under "Mouse button". Click it \
+            settings, pick the back or forward button under "Also start with a mouse \
+            button". Click it \
             once to start and once more to stop. The button then no longer goes back \
             or forward in other apps.
 
@@ -224,7 +226,7 @@ enum HelpLibrary {
             still see the panel, but shared screens, screenshots and screen recordings \
             leave it out.
 
-            The meeting pill stays visible either way, because the people on a call \
+            The meeting controls stay visible either way, because the people on a call \
             should be able to see that they are being recorded.
             """,
         topic: .dictation,
@@ -236,17 +238,17 @@ enum HelpLibrary {
         title: "Press Return after the words",
         body: """
             Indite can press a key after it types your words. Open Indite's Settings, \
-            choose Dictation, and under "Where the Text Goes" set "After typing".
+            choose Dictation, and under "Where the Text Goes" set "After typing, press".
 
-            "Press Return" hits Enter for you, which sends the message in a chat app such as Slack or \
-            Messages. "Press Shift-Return" starts a new line and leaves the message \
-            unsent. "Nothing" is the default. If your messages are being sent \
-            automatically, choose "Nothing" or "Press Shift-Return" to stop it.
+            "Return" sends the message in a chat app such as Slack or Messages. \
+            "Shift-Return" starts a new line and leaves the message unsent. "Nothing" is \
+            the default. If your messages are being sent automatically, choose "Nothing" \
+            or "Shift-Return" to stop it.
 
             To send a single dictation, end it with "press enter" or "press return". \
             Indite types the words before them and then presses Return. A message you \
             meant to end with those words is sent without them; to stop that, turn off \
-            the switch below "After typing".
+            "Say \u{201C}press enter\u{201D} to press Return".
 
             To send a message you have read over, say only "press enter". Indite \
             presses Return and types nothing. Return is pressed only in the app you were \
@@ -254,8 +256,8 @@ enum HelpLibrary {
             then, Indite types any words into it without pressing Return, and the \
             dictation panel says so.
 
-            To press Return in one app only, add a profile for that app in the Apps tab \
-            and set "Press Return after typing" to Yes. Once Return has been pressed, the \
+            To press Return in one app only, add that app in the Apps tab and set \
+            "Press Return after typing" to Yes. Once Return has been pressed, the \
             undo key cannot take the dictation back.
             """,
         topic: .dictation,
@@ -266,18 +268,19 @@ enum HelpLibrary {
         id: "always-copy",
         title: "Copy dictations instead of typing them",
         body: """
-            Open Indite's Settings, choose Dictation, and under "After transcribing" \
-            choose "Always copy to the clipboard". Each dictation then goes to the \
-            clipboard, and you paste it with Command-V (⌘V) wherever you want it.
+            Open Indite's Settings, choose Dictation, and under "When you stop talking" \
+            choose "Copy the words, ready to paste". Indite then types nothing: each \
+            dictation goes to the clipboard, and you paste it with Command-V (⌘V) \
+            wherever you want it.
 
-            The default, "Type into the focused field, otherwise copy", types the words \
-            where the cursor is. Indite types by pasting, so it borrows the clipboard for \
-            a moment. "Restore my previous clipboard afterwards", on by default, puts back \
-            the text you had copied before. If Indite wipes what you had copied, check \
-            that this switch is on.
+            The default, "Type the words where the cursor is", types them for you. When \
+            the cursor is not somewhere you can type, the words are copied instead. \
+            Indite types by pasting, so it borrows the clipboard for a moment. "Keep what \
+            I had copied before", on by default, puts back the text you had copied. If \
+            Indite wipes what you had copied, check that this switch is on.
 
-            To copy instead of type in one app only, add a profile for that app in the \
-            Apps tab and set its "Output".
+            To copy instead of type in one app only, add that app in the Apps tab and \
+            set its "When you stop talking".
             """,
         topic: .dictation,
         action: .inditeSettings(.dictation)
@@ -313,7 +316,7 @@ enum HelpLibrary {
             for ever. The words up to that point are typed as usual.
 
             To dictate for longer, open Indite's Settings, choose Dictation, and under \
-            Microphone set "Stop by itself after" to a longer time, up to an hour. The \
+            Microphone set "Stop automatically after" to a longer time, up to an hour. The \
             limit applies to dictations only. For a talk or a long conversation, choose \
             "Start Meeting" from Indite's menu instead.
             """,
@@ -323,17 +326,17 @@ enum HelpLibrary {
 
     static let undoDictation = HelpArticle(
         id: "undo-dictation",
-        title: "Take back the last dictation",
+        title: "Undo the last dictation",
         body: """
             Press Control-Command-Z (⌃⌘Z) within two minutes of a dictation being \
             typed. Indite sends Undo to the app that received the words, so they come out \
             again. It also puts them on the clipboard, in case you still want them.
 
-            The undo key does not work once "After typing" has pressed Return or \
+            The undo key does not work once Indite has pressed Return or \
             Shift-Return, because the message may already be sent.
 
             To change the key or switch it off, open Indite's Settings, choose Dictation, \
-            and look under "Undo Key" for "Take back the last dictation with a key".
+            and look under "Undo Key" for "Undo the last dictation with a key".
             """,
         topic: .dictation
     )
@@ -351,7 +354,8 @@ enum HelpLibrary {
             Dictations", which lists the last five. Click one to type it at the cursor, or \
             Option-click it to copy it.
 
-            Both need "Keep recent dictations", which is on unless you turned it off. To \
+            Both need "Keep a list of recent dictations", which is on unless you turned \
+            it off. To \
             change the key, open Indite's Settings, choose Dictation, and look under \
             "Type-Again Key".
             """,
@@ -385,9 +389,9 @@ enum HelpLibrary {
             dictation panel offers "Open Recent Dictations".
 
             To keep more or fewer, open Indite's Settings, choose Dictation, and change \
-            "Keep the last" under "Recent Dictations". "Keep recordings for" sets how many \
-            days the recordings are kept, and "Keep forever" keeps them as long as their \
-            dictations.
+            "Keep the last" under "Recent Dictations". "Keep voice recordings for" sets how \
+            many days the recordings are kept, and "Keep until the dictation leaves the \
+            list" keeps them as long as their dictations.
             """,
         topic: .dictation
     )
@@ -399,11 +403,11 @@ enum HelpLibrary {
             To stop the sound Indite makes when you start talking, or any of its other \
             beeps and chimes, open Indite's Settings and choose Feedback. Turn off "Play \
             sounds" to silence them all. To change one, pick another sound beside \
-            "Recording started", "Recording stopped", "While rewriting", "Text delivered" \
-            or "Something went wrong", or choose None to silence only that one. The \
+            "Recording started", "Recording stopped", "While the AI rewrites", "Words \
+            typed or copied" or "Something went wrong", or choose None to silence only that one. The \
             "Preview Sound" button beside each one plays it.
 
-            To use a sound of your own, click "Import Sound File…" under "Your Sounds" and \
+            To use a sound of your own, click "Add Sound File…" under "Your Sounds" and \
             choose an audio file. It then appears in every list of sounds.
             """,
         topic: .dictation,
@@ -433,7 +437,7 @@ enum HelpLibrary {
         title: "Turn off Indite's notifications",
         body: """
             Open Indite's Settings, choose Feedback, and look under Notifications. Turn \
-            off "When a dictation has been delivered" to stop the banner after every \
+            off "When your words are typed or copied" to stop the banner after every \
             dictation. Turn off "When something goes wrong" to stop the banners that \
             explain a failure, such as a rewrite that did not finish. Both are on until \
             you turn them off.
@@ -446,15 +450,15 @@ enum HelpLibrary {
         id: "app-profiles",
         title: "Set different rules for one app",
         body: """
-            A profile changes how dictation behaves in one app, so Terminal and Mail, for \
-            example, can each work their own way. Open Indite's Settings, choose Apps, \
-            click "Add App…", and choose the app.
+            An app can have its own settings, so Terminal and Mail, for example, can each \
+            work their own way. Open Indite's Settings, choose Apps, click "Add App…", \
+            and choose the app.
 
-            A profile can set its own "Prompt", including Off to skip rewriting in that \
-            app. It can set its own "Output", to type or always copy, and whether to \
-            "Press Return after typing". "Use the default" keeps your general setting. The \
-            switch beside the app's name turns the profile off without deleting it, and \
-            "Remove Profile" deletes it.
+            The app can set its own "Rewrite with", including "No rewriting". It can set \
+            its own "When you stop talking", to type or only copy, and whether to "Press \
+            Return after typing". "Same as other apps" keeps your general setting. The \
+            switch beside the app's name turns its settings off without deleting them, \
+            and "Remove App" deletes them.
 
             The app you start talking in picks the prompt. The app in front when the text \
             is ready decides how it arrives. When the app in front has a prompt of its \
@@ -511,8 +515,8 @@ enum HelpLibrary {
             any word the model drops. Fix Punctuation adds punctuation and capitals \
             without changing a word.
 
-            The same choice is in Indite's Settings, under Rewriting, as "Rewrite \
-            dictations" and "With".
+            The same choice is in Indite's Settings, under Rewriting, as "Rewrite my \
+            words with AI" and "Using the prompt".
             """,
         topic: .rewriting
     )
@@ -568,13 +572,14 @@ enum HelpLibrary {
         body: """
             To create a new prompt of your own, for a style no built-in prompt covers, \
             open Indite's Settings, choose Rewriting, and click "Add Prompt", the plus \
-            button under the list. Give the prompt a name. Under "System Prompt", say who \
-            the model should be. Under "User Template", say what it should do; your \
-            dictation is added after those instructions. Changes are saved as you type.
+            button under the list. Give the prompt a name. Under "Instructions for the \
+            AI", say what it should do with your words; your dictation is added after \
+            those instructions. Changes are saved as you type. To say who the AI should \
+            be, such as "a careful editor", open Advanced.
 
             Turn on "Keep my words" for a prompt that corrects rather than rewords: any \
             word the model drops is put back. Built-in prompts cannot be edited, so to \
-            start from one, select it and click "Duplicate as Custom Prompt". Your prompt \
+            start from one, select it and click "Copy to Your Prompts". Your prompt \
             then appears in the Rewrite menu.
             """,
         topic: .rewriting,
@@ -590,18 +595,21 @@ enum HelpLibrary {
             Settings, choose Rewriting, select the prompt, and click "Advanced" under its \
             instructions. Built-in prompts can change these too, without a copy.
 
-            Temperature, from 0 to 1, sets how much the wording varies. Lower it to make \
+            "Variety in wording", from 0 to 1, sets how much the wording varies. Lower it \
+            to make \
             rewrites more predictable; raise it if they sound stiff or repetitive. Every \
             built-in prompt starts at 0.5, except Simple Clean, which starts at 0.3.
 
-            Sampling sets how each word is chosen. Greedy always takes the likeliest word, \
+            "Word choice" sets how each word is chosen. "Always the most likely word" \
+            always takes the likeliest word, \
             so the same dictation is rewritten the same way every time: choose it if a \
             prompt rewrites the same words differently each time, or strays from what you \
-            said. Simple Clean uses it. Temperature is hidden while Greedy is chosen, \
+            said. Simple Clean uses it. "Variety in wording" is hidden while it is chosen, \
             because it has nothing to act on. Automatic, the setting for the other \
-            built-in prompts, is Apple's default. Top-P chooses among the likeliest words \
-            until their chances add up to the Probability Threshold. Top-K chooses among a \
-            fixed number of the likeliest words; a lower Top K keeps the wording closer.
+            built-in prompts, is Apple's default. "Only from the likely words" chooses \
+            among the likeliest words, and its slider sets how many count as likely. \
+            "Only from the top few words" chooses among a fixed number of the likeliest \
+            words; a lower number keeps the wording closer.
             """,
         topic: .rewriting,
         action: .inditeSettings(.rewriting)
@@ -612,11 +620,11 @@ enum HelpLibrary {
         title: "Let the rewrite match the conversation",
         body: """
             Open Indite's Settings, choose Rewriting, select Options, and turn on "Let \
-            the AI see what is already in the field". When you dictate a reply, the model \
+            the AI read the text around the cursor". When you dictate a reply, the model \
             then reads the text around your cursor, such as the email or thread you are \
             replying to, so the rewrite takes it into account.
 
-            It is off by default, and it works only while "Rewrite dictations" is on. \
+            It is off by default, and it works only while "Rewrite my words with AI" is on. \
             Indite reads the text through the Accessibility access it already has, uses \
             it for that one rewrite, and never sends it anywhere.
             """,
@@ -660,12 +668,12 @@ enum HelpLibrary {
         body: """
             A word replacement makes Indite write one word as another every time you say \
             it. Open Indite's Settings, choose Words, and click the plus button under \
-            "Word Replacements". Type what Indite writes under Heard, such as "gonna", \
-            and what you want instead under Written, such as "going to". Every dictation \
+            "Word Replacements". Type what Indite hears on the left, such as "gonna", \
+            and what you want written on the right, such as "going to". Every dictation \
             is then corrected before it is rewritten or typed.
 
             Replacements match whole words only and ignore capitals, so a rule for "vox" \
-            leaves "voxel" alone. Leave Written empty to delete the heard word wherever it \
+            leaves "voxel" alone. Leave the right side empty to delete the heard word wherever it \
             appears. To remove a rule, select it and click the minus button.
             """,
         topic: .words,
@@ -681,8 +689,8 @@ enum HelpLibrary {
             Indite types the saved text exactly as you wrote it, line breaks included.
 
             Open Indite's Settings, choose Words, and click "Add Snippet" under \
-            "Snippets". Type the cue, such as "my calendar link", and the text below it. \
-            The cue can come anywhere in a dictation, in any capitals, so "Here is my \
+            "Snippets". Under "What you say", type the words, such as "my calendar link", and the text below them. \
+            Those words can come anywhere in a dictation, in any capitals, so "Here is my \
             calendar link" types the words and then the link.
 
             The rewriting never sees the saved text, so it cannot change it. If the \
@@ -701,10 +709,10 @@ enum HelpLibrary {
         title: "Record a meeting",
         body: """
             Click Indite's I in the menu bar and choose "Start Meeting". Indite starts \
-            recording without opening a window. A small pill shows the meeting's clock \
+            recording without opening a window. A small floating bar shows the meeting's clock \
             with Pause and Stop, and the menu bar shows the clock beside the I.
 
-            To end the meeting, click Stop in the pill and then End, or choose "End \
+            To end the meeting, click Stop in the floating bar and then End, or choose "End \
             Meeting", then "End and Save", from the menu. Indite then separates the \
             speakers, if the speaker models are installed, and writes a title and a \
             summary. The meeting appears in the Meetings window, where the red "New \
@@ -735,17 +743,18 @@ enum HelpLibrary {
 
     static let meetingPill = HelpArticle(
         id: "meeting-pill",
-        title: "Move or hide the meeting pill",
+        title: "Move or hide the meeting controls",
         body: """
-            The meeting pill is the small floating panel with a timer that appears during \
+            The meeting controls are the small floating bar with a timer that appears during \
             a meeting, on every desktop and over full-screen apps. Its ribbon moves with \
             what the microphone hears, so you can see the meeting is still listening. It \
             also shows the clock, a Pause button and a Stop button. Stop asks "End \
             meeting?" before it ends anything.
 
-            If the pill is in the way, drag it anywhere, and it comes back where you left \
+            If the bar is in the way, drag it anywhere, and it comes back where you left \
             it. To hide it, open Indite's Settings, choose Meetings, and turn off "Show \
-            the meeting pill". "Reset Panel Positions" in the Feedback tab puts it back \
+            the floating meeting controls". "Reset Panel Positions" in the Feedback tab \
+            puts it back \
             where it started.
             """,
         topic: .meetings,
@@ -994,9 +1003,9 @@ enum HelpLibrary {
             data. Apple downloads its speech model the first time you dictate. Once a day, \
             and when you choose "Check for Updates…", Indite reads a small file from the \
             latest release on GitHub; the request names only the app and its version. The \
-            daily check stops if you turn off "Update automatically" in Settings, under \
-            About. The speaker models download from HuggingFace only when you click \
-            "Install Models" in Settings, under Meetings.
+            daily check stops if you turn off "Update Indite automatically" in Settings, \
+            under About. The speaker models download from HuggingFace only when you click \
+            "Download and Install" in Settings, under Meetings.
 
             An AI agent you connect yourself can read your meetings and dictations, and \
             sends what it reads wherever it works. Nothing is shared until you connect one.
@@ -1012,10 +1021,10 @@ enum HelpLibrary {
             dictations, so that a dictation which landed in the wrong window can be \
             recovered. It keeps the last 100. With each one it keeps a recording of your \
             voice for 14 days, so the dictation can be transcribed again. "Keep \
-            recordings for" in Settings, under Dictation, changes the number of days.
+            voice recordings for" in Settings, under Dictation, changes the number of days.
 
             To save no dictations and no recordings at all, open Indite's Settings, \
-            choose Dictation, and turn off "Keep recent dictations". "Clear All…" in the \
+            choose Dictation, and turn off "Keep a list of recent dictations". "Clear All…" in the \
             Recent Dictations window deletes the ones already kept, with their recordings.
 
             Meetings keep their transcript, summary and recording. To keep no recordings, \
@@ -1079,8 +1088,8 @@ enum HelpLibrary {
             words belong and press Command-V (⌘V).
 
             If every dictation is copied, even into a document, open Indite's Settings, \
-            choose Dictation, and set "After transcribing" to "Type into the focused \
-            field, otherwise copy".
+            choose Dictation, and set "When you stop talking" to "Type the words where \
+            the cursor is".
 
             "Pasted, but the app did not confirm it." means Indite typed the words but \
             the app never reported them arriving. Some apps report late or not at all, \
@@ -1132,8 +1141,8 @@ enum HelpLibrary {
         id: "call-audio-silent",
         title: "The other side of the call is missing",
         body: """
-            Indite records the other person on a call only when "Record system audio, for \
-            the other side of a call" is on in Settings, under Meetings, and macOS allows \
+            Indite records the other person on a call only when "Also record the other \
+            people on a call" is on in Settings, under Meetings, and macOS allows \
             it.
 
             If the meeting says "No system audio has been heard in the first minute", open \
@@ -1153,7 +1162,7 @@ enum HelpLibrary {
         body: """
             Meetings show who said what only when the speaker models are installed. They \
             come separately from the app. Open Indite's Settings, choose Meetings, and \
-            click "Install Models" under Speaker Separation. They download once, about 21 \
+            click "Download and Install" under Speaker Names. They download once, about 21 \
             MB from HuggingFace, and then run on this Mac with no network.
 
             Speakers are separated when a meeting ends, because telling voices apart needs \
@@ -1163,7 +1172,7 @@ enum HelpLibrary {
             choose "A New Speaker".
 
             "Check for Updates" in the same place compares your copy with the published \
-            models, and "Re-download Models" replaces it.
+            models, and "Download Again" replaces it.
             """,
         topic: .troubleshooting,
         action: .inditeSettings(.meetings)
@@ -1177,7 +1186,7 @@ enum HelpLibrary {
             records, the dictation key plays the error sound and the panel says "A meeting \
             is using the microphone."
 
-            To dictate during a meeting, pause it first: click Pause in the meeting pill, \
+            To dictate during a meeting, pause it first: click Pause in the meeting controls, \
             or choose "Pause Meeting" from Indite's menu. Dictate, then click Resume. In \
             the same way, a meeting cannot start until a dictation has finished.
             """,

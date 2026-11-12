@@ -49,29 +49,29 @@ struct DictationSettingsView: View {
                         Text(key.displayName).tag(key.rawValue)
                     }
                 }
-                .help("Option on its own. Typed with another key, as in ⌥E, or held for a click, it stays Option.")
+                .help("Only Option pressed by itself starts a dictation. Option with another key, such as Option-E, or with a click, works as it always does.")
 
-                Picker("Pressing it", selection: $settings.hotkeyActivationModeRaw) {
+                Picker("To dictate", selection: $settings.hotkeyActivationModeRaw) {
                     ForEach(HotkeyActivationMode.allCases) { mode in
                         Text(mode.displayName).tag(mode.rawValue)
                     }
                 }
-                .help("Escape discards a dictation in progress.")
+                .help("When you hold the key, you can also press it twice quickly to keep dictating without holding it. Press it once more to finish. Escape cancels a dictation, and nothing is typed.")
 
-                Picker("Mouse button", selection: $settings.dictationMouseButtonRaw) {
+                Picker("Also start with a mouse button", selection: $settings.dictationMouseButtonRaw) {
                     Text("Off").tag(String?.none)
                     ForEach(MouseButton.allCases) { button in
                         Text(button.displayName).tag(Optional(button.rawValue))
                     }
                 }
-                .help("Click the side button to start a dictation, and click it again to end it. It then no longer goes back or forward in other apps.")
+                .help("Click the side button on your mouse to start a dictation, and click it again to finish. That button then stops going back or forward in other apps.")
             }
 
             // How each key works is in its tooltip. A caption stays only where it
             // warns.
             Section("Undo Key") {
-                Toggle("Take back the last dictation with a key", isOn: $settings.undoHotkeyEnabled)
-                    .help("Works for two minutes after the text was typed, and puts the text on your clipboard. Not available when After typing presses Return.")
+                Toggle("Undo the last dictation with a key", isOn: $settings.undoHotkeyEnabled)
+                    .help("Press the keys within two minutes, and the words Indite just typed are removed. They are copied, so you can paste them somewhere else. This is not available while Indite presses Return after typing.")
 
                 if settings.undoHotkeyEnabled {
                     shortcutRow("Key combination", target: .undo, display: settings.undoHotkeyString)
@@ -80,14 +80,14 @@ struct DictationSettingsView: View {
 
             Section("Type-Again Key") {
                 Toggle("Type the last dictation again with a key", isOn: $settings.retypeHotkeyEnabled)
-                    .help("For a dictation that landed in the wrong place: put the cursor where it should have gone and press this.")
+                    .help("If your words landed in the wrong place, click where they should go and press the keys.")
 
                 if settings.retypeHotkeyEnabled {
                     shortcutRow("Key combination", target: .retype, display: settings.retypeHotkeyString)
 
                     if settings.retypeHotkeyTrigger == nil {
                         Label {
-                            Text("Off while undo uses the same combination.")
+                            Text("Off, because Undo uses the same keys.")
                         } icon: {
                             Image(systemName: "exclamationmark.triangle")
                                 .foregroundStyle(.orange)
@@ -112,20 +112,20 @@ struct DictationSettingsView: View {
                 // 119 clicks to cross its range. A length it saved that is not listed
                 // joins the menu, which otherwise shows a blank title, and seconds are
                 // allowed so 90 reads as 1 min, 30 sec rather than 2 min.
-                Picker("Stop by itself after", selection: $settings.maxRecordingSeconds) {
+                Picker("Stop automatically after", selection: $settings.maxRecordingSeconds) {
                     ForEach(Set([60, 120, 300, 600, 900, 1800, 3600, settings.maxRecordingSeconds]).sorted(), id: \.self) { seconds in
                         Text(Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes, .seconds])))
                             .tag(seconds)
                     }
                 }
-                .help("So a key that sticks cannot record for ever.")
+                .help("Ends a dictation that has run this long, in case the key sticks or you forget to stop.")
 
                 Toggle("Mute the Mac while you dictate", isOn: $settings.muteWhileDictating)
-                    .help("Music, videos and calls go quiet until the dictation ends. Indite's start and stop sounds still play.")
+                    .help("Music, videos and calls go quiet until you finish. Indite's own sounds still play.")
             }
 
             Section("Where the Text Goes") {
-                Picker("After transcribing", selection: $settings.outputModeRaw) {
+                Picker("When you stop talking", selection: $settings.outputModeRaw) {
                     ForEach(OutputMode.allCases) { mode in
                         Text(mode.displayName).tag(mode.rawValue)
                     }
@@ -133,11 +133,14 @@ struct DictationSettingsView: View {
                 .pickerStyle(.radioGroup)
 
                 if typesText {
-                    Toggle("Restore my previous clipboard afterwards", isOn: $settings.restoreClipboardAfterPaste)
+                    caption("If the cursor is not somewhere you can type, the words are copied for you to paste.")
+
+                    Toggle("Keep what I had copied before", isOn: $settings.restoreClipboardAfterPaste)
+                    caption("Indite types by pasting. On: whatever you copied earlier is still there to paste afterwards. Off: Paste gives you the words you dictated.")
 
                     // One choice of three. "Add a space" was a fourth until Indite
                     // spaced each dictation from the words around the cursor itself.
-                    Picker("After typing", selection: Binding(
+                    Picker("After typing, press", selection: Binding(
                         get: {
                             if settings.autoSubmitAfterInsert {
                                 return settings.useShiftReturnAfterInsert ? AfterTyping.pressShiftReturn : .pressReturn
@@ -150,18 +153,18 @@ struct DictationSettingsView: View {
                         }
                     )) {
                         Text("Nothing").tag(AfterTyping.nothing)
-                        Text("Press Return").tag(AfterTyping.pressReturn)
-                        Text("Press Shift-Return").tag(AfterTyping.pressShiftReturn)
+                        Text("Return").tag(AfterTyping.pressReturn)
+                        Text("Shift-Return").tag(AfterTyping.pressShiftReturn)
                     }
-                    .help("Return sends the message in a chat app. Shift-Return starts a new line and leaves it unsent.")
+                    caption("Return sends the message in most chat apps. Shift-Return starts a new line without sending.")
 
-                    Toggle("Press Return when a dictation ends with \u{201C}press enter\u{201D}", isOn: $settings.pressEnterSubmits)
-                        .help("A dictation that ends with \u{201C}press enter\u{201D} or \u{201C}press return\u{201D} is typed without those words and sent, even when you meant to write them.")
+                    Toggle("Say \u{201C}press enter\u{201D} to press Return", isOn: $settings.pressEnterSubmits)
+                    caption("End a dictation with \u{201C}press enter\u{201D} or \u{201C}press return\u{201D}. Indite leaves those words out and presses Return, which sends the message in most chat apps. It does this even when you meant those words to be written.")
                 }
             }
 
             Section("Recent Dictations") {
-                Toggle("Keep recent dictations", isOn: $settings.keepDictationHistory)
+                Toggle("Keep a list of recent dictations", isOn: $settings.keepDictationHistory)
 
                 if settings.keepDictationHistory {
                     Picker("Keep the last", selection: $settings.dictationHistoryLimit) {
@@ -169,7 +172,7 @@ struct DictationSettingsView: View {
                         // stepper saved any multiple of 10, and a menu with no entry
                         // for the value in force shows a blank title.
                         ForEach(Set([25, 50, 100, 250, 500, settings.dictationHistoryLimit]).sorted(), id: \.self) { limit in
-                            Text("\(limit)").tag(limit)
+                            Text("\(limit) dictations").tag(limit)
                         }
                     }
                     // A menu rather than a stepper. A stepper applies every value it
@@ -190,7 +193,7 @@ struct DictationSettingsView: View {
                     // than a menu of lengths. Recordings past it go at the next launch or
                     // dictation, not as the field changes; see
                     // `DictationHistory.expireRecordings`.
-                    LabeledContent("Keep recordings for") {
+                    LabeledContent("Keep voice recordings for") {
                         HStack(spacing: 6) {
                             TextField("Days", value: Binding(
                                 get: { settings.dictationRecordingDays },
@@ -206,13 +209,13 @@ struct DictationSettingsView: View {
                         }
                     }
                     .disabled(settings.keepDictationRecordingsForever)
-                    .help("A dictation's recording lets Recent Dictations transcribe it again. After this many days the recording is deleted and the text stays.")
+                    .help("Indite saves the sound of each dictation, so Recent Dictations can turn it into text again. After this many days the sound is deleted. The text stays.")
 
-                    Toggle("Keep forever", isOn: $settings.keepDictationRecordingsForever)
-                        .help("Keep each recording as long as its dictation is kept.")
+                    Toggle("Keep until the dictation leaves the list", isOn: $settings.keepDictationRecordingsForever)
+                        .help("The recording is deleted only when its dictation drops off the Recent Dictations list.")
                 }
 
-                Text("Everything you dictate is stored in plain text on this Mac. Recordings of your dictations stay on this Mac too. Nothing is sent anywhere.")
+                Text("Your dictations and their recordings are saved on this Mac and sent nowhere. They are not locked, so anyone who can use your account on this Mac can read them.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -240,6 +243,13 @@ struct DictationSettingsView: View {
             hotkeyMonitor.endCapture()
             capturing = nil
         }
+    }
+
+    /// Small grey text under a control, for what a person must know before using it.
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 
     // MARK: - Key Combination

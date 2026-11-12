@@ -24,7 +24,7 @@ struct FeedbackSettingsView: View {
 
                 if settings.showDictationOverlay {
                     Toggle("Hide the dictation panel from screen sharing", isOn: $settings.hideDictationPanelFromCaptures)
-                        .help("Screenshots and screen recordings leave it out too. The meeting pill stays visible, because whether the people on a call can see that they are being recorded is a question of their consent.")
+                        .help("People watching your shared screen do not see the panel. Screenshots and screen recordings leave it out too. The meeting controls always stay visible, so the people on a call can see that they are being recorded.")
                 }
 
                 if settings.showDictationOverlay || settings.showMeetingIndicator {
@@ -36,7 +36,7 @@ struct FeedbackSettingsView: View {
                         settings.meetingIndicatorOriginX = nil
                         settings.meetingIndicatorOriginY = nil
                     }
-                    .help("Put the dictation panel and the meeting pill back where they start. Drag either one anywhere; it comes back where you left it.")
+                    .help("Moves the dictation panel and the meeting controls back to where they first appeared. You can drag either one anywhere, and it stays where you leave it.")
                 }
             }
 
@@ -50,7 +50,7 @@ struct FeedbackSettingsView: View {
                         sounds: soundCatalog.allSounds
                     )
                     SoundPickerRow(
-                        label: "Recording locked",
+                        label: "Recording stays on after a double-tap",
                         selection: $settings.lockSoundName,
                         sounds: soundCatalog.allSounds
                     )
@@ -60,12 +60,12 @@ struct FeedbackSettingsView: View {
                         sounds: soundCatalog.allSounds
                     )
                     SoundPickerRow(
-                        label: "While rewriting",
+                        label: "While the AI rewrites",
                         selection: $settings.processingSoundName,
                         sounds: soundCatalog.allSounds
                     )
                     SoundPickerRow(
-                        label: "Text delivered",
+                        label: "Words typed or copied",
                         selection: $settings.completeSoundName,
                         sounds: soundCatalog.allSounds
                     )
@@ -99,7 +99,7 @@ struct FeedbackSettingsView: View {
                     .buttonStyle(.borderless)
                 }
 
-                Button("Import Sound File…") {
+                Button("Add Sound File…") {
                     importSoundFile()
                 }
 
@@ -111,7 +111,7 @@ struct FeedbackSettingsView: View {
             }
 
             Section("Notifications") {
-                Toggle("When a dictation has been delivered", isOn: $settings.showNotifications)
+                Toggle("When your words are typed or copied", isOn: $settings.showNotifications)
                 Toggle("When something goes wrong", isOn: $settings.notifyOnError)
             }
         }
