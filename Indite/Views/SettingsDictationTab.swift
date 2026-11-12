@@ -110,8 +110,27 @@ struct DictationSettingsView: View {
                 }
             }
 
-            Section("Microphone") {
-                MicrophoneOrderRows(order: $settings.microphoneOrder, connected: inputs.devices)
+            // The ranked list in a section of its own, its header saying it is an
+            // order and its footer saying how the order is used: as one more block of
+            // rows beside the timer and the mute, nobody could tell it was a ranking.
+            Section {
+                MicrophoneOrderRows(
+                    order: $settings.microphoneOrder,
+                    connected: inputs.devices,
+                    inUse: AudioDeviceCatalog.microphone(for: settings.microphoneOrder).uid
+                )
+            } header: {
+                Text("Microphones, in Order of Preference")
+            } footer: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Indite uses the first microphone on the list that is connected. Drag one to change the order.")
+                    if MicrophoneOrder.slowMicrophoneLeads(settings.microphoneOrder) {
+                        Text("Wireless microphones, such as AirPods or an iPhone, take a few seconds to start, and Bluetooth ones send phone-call-quality sound. The Mac\u{2019}s microphone usually hears you better.")
+                    }
+                }
+            }
+
+            Section("While You Dictate") {
 
                 // A menu of lengths: the 30-second stepper this replaced took up to
                 // 119 clicks to cross its range. A length it saved that is not listed

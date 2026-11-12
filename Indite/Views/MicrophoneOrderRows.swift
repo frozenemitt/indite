@@ -13,6 +13,9 @@ struct MicrophoneOrderRows: View {
     /// The microphones connected now.
     let connected: [AudioInputDevice]
 
+    /// The microphone the next recording would use, marked In Use.
+    let inUse: String?
+
     /// The height of the form's own rows, measured in that render, so the list's rows
     /// read as more of them. The list is exactly as tall as its rows and never scrolls.
     private static let rowHeight: CGFloat = 37
@@ -23,8 +26,8 @@ struct MicrophoneOrderRows: View {
                 .foregroundStyle(.secondary)
         } else {
             List {
-                ForEach(order) { microphone in
-                    row(microphone)
+                ForEach(Array(order.enumerated()), id: \.element.id) { index, microphone in
+                    row(microphone, rank: index + 1)
                 }
                 .onMove { order.move(fromOffsets: $0, toOffset: $1) }
             }
@@ -33,21 +36,30 @@ struct MicrophoneOrderRows: View {
             .scrollDisabled(true)
         }
 
-        if MicrophoneOrder.slowMicrophoneLeads(order) {
-            Text("Wireless microphones, such as AirPods or an iPhone, take a few seconds to start, and Bluetooth ones send phone-call-quality sound, so dictation through them is slower and less accurate. The Mac\u{2019}s microphone usually hears you better.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
     }
 
-    private func row(_ microphone: AudioInputDevice) -> some View {
+    /// A rank, a name, whether it is in use or away, the commands, and a handle that
+    /// says the row can be dragged.
+    private func row(_ microphone: AudioInputDevice, rank: Int) -> some View {
         let isConnected = connected.contains { $0.uid == microphone.uid }
         return HStack(spacing: 8) {
+            Text("\(rank)")
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .frame(minWidth: 14, alignment: .trailing)
             Text(microphone.name)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .foregroundStyle(isConnected ? .primary : .secondary)
             Spacer()
-            if !isConnected {
+            if microphone.uid == inUse {
+                Text("In Use")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.accentColor, in: .capsule)
+            } else if !isConnected {
                 Text("Not connected")
                     .foregroundStyle(.secondary)
             }
@@ -61,6 +73,9 @@ struct MicrophoneOrderRows: View {
             .buttonStyle(.borderless)
             .menuIndicator(.hidden)
             .fixedSize()
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .help("Indite records from the first microphone on this list that can hear you. Drag a microphone to change its place.")
         .contextMenu { commands(for: microphone, isConnected: isConnected) }

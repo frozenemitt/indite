@@ -299,8 +299,9 @@ enum HelpLibrary {
             place, so it is used again when it comes back.
 
             To change the order, open Indite's Settings, choose Dictation, and drag a \
-            microphone under "Microphone" to a new place, or use Move Up and Move Down \
-            from its row's menu. To put one first quickly, click Indite's I in the menu \
+            microphone under "Microphones, in Order of Preference" to a new place. The \
+            one marked In Use is the one the next dictation records from. Move Up and \
+            Move Down in its row's menu move it too. To put one first quickly, click Indite's I in the menu \
             bar, open the Microphone menu, and choose it.
 
             AirPods and other Bluetooth microphones take a few seconds to start and send \
@@ -423,7 +424,7 @@ enum HelpLibrary {
         body: """
             Indite can turn the Mac's sound off while you dictate, so music, videos and \
             the other side of a call go quiet. Open Indite's Settings, choose Dictation, \
-            and under "Microphone" turn on "Mute the Mac while you dictate". It is off \
+            and under "While You Dictate" turn on "Mute the Mac while you dictate". It is off \
             unless you turn it on.
 
             The sound comes back when the dictation ends. Indite's own start and stop \
@@ -642,9 +643,9 @@ enum HelpLibrary {
         title: "Teach Indite names and jargon",
         body: """
             To teach Indite a name it misspells, such as a colleague's name, or to add a \
-            word to its dictionary, open Indite's Settings, choose Words, and type it \
-            under Vocabulary. Put each name \
-            or term on a line of its own. When Indite is unsure what it heard, it prefers \
+            word to its dictionary, open Indite's Settings, choose Words, click \
+            "Edit…" beside Vocabulary, then click the plus button and type it. Each name \
+            or term has a row of its own. When Indite is unsure what it heard, it prefers \
             these words, and it spells them the way you wrote them. Dictations and \
             meetings both use the list.
 
@@ -670,8 +671,8 @@ enum HelpLibrary {
         title: "Fix a word Indite always gets wrong",
         body: """
             A word replacement makes Indite write one word as another every time you say \
-            it. Open Indite's Settings, choose Words, and click the plus button under \
-            "Word Replacements". Type what Indite hears on the left, such as "gonna", \
+            it. Open Indite's Settings, choose Words, click "Edit…" beside \
+            "Word Replacements", and click the plus button. Type what Indite hears on the left, such as "gonna", \
             and what you want written on the right, such as "going to". Every dictation \
             is then corrected before it is rewritten or typed.
 
@@ -691,8 +692,9 @@ enum HelpLibrary {
             signature, saved with a short spoken cue. Say the cue in a dictation, and \
             Indite types the saved text exactly as you wrote it, line breaks included.
 
-            Open Indite's Settings, choose Words, and click "Add Snippet" under \
-            "Snippets". Under "What you say", type the words, such as "my calendar link", and the text below them. \
+            Open Indite's Settings, choose Words, click "Edit…" beside "Snippets", and \
+            click the plus button. Under "What you say", type the words, such as "my \
+            calendar link", and type the text in the box below the list. \
             Those words can come anywhere in a dictation, in any capitals, so "Here is my \
             calendar link" types the words and then the link.
 
