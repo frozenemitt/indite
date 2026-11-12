@@ -675,7 +675,7 @@ enum HelpLibrary {
             it. Open Indite's Settings, choose Words, click "Edit…" beside \
             "Word Replacements". In the two fields at the top, type what Indite hears, \
             such as "gonna", under Heard, and what you want, such as "going to", under \
-            Write as, and press Return. Every dictation \
+            Replace with, and press Return. Every dictation \
             is then corrected before it is rewritten or typed.
 
             Replacements match whole words only and ignore capitals, so a rule for "vox" \
