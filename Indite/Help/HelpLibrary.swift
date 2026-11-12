@@ -10,13 +10,13 @@ enum HelpLibrary {
         // Getting Started
         firstDictation, menuBar, openAnyway, askIndite, updates,
         // Dictation
-        dictationKey, handsFree, cancelDictation, dictationPanel, afterTyping, alwaysCopy,
-        microphone, stopsByItself, undoDictation, typeAgain, recentDictations, sounds,
+        dictationKey, handsFree, cancelDictation, dictationPanel, hidePanelFromSharing, afterTyping, alwaysCopy,
+        microphone, stopsByItself, undoDictation, typeAgain, recentDictations, sounds, muteWhileDictating,
         notifications, appProfiles, language,
         // Rewriting
         keepMyWords, keepMyWordsSwitch, choosePrompt, customPrompt, promptAdvanced, surroundingContext,
         // Words and Spelling
-        vocabulary, wordReplacements,
+        vocabulary, wordReplacements, snippets,
         // Meetings
         startMeeting, callAudio, meetingPill, speakerNames, oldMeetingSpeakers, correctTranscript, playback,
         meetingSummary, importRecording, exportMeeting, deleteMeeting, searchMeetings, agentAccess,
@@ -214,6 +214,23 @@ enum HelpLibrary {
         action: .inditeSettings(.feedback)
     )
 
+    static let hidePanelFromSharing = HelpArticle(
+        id: "hide-panel-from-sharing",
+        title: "Keep the dictation panel out of shared screens",
+        body: """
+            When you share your screen on a call, the dictation panel shows your words \
+            to everyone watching. To keep it to yourself, open Indite's Settings, choose \
+            Feedback, and turn on "Hide the dictation panel from screen sharing". You \
+            still see the panel, but shared screens, screenshots and screen recordings \
+            leave it out.
+
+            The meeting pill stays visible either way, because the people on a call \
+            should be able to see that they are being recorded.
+            """,
+        topic: .dictation,
+        action: .inditeSettings(.feedback)
+    )
+
     static let afterTyping = HelpArticle(
         id: "after-typing",
         title: "Press Return after the words",
@@ -391,6 +408,24 @@ enum HelpLibrary {
             """,
         topic: .dictation,
         action: .inditeSettings(.feedback)
+    )
+
+    static let muteWhileDictating = HelpArticle(
+        id: "mute-while-dictating",
+        title: "Silence music and calls while you dictate",
+        body: """
+            Indite can turn the Mac's sound off while you dictate, so music, videos and \
+            the other side of a call go quiet. Open Indite's Settings, choose Dictation, \
+            and under "Microphone" turn on "Mute the Mac while you dictate". It is off \
+            unless you turn it on.
+
+            The sound comes back when the dictation ends. Indite's own start and stop \
+            sounds still play. If the sound was already off, Indite leaves it off. If \
+            Indite quits while the sound is off, it puts the sound back the next time it \
+            opens.
+            """,
+        topic: .dictation,
+        action: .inditeSettings(.dictation)
     )
 
     static let notifications = HelpArticle(
@@ -632,6 +667,28 @@ enum HelpLibrary {
             Replacements match whole words only and ignore capitals, so a rule for "vox" \
             leaves "voxel" alone. Leave Written empty to delete the heard word wherever it \
             appears. To remove a rule, select it and click the minus button.
+            """,
+        topic: .words,
+        action: .inditeSettings(.words)
+    )
+
+    static let snippets = HelpArticle(
+        id: "snippets",
+        title: "Type saved text by saying a cue",
+        body: """
+            A snippet is text you type often, such as a calendar link, an address or a \
+            signature, saved with a short spoken cue. Say the cue in a dictation, and \
+            Indite types the saved text exactly as you wrote it, line breaks included.
+
+            Open Indite's Settings, choose Words, and click "Add Snippet" under \
+            "Snippets". Type the cue, such as "my calendar link", and the text below it. \
+            The cue can come anywhere in a dictation, in any capitals, so "Here is my \
+            calendar link" types the words and then the link.
+
+            The rewriting never sees the saved text, so it cannot change it. If the \
+            rewriting changes the words of a cue, Indite types that dictation as it was \
+            heard, with the saved text, and the dictation panel says so. When two \
+            snippets have the same cue, only the first is typed.
             """,
         topic: .words,
         action: .inditeSettings(.words)
