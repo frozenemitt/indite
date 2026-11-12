@@ -18,16 +18,18 @@ struct MeetingsSettingsView: View {
 
         Form {
             Section("Recording") {
-                Toggle("Keep the recording after a meeting ends", isOn: $settings.keepMeetingAudio)
-                    .onAppear { recordingsSize = MeetingAudioStore.totalSize() }
+                Toggle(isOn: $settings.keepMeetingAudio) {
+                    Text("Keep the recording after a meeting ends")
+                    Text(recordingsSize > 0
+                         ? "About 30 MB an hour. Recordings use \(recordingsSize.formatted(.byteCount(style: .file))) now."
+                         : "About 30 MB an hour.")
+                }
+                .onAppear { recordingsSize = MeetingAudioStore.totalSize() }
 
-                Text(recordingsSize > 0
-                     ? "About 30 MB an hour. Recordings use \(recordingsSize.formatted(.byteCount(style: .file))) now."
-                     : "About 30 MB an hour.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Toggle("Also record the other people on a call", isOn: $settings.captureSystemAudioInMeetings)
+                Toggle(isOn: $settings.captureSystemAudioInMeetings) {
+                    Text("Also record the other people on a call")
+                    Text("Records the sound that comes out of your Mac, so everyone you can hear on the call is recorded. Ask them whether they agree.")
+                }
 
                 if settings.captureSystemAudioInMeetings {
                     // Nothing here tests the permission. The only test creates a tap, and
@@ -40,10 +42,6 @@ struct MeetingsSettingsView: View {
                         SystemAudioCapture.openSystemSettings()
                     }
                     .buttonStyle(.link)
-
-                    Text("Records the sound that comes out of your Mac, so everyone you can hear on the call is recorded, and not only you. Ask the people you are meeting whether they agree to be recorded.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
                 }
             }
 

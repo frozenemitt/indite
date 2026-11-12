@@ -251,8 +251,17 @@ private struct TapState: Sendable {
     /// Another key, modifier or click arrived while Option was held, so Option is a
     /// modifier, and the recording its press began was never meant. A press that
     /// stopped a recording has already delivered it, so there is nothing to take back.
-    mutating func useAsModifier() -> HotkeyAction? {
+    ///
+    /// Only within a tap's length, before the start sound and the panel. Past it the
+    /// user has seen a dictation begin and may have talked for a while: on 2026-11-12
+    /// pressing ⌘ to switch apps 15 s into a dictation threw it away without a word.
+    /// From then on another key is passed through and the release ends the dictation
+    /// as usual.
+    mutating func useAsModifier(at now: ContinuousClock.Instant) -> HotkeyAction? {
         guard !optionUsedAsModifier else { return nil }
+        if pressStartedRecording, let pressedAt, now - pressedAt >= Self.tapLength {
+            return nil
+        }
         optionUsedAsModifier = true
         return pressStartedRecording ? .abandon : nil
     }
@@ -593,7 +602,7 @@ final class GlobalHotkeyMonitor {
                         return (false, state.release(at: .now))
                     }
                     // ⇧, ⌘, ⌃, Fn or the other Option while it is held: a shortcut.
-                    return (false, state.useAsModifier())
+                    return (false, state.useAsModifier(at: .now))
                 }
 
                 guard state.dictationKey.matches(keyCode), optionIsDown(keyCode, in: flags) else {
@@ -611,11 +620,12 @@ final class GlobalHotkeyMonitor {
                 if keyCode == escapeKeyCode, state.isRecording { return (true, .cancel) }
 
                 // Any other key while Option is held means Option is a modifier — ⌥E,
-                // ⌥-arrow, ⌥Tab — and the recording its press started was never wanted.
+                // ⌥-arrow, ⌥Tab — and the recording its press started was never wanted,
+                // unless it has run past a tap; see `useAsModifier`.
                 // The key itself goes through to the app untouched. A locked recording
                 // is not held, so ⌘Tab and the rest reach it as ordinary keys.
                 if state.isKeyDown, !state.optionUsedAsModifier {
-                    return (false, state.useAsModifier())
+                    return (false, state.useAsModifier(at: .now))
                 }
 
                 // Checked before the record trigger so the two can never collide. The
@@ -640,7 +650,7 @@ final class GlobalHotkeyMonitor {
                 // owed nothing now, and this click goes through whole.
                 state.swallowedButton = nil
                 guard state.isKeyDown else { return (false, nil) }
-                return (false, state.useAsModifier())
+                return (false, state.useAsModifier(at: .now))
 
             case .otherMouseDown where button == state.mouseButton?.eventNumber:
                 // The side button that dictates: a click starts a dictation and the
@@ -658,7 +668,7 @@ final class GlobalHotkeyMonitor {
             case .leftMouseDown, .rightMouseDown, .otherMouseDown:
                 // Option-click and Option-drag: Option is a modifier for the mouse.
                 guard state.isKeyDown else { return (false, nil) }
-                return (false, state.useAsModifier())
+                return (false, state.useAsModifier(at: .now))
 
             default:
                 return (false, nil)

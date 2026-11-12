@@ -144,7 +144,9 @@ enum HelpLibrary {
 
             Option still works as Option. Typing ⌥E for an accent, using ⌥ in a shortcut, \
             or holding it while you click or drag throws the recording away without a \
-            sound, and the keystroke or click reaches the app as usual.
+            sound, and the keystroke or click reaches the app as usual. Once the start \
+            sound has played, other keys and clicks no longer end the dictation: you can \
+            switch apps with ⌘Tab while you talk, and letting go of Option finishes it.
 
             The first line of Indite's menu names the key in use.
             """,
@@ -238,11 +240,12 @@ enum HelpLibrary {
         title: "Press Return after the words",
         body: """
             Indite can press a key after it types your words. Open Indite's Settings, \
-            choose Dictation, and under "Where the Text Goes" set "After typing, press".
+            choose Dictation, and under "Where the Text Goes" set "Press a key after \
+            typing". Indite presses the key for you, as if you had pressed it.
 
             "Return" sends the message in a chat app such as Slack or Messages. \
-            "Shift-Return" starts a new line and leaves the message unsent. "Nothing" is \
-            the default. If your messages are being sent automatically, choose "Nothing" \
+            "Shift-Return" starts a new line and leaves the message unsent. "No key" is \
+            the default. If your messages are being sent automatically, choose "No key" \
             or "Shift-Return" to stop it.
 
             To send a single dictation, end it with "press enter" or "press return". \
@@ -389,8 +392,8 @@ enum HelpLibrary {
             dictation panel offers "Open Recent Dictations".
 
             To keep more or fewer, open Indite's Settings, choose Dictation, and change \
-            "Keep the last" under "Recent Dictations". "Keep voice recordings for" sets how \
-            many days the recordings are kept, and "Keep until the dictation leaves the \
+            "Keep the last" under "Recent Dictations". Under "Voice Recordings", "Keep each \
+            recording for" sets how many days the recordings are kept, and "Keep until the dictation leaves the \
             list" keeps them as long as their dictations.
             """,
         topic: .dictation
@@ -1021,7 +1024,7 @@ enum HelpLibrary {
             dictations, so that a dictation which landed in the wrong window can be \
             recovered. It keeps the last 100. With each one it keeps a recording of your \
             voice for 14 days, so the dictation can be transcribed again. "Keep \
-            voice recordings for" in Settings, under Dictation, changes the number of days.
+            each recording for" in Settings, under Dictation, changes the number of days.
 
             To save no dictations and no recordings at all, open Indite's Settings, \
             choose Dictation, and turn off "Keep a list of recent dictations". "Clear All…" in the \
