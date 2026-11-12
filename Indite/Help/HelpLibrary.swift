@@ -674,8 +674,8 @@ enum HelpLibrary {
             A word replacement makes Indite write one word as another every time you say \
             it. Open Indite's Settings, choose Words, click "Edit…" beside \
             "Word Replacements". In the two fields at the top, type what Indite hears, \
-            such as "gonna", and what you want written, such as "going to", and press \
-            Return. Every dictation \
+            such as "gonna", under Heard, and what you want, such as "going to", under \
+            Write as, and press Return. Every dictation \
             is then corrected before it is rewritten or typed.
 
             Replacements match whole words only and ignore capitals, so a rule for "vox" \
@@ -696,7 +696,7 @@ enum HelpLibrary {
 
             Open Indite's Settings, choose Words, click "Edit…" beside "Snippets", type \
             the words you will say, such as "my calendar link", in the field at the top, \
-            and press Return. Then type the text in the box beside the list. \
+            and press Return. Then type the text under "Text to type". \
             Those words can come anywhere in a dictation, in any capitals, so "Here is my \
             calendar link" types the words and then the link.
 

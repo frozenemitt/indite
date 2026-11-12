@@ -46,15 +46,15 @@ struct WordsSettingsView: View {
             Section {
                 listRow(.vocabulary,
                         title: "Vocabulary",
-                        detail: "Names and unusual words you use. When Indite is unsure what it heard, it chooses these, and spells them your way.",
+                        detail: "Names and words Indite should know and spell your way.",
                         count: settings.vocabularyHints.count, noun: "word")
                 listRow(.replacements,
                         title: "Word Replacements",
-                        detail: "A word Indite hears, and the word it writes instead.",
+                        detail: "Words Indite should always write another way.",
                         count: settings.wordReplacements.count, noun: "replacement")
                 listRow(.snippets,
                         title: "Snippets",
-                        detail: "Text you use often, such as an address. Say its words, and Indite types the text exactly as you saved it.",
+                        detail: "Say a few words, and Indite types saved text.",
                         count: settings.snippets.filter(\.isComplete).count, noun: "snippet")
             }
         }
@@ -236,11 +236,11 @@ private struct VocabularySheet: View {
     var body: some View {
         ListSheet(
             title: "Vocabulary",
-            detail: "Names and unusual words you use. When Indite is unsure what it heard, it chooses these, and spells them the way you write them here.",
+            detail: "Names and words Indite should know. It spells them the way you type them here.",
             search: $search
         ) {
             HStack {
-                TextField("New word", text: $newWord, prompt: Text("Type a name or word, then press Return"))
+                TextField("New word", text: $newWord, prompt: Text("Add a word"))
                     .textFieldStyle(.roundedBorder)
                     .focused($addFocused)
                     .onSubmit(add)
@@ -302,17 +302,17 @@ private struct ReplacementsSheet: View {
     var body: some View {
         ListSheet(
             title: "Word Replacements",
-            detail: "When Indite hears the word on the left, it writes the word on the right. Capital letters make no difference, and only whole words are replaced. Leave the right side empty to remove the word.",
+            detail: "When Indite hears the first word, it writes the second. Leave the second empty to drop the word.",
             search: $search,
-            warning: hasDuplicates ? "Two rows start from the same word. Indite will use only one of them." : nil
+            warning: hasDuplicates ? "A word is listed twice. Only one will be used." : nil
         ) {
             HStack {
-                TextField("Indite hears", text: $heard, prompt: Text("Indite hears, such as gonna"))
+                TextField("Indite hears", text: $heard, prompt: Text("Heard"))
                     .textFieldStyle(.roundedBorder)
                     .focused($focus, equals: .heard)
                     .onSubmit { focus = .written }
                 Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                TextField("Indite writes", text: $written, prompt: Text("Indite writes, such as going to"))
+                TextField("Indite writes", text: $written, prompt: Text("Write as"))
                     .textFieldStyle(.roundedBorder)
                     .focused($focus, equals: .written)
                     .onSubmit(add)
@@ -325,10 +325,10 @@ private struct ReplacementsSheet: View {
                 List {
                     ForEach(shown) { row in
                         HStack {
-                            TextField("Indite hears", text: binding(row.id, \.spoken))
+                            TextField("Heard", text: binding(row.id, \.spoken))
                                 .textFieldStyle(.plain)
                             Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-                            TextField("Indite writes", text: binding(row.id, \.written), prompt: Text("nothing"))
+                            TextField("Write as", text: binding(row.id, \.written), prompt: Text("(drop it)"))
                                 .textFieldStyle(.plain)
                             deleteButton { rows.removeAll { $0.id == row.id } }
                         }
@@ -387,12 +387,12 @@ private struct SnippetsSheet: View {
     var body: some View {
         ListSheet(
             title: "Snippets",
-            detail: "Say a snippet's words in a dictation, and Indite types its text exactly as you saved it, line breaks included.",
+            detail: "Say the words, and Indite types the text, exactly as saved.",
             search: $search,
-            warning: hasDuplicateCues ? "Two snippets are called up by the same words. Indite types only the first." : nil
+            warning: hasDuplicateCues ? "Two snippets use the same words. Only the first is typed." : nil
         ) {
             HStack {
-                TextField("What you say", text: $newCue, prompt: Text("What you say, such as my calendar link"))
+                TextField("What you say", text: $newCue, prompt: Text("What you say"))
                     .textFieldStyle(.roundedBorder)
                     .focused($focus, equals: .cue)
                     .onSubmit(add)
@@ -438,7 +438,7 @@ private struct SnippetsSheet: View {
                             Text("What you say").font(.callout).foregroundStyle(.secondary)
                             TextField("What you say", text: binding(id, \.cue))
                                 .textFieldStyle(.roundedBorder)
-                            Text("What Indite types").font(.callout).foregroundStyle(.secondary)
+                            Text("Text to type").font(.callout).foregroundStyle(.secondary)
                             TextEditor(text: binding(id, \.text))
                                 .font(.body)
                                 .focused($focus, equals: .text)
@@ -448,7 +448,7 @@ private struct SnippetsSheet: View {
                                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
                         }
                     } else {
-                        emptyNote("Select a snippet to edit it.")
+                        emptyNote("Select a snippet.")
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
