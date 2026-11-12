@@ -270,16 +270,20 @@ enum HelpLibrary {
         id: "microphone",
         title: "Choose the microphone",
         body: """
-            To switch the microphone Indite uses for recording, such as to AirPods or a \
-            headset, click Indite's I in the menu bar, open the Microphone menu, and \
-            choose it. Dictations and meetings both record from it. The same choice is in \
-            Indite's Settings, under Dictation, as "Record from".
+            Indite keeps a ranked list of every microphone it has seen, with the Mac's \
+            own first. Each dictation and meeting records from the first one on the list \
+            that is connected and can hear. A microphone that is unplugged keeps its \
+            place, so it is used again when it comes back.
 
-            If your microphone isn't picking anything up, the wrong one may be chosen: \
-            check the Microphone menu first. "System Default" follows the Mac's own \
-            default input. If the microphone you \
-            chose is unplugged, Indite records from the system default, and the menu says \
-            the chosen one is "Not Connected".
+            To change the order, open Indite's Settings, choose Dictation, and drag a \
+            microphone under "Microphone" to a new place, or use Move Up and Move Down \
+            from its row's menu. To put one first quickly, click Indite's I in the menu \
+            bar, open the Microphone menu, and choose it.
+
+            AirPods and other Bluetooth microphones take a few seconds to start and send \
+            phone-call-quality sound, so dictation through them is slower and less \
+            accurate. If the microphone sends no sound during a dictation, Indite warns \
+            you and names it.
             """,
         topic: .dictation
     )
@@ -603,9 +607,10 @@ enum HelpLibrary {
             thread. It reads them for that dictation only and keeps nothing.
 
             Indite also learns from your fixes. When you correct a name it typed, such \
-            as "Pria" to "Priya", within two minutes of dictating it, a notification asks \
-            whether to add the name to the list. Click "Add to Words" to add it. Closing \
-            the notification tells Indite not to ask about that name again.
+            as "Pria" to "Priya", within a minute of dictating it and before your next \
+            dictation, Indite adds the name to the list, and a notification says so. \
+            Click Undo in the notification to take it off again. Indite adds a name only \
+            when its notifications can be seen, so that you can always undo it.
 
             For a word Indite gets wrong every time, add a rule under "Word Replacements" \
             on the same tab.

@@ -106,9 +106,9 @@ final class AudioCaptureHelper: @unchecked Sendable {
 
         // The microphone's own format, not the node's output format. After the device
         // changes, the output side can keep the rate of the device before it: on
-        // 2026-11-12, after a restart, the speakers ran at 44.1 kHz and the built-in
-        // microphone at 48 kHz, the output side still said 44.1 kHz, and a tap at that
-        // rate received no audio at all. Read this way, both sides agree on 48 kHz.
+        // 2026-11-12 the speakers ran at 44.1 kHz and the built-in microphone at
+        // 48 kHz, the output side still said 44.1 kHz, and a tap at that rate received
+        // no audio at all. Read this way, both sides agree on 48 kHz.
         let format = inputNode.inputFormat(forBus: 0)
 
         Log.audio.notice("Input format: \(format, privacy: .public)")
