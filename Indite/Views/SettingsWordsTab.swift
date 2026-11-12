@@ -312,7 +312,7 @@ private struct ReplacementsSheet: View {
                     .focused($focus, equals: .heard)
                     .onSubmit { focus = .written }
                 Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                TextField("Indite writes", text: $written, prompt: Text("Write as"))
+                TextField("Indite writes", text: $written, prompt: Text("Replace with"))
                     .textFieldStyle(.roundedBorder)
                     .focused($focus, equals: .written)
                     .onSubmit(add)
@@ -328,7 +328,7 @@ private struct ReplacementsSheet: View {
                             TextField("Heard", text: binding(row.id, \.spoken))
                                 .textFieldStyle(.plain)
                             Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-                            TextField("Write as", text: binding(row.id, \.written), prompt: Text("(drop it)"))
+                            TextField("Replace with", text: binding(row.id, \.written), prompt: Text("(drop it)"))
                                 .textFieldStyle(.plain)
                             deleteButton { rows.removeAll { $0.id == row.id } }
                         }
