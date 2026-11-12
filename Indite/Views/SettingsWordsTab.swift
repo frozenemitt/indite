@@ -146,34 +146,33 @@ struct WordsSettingsView: View {
 
 // MARK: - The Sheets
 
-/// A sheet holding one list: a title and what it is for, a search field, the table, +
-/// and − under it, and Done.
-private struct ListSheet<Content: View>: View {
+/// A sheet holding one list. New entries are typed into fields at the top and added
+/// with Return or the Add button, as Reminders adds a reminder: the + and − under a
+/// table were hard to find, and + added an empty row below the last one, out of sight
+/// in a long list. A new entry goes to the top, where it is seen, and each row has its
+/// own delete button.
+private struct ListSheet<AddBar: View, Content: View>: View {
     let title: String
     let detail: String
     @Binding var search: String
     var warning: String?
-    var canRemove: Bool
-    let add: () -> Void
-    let remove: () -> Void
+    @ViewBuilder let addBar: AddBar
     @ViewBuilder let content: Content
 
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.headline)
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                TextField("Search", text: $search, prompt: Text("Search"))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 180)
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.title3.weight(.semibold))
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            GroupBox {
+                addBar.padding(4)
             }
 
             if let warning {
@@ -186,25 +185,23 @@ private struct ListSheet<Content: View>: View {
                 .font(.callout)
             }
 
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search", text: $search, prompt: Text("Search"))
+                    .textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 2)
+
             content
 
-            HStack(spacing: 4) {
-                Button("Add", systemImage: "plus", action: add)
-                    .help("Add")
-                Button("Remove", systemImage: "minus", action: remove)
-                    .disabled(!canRemove)
-                    .help("Remove")
+            HStack {
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
-                    .labelStyle(.titleOnly)
-                    .buttonStyle(.borderedProminent)
             }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
         }
         .padding(20)
-        .frame(minWidth: 560, idealWidth: 620, minHeight: 440, idealHeight: 520)
+        .frame(minWidth: 560, idealWidth: 620, minHeight: 480, idealHeight: 560)
     }
 }
 
@@ -214,39 +211,73 @@ private func matches(_ search: String, _ texts: String...) -> Bool {
     return search.isEmpty || texts.contains { $0.localizedCaseInsensitiveContains(search) }
 }
 
+/// The delete button at the end of a row.
+private func deleteButton(_ action: @escaping () -> Void) -> some View {
+    Button("Delete", systemImage: "minus.circle.fill", action: action)
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help("Delete")
+}
+
+/// What a list shows when it holds nothing, or nothing the search finds.
+private func emptyNote(_ text: String) -> some View {
+    Text(text)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+}
+
 private struct VocabularySheet: View {
     @Binding var rows: [WordsSettingsView.WordRow]
-    @State private var selection: Set<WordsSettingsView.WordRow.ID> = []
     @State private var search = ""
+    @State private var newWord = ""
+    @FocusState private var addFocused: Bool
 
     var body: some View {
         ListSheet(
             title: "Vocabulary",
             detail: "Names and unusual words you use. When Indite is unsure what it heard, it chooses these, and spells them the way you write them here.",
-            search: $search,
-            canRemove: !selection.isEmpty,
-            add: {
-                search = ""
-                let row = WordsSettingsView.WordRow(word: "")
-                rows.append(row)
-                selection = [row.id]
-            },
-            remove: {
-                rows.removeAll { selection.contains($0.id) }
-                selection = []
-            }
+            search: $search
         ) {
-            Table(rows.filter { matches(search, $0.word) }, selection: $selection) {
-                TableColumn("Word") { row in
-                    TextField("Word", text: binding(row.id), prompt: Text("Name or word"))
-                        .labelsHidden()
+            HStack {
+                TextField("New word", text: $newWord, prompt: Text("Type a name or word, then press Return"))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($addFocused)
+                    .onSubmit(add)
+                Button("Add", action: add)
+                    .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } content: {
+            ScrollViewReader { proxy in
+                let shown = rows.filter { matches(search, $0.word) }
+                List {
+                    ForEach(shown) { row in
+                        HStack {
+                            TextField("Word", text: binding(row.id))
+                                .textFieldStyle(.plain)
+                            deleteButton { rows.removeAll { $0.id == row.id } }
+                        }
+                        .id(row.id)
+                    }
+                }
+                .overlay { if shown.isEmpty { emptyNote(rows.isEmpty ? "No words yet." : "No words match.") } }
+                .onChange(of: rows.first?.id) { _, id in
+                    if let id { withAnimation { proxy.scrollTo(id, anchor: .top) } }
                 }
             }
-            .onDeleteCommand {
-                rows.removeAll { selection.contains($0.id) }
-                selection = []
-            }
         }
+        .onAppear { addFocused = true }
+    }
+
+    private func add() {
+        let word = newWord.trimmingCharacters(in: .whitespaces)
+        guard !word.isEmpty else { return }
+        search = ""
+        if !rows.contains(where: { $0.word.caseInsensitiveCompare(word) == .orderedSame }) {
+            rows.insert(WordsSettingsView.WordRow(word: word), at: 0)
+        }
+        newWord = ""
+        addFocused = true
     }
 
     private func binding(_ id: WordsSettingsView.WordRow.ID) -> Binding<String> {
@@ -261,42 +292,66 @@ private struct VocabularySheet: View {
 
 private struct ReplacementsSheet: View {
     @Binding var rows: [WordsSettingsView.ReplacementRow]
-    @State private var selection: Set<WordsSettingsView.ReplacementRow.ID> = []
     @State private var search = ""
+    @State private var heard = ""
+    @State private var written = ""
+    @FocusState private var focus: Field?
+
+    private enum Field { case heard, written }
 
     var body: some View {
         ListSheet(
             title: "Word Replacements",
             detail: "When Indite hears the word on the left, it writes the word on the right. Capital letters make no difference, and only whole words are replaced. Leave the right side empty to remove the word.",
             search: $search,
-            warning: hasDuplicates ? "Two rows start from the same word. Indite will use only one of them." : nil,
-            canRemove: !selection.isEmpty,
-            add: {
-                search = ""
-                let row = WordsSettingsView.ReplacementRow(spoken: "", written: "")
-                rows.append(row)
-                selection = [row.id]
-            },
-            remove: {
-                rows.removeAll { selection.contains($0.id) }
-                selection = []
-            }
+            warning: hasDuplicates ? "Two rows start from the same word. Indite will use only one of them." : nil
         ) {
-            Table(rows.filter { matches(search, $0.spoken, $0.written) }, selection: $selection) {
-                TableColumn("Indite hears") { row in
-                    TextField("Indite hears", text: binding(row.id, \.spoken), prompt: Text("gonna"))
-                        .labelsHidden()
-                }
-                TableColumn("Indite writes") { row in
-                    TextField("Indite writes", text: binding(row.id, \.written), prompt: Text("going to"))
-                        .labelsHidden()
-                }
+            HStack {
+                TextField("Indite hears", text: $heard, prompt: Text("Indite hears, such as gonna"))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focus, equals: .heard)
+                    .onSubmit { focus = .written }
+                Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                TextField("Indite writes", text: $written, prompt: Text("Indite writes, such as going to"))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focus, equals: .written)
+                    .onSubmit(add)
+                Button("Add", action: add)
+                    .disabled(heard.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            .onDeleteCommand {
-                rows.removeAll { selection.contains($0.id) }
-                selection = []
+        } content: {
+            ScrollViewReader { proxy in
+                let shown = rows.filter { matches(search, $0.spoken, $0.written) }
+                List {
+                    ForEach(shown) { row in
+                        HStack {
+                            TextField("Indite hears", text: binding(row.id, \.spoken))
+                                .textFieldStyle(.plain)
+                            Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                            TextField("Indite writes", text: binding(row.id, \.written), prompt: Text("nothing"))
+                                .textFieldStyle(.plain)
+                            deleteButton { rows.removeAll { $0.id == row.id } }
+                        }
+                        .id(row.id)
+                    }
+                }
+                .overlay { if shown.isEmpty { emptyNote(rows.isEmpty ? "No replacements yet." : "No replacements match.") } }
+                .onChange(of: rows.first?.id) { _, id in
+                    if let id { withAnimation { proxy.scrollTo(id, anchor: .top) } }
+                }
             }
         }
+        .onAppear { focus = .heard }
+    }
+
+    private func add() {
+        let spoken = heard.trimmingCharacters(in: .whitespaces)
+        guard !spoken.isEmpty else { return }
+        search = ""
+        rows.insert(WordsSettingsView.ReplacementRow(spoken: spoken, written: written.trimmingCharacters(in: .whitespaces)), at: 0)
+        heard = ""
+        written = ""
+        focus = .heard
     }
 
     /// Whether two rows share a heard word, ignoring case the way matching itself does.
@@ -322,69 +377,97 @@ private struct ReplacementsSheet: View {
 
 private struct SnippetsSheet: View {
     @Binding var rows: [WordsSettingsView.SnippetRow]
-    @State private var selection: Set<WordsSettingsView.SnippetRow.ID> = []
     @State private var search = ""
+    @State private var selection: WordsSettingsView.SnippetRow.ID?
+    @State private var newCue = ""
+    @FocusState private var focus: Field?
+
+    private enum Field { case cue, text }
 
     var body: some View {
         ListSheet(
             title: "Snippets",
-            detail: "Say the words on the left in a dictation, and Indite types the text on the right exactly as you saved it, line breaks included.",
+            detail: "Say a snippet's words in a dictation, and Indite types its text exactly as you saved it, line breaks included.",
             search: $search,
-            warning: hasDuplicateCues ? "Two snippets are called up by the same words. Indite types only the first." : nil,
-            canRemove: !selection.isEmpty,
-            add: {
-                search = ""
-                let row = WordsSettingsView.SnippetRow(cue: "", text: "")
-                rows.append(row)
-                selection = [row.id]
-            },
-            remove: {
-                rows.removeAll { selection.contains($0.id) }
-                selection = []
-            }
+            warning: hasDuplicateCues ? "Two snippets are called up by the same words. Indite types only the first." : nil
         ) {
-            Table(rows.filter { matches(search, $0.cue, $0.text) }, selection: $selection) {
-                TableColumn("What you say") { row in
-                    TextField("What you say", text: binding(row.id, \.cue), prompt: Text("my calendar link"))
-                        .labelsHidden()
-                }
-                .width(min: 140, ideal: 180, max: 260)
-                TableColumn("What Indite types") { row in
-                    // One line here; the box below holds the whole text.
-                    Text(row.text.replacingOccurrences(of: "\n", with: " ⏎ "))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .foregroundStyle(row.text.isEmpty ? .secondary : .primary)
-                }
+            HStack {
+                TextField("What you say", text: $newCue, prompt: Text("What you say, such as my calendar link"))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focus, equals: .cue)
+                    .onSubmit(add)
+                Button("Add", action: add)
+                    .disabled(newCue.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            .frame(minHeight: 160)
-            .onDeleteCommand {
-                rows.removeAll { selection.contains($0.id) }
-                selection = []
-            }
+        } content: {
+            HStack(alignment: .top, spacing: 12) {
+                ScrollViewReader { proxy in
+                    let shown = rows.filter { matches(search, $0.cue, $0.text) }
+                    List(selection: $selection) {
+                        ForEach(shown) { row in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.cue.isEmpty ? "Untitled" : row.cue)
+                                    Text(row.text.isEmpty ? "No text yet" : row.text.replacingOccurrences(of: "\n", with: " "))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                deleteButton {
+                                    if selection == row.id { selection = nil }
+                                    rows.removeAll { $0.id == row.id }
+                                }
+                            }
+                            .tag(row.id)
+                            .id(row.id)
+                        }
+                    }
+                    .overlay { if shown.isEmpty { emptyNote(rows.isEmpty ? "No snippets yet." : "No snippets match.") } }
+                    .onChange(of: rows.first?.id) { _, id in
+                        if let id { withAnimation { proxy.scrollTo(id, anchor: .top) } }
+                    }
+                }
+                .frame(width: 220)
 
-            // Saved text can run to several lines, as an address or a signature does,
-            // which a table cell cannot hold. The selected snippet's text is edited here.
-            if selection.count == 1, let id = selection.first, rows.contains(where: { $0.id == id }) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("What Indite types")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    TextEditor(text: binding(id, \.text))
-                        .font(.body)
-                        .frame(minHeight: 90)
-                        .scrollContentBackground(.hidden)
-                        .padding(6)
-                        .background(.background, in: .rect(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+                // Saved text can run to several lines, as an address or a signature does,
+                // so the selected snippet is edited beside the list, not in a row.
+                Group {
+                    if let id = selection, rows.contains(where: { $0.id == id }) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("What you say").font(.callout).foregroundStyle(.secondary)
+                            TextField("What you say", text: binding(id, \.cue))
+                                .textFieldStyle(.roundedBorder)
+                            Text("What Indite types").font(.callout).foregroundStyle(.secondary)
+                            TextEditor(text: binding(id, \.text))
+                                .font(.body)
+                                .focused($focus, equals: .text)
+                                .scrollContentBackground(.hidden)
+                                .padding(6)
+                                .background(.background, in: .rect(cornerRadius: 6))
+                                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+                        }
+                    } else {
+                        emptyNote("Select a snippet to edit it.")
+                    }
                 }
-            } else {
-                Text("Select a snippet to edit the text Indite types.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 90)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .onAppear { focus = .cue }
+    }
+
+    /// A new snippet goes to the top and is selected, with the cursor in its text, the
+    /// part still to be written.
+    private func add() {
+        let cue = newCue.trimmingCharacters(in: .whitespaces)
+        guard !cue.isEmpty else { return }
+        search = ""
+        let row = WordsSettingsView.SnippetRow(cue: cue, text: "")
+        rows.insert(row, at: 0)
+        selection = row.id
+        newCue = ""
+        focus = .text
     }
 
     /// Whether two snippets that are typed share a cue, as matching sees it: in any
