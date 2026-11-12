@@ -644,8 +644,9 @@ enum HelpLibrary {
         body: """
             To teach Indite a name it misspells, such as a colleague's name, or to add a \
             word to its dictionary, open Indite's Settings, choose Words, click \
-            "Edit…" beside Vocabulary, then click the plus button and type it. Each name \
-            or term has a row of its own. When Indite is unsure what it heard, it prefers \
+            "Edit…" beside Vocabulary, type the word in the field at the top, and press \
+            Return. Each name or term has a row of its own; to delete one, click the \
+            minus button at the end of its row. When Indite is unsure what it heard, it prefers \
             these words, and it spells them the way you wrote them. Dictations and \
             meetings both use the list.
 
@@ -672,13 +673,14 @@ enum HelpLibrary {
         body: """
             A word replacement makes Indite write one word as another every time you say \
             it. Open Indite's Settings, choose Words, click "Edit…" beside \
-            "Word Replacements", and click the plus button. Type what Indite hears on the left, such as "gonna", \
-            and what you want written on the right, such as "going to". Every dictation \
+            "Word Replacements". In the two fields at the top, type what Indite hears, \
+            such as "gonna", and what you want written, such as "going to", and press \
+            Return. Every dictation \
             is then corrected before it is rewritten or typed.
 
             Replacements match whole words only and ignore capitals, so a rule for "vox" \
             leaves "voxel" alone. Leave the right side empty to delete the heard word wherever it \
-            appears. To remove a rule, select it and click the minus button.
+            appears. To remove a rule, click the minus button at the end of its row.
             """,
         topic: .words,
         action: .inditeSettings(.words)
@@ -692,9 +694,9 @@ enum HelpLibrary {
             signature, saved with a short spoken cue. Say the cue in a dictation, and \
             Indite types the saved text exactly as you wrote it, line breaks included.
 
-            Open Indite's Settings, choose Words, click "Edit…" beside "Snippets", and \
-            click the plus button. Under "What you say", type the words, such as "my \
-            calendar link", and type the text in the box below the list. \
+            Open Indite's Settings, choose Words, click "Edit…" beside "Snippets", type \
+            the words you will say, such as "my calendar link", in the field at the top, \
+            and press Return. Then type the text in the box beside the list. \
             Those words can come anywhere in a dictation, in any capitals, so "Here is my \
             calendar link" types the words and then the link.
 
